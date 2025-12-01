@@ -230,17 +230,17 @@ class HookResult:
     inject_system_message: str | None = None
 
     @classmethod
-    def continue_(cls) -> HookResult:
+    def construct_continue(cls) -> HookResult:
         """Create a continue result (proceed normally)."""
         return cls(action=HookAction.CONTINUE)
 
     @classmethod
-    def block(cls, message: str) -> HookResult:
+    def construct_block(cls, message: str) -> HookResult:
         """Create a block result (stop operation with message)."""
         return cls(action=HookAction.BLOCK, message=message)
 
     @classmethod
-    def skip(cls) -> HookResult:
+    def construct_skip(cls) -> HookResult:
         """Create a skip result (skip silently)."""
         return cls(action=HookAction.SKIP)
 

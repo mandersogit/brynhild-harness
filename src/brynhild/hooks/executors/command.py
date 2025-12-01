@@ -63,7 +63,7 @@ class CommandHookExecutor(base.HookExecutor):
 
         # Determine result from exit code
         if process.returncode == 0:
-            return events.HookResult.continue_()
+            return events.HookResult.construct_continue()
         else:
             # Non-zero exit = block
             message = hook_def.message
@@ -74,5 +74,5 @@ class CommandHookExecutor(base.HookExecutor):
                     output = stdout.decode("utf-8", errors="replace").strip()
                 message = output or f"Hook '{hook_def.name}' blocked (exit {process.returncode})"
 
-            return events.HookResult.block(message)
+            return events.HookResult.construct_block(message)
 

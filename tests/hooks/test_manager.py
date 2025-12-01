@@ -15,7 +15,7 @@ class TestHookManager:
     @_pytest.fixture
     def empty_manager(self) -> manager.HookManager:
         """Create manager with no hooks."""
-        return manager.HookManager.empty()
+        return manager.HookManager.construct_empty()
 
     def test_empty_manager_has_no_hooks(
         self,
@@ -243,4 +243,123 @@ class TestHookManager:
         # Should not raise, should continue
         result = await mgr.dispatch(events.HookEvent.PRE_TOOL_USE, context)
         assert result.action == events.HookAction.CONTINUE
+
+
+class TestHookFailureSemantics:
+    """Tests documenting hook failure behavior."""
+
+    @_pytest.mark.asyncio
+    async def test_command_hook_nonzero_exit_blocks(
+        self,
+        tmp_path: _pathlib.Path,
+    ) -> None:
+        """Command hook with non-zero exit code should BLOCK."""
+        hook = config.HookDefinition(
+            name="blocking-command",
+            type="command",
+            command="exit 1",
+            message="Blocked by test hook",
+        )
+        hooks_config = config.HooksConfig(hooks={"pre_tool_use": [hook]})
+        mgr = manager.HookManager(hooks_config, project_root=tmp_path)
+
+        context = events.HookContext(
+            event=events.HookEvent.PRE_TOOL_USE,
+            session_id="test",
+            cwd=tmp_path,
+            tool="Bash",
+        )
+        result = await mgr.dispatch(events.HookEvent.PRE_TOOL_USE, context)
+
+        assert result.action == events.HookAction.BLOCK
+        assert result.message == "Blocked by test hook"
+
+    @_pytest.mark.asyncio
+    async def test_command_hook_zero_exit_continues(
+        self,
+        tmp_path: _pathlib.Path,
+    ) -> None:
+        """Command hook with zero exit code should CONTINUE."""
+        hook = config.HookDefinition(
+            name="passing-command",
+            type="command",
+            command="exit 0",
+        )
+        hooks_config = config.HooksConfig(hooks={"pre_tool_use": [hook]})
+        mgr = manager.HookManager(hooks_config, project_root=tmp_path)
+
+        context = events.HookContext(
+            event=events.HookEvent.PRE_TOOL_USE,
+            session_id="test",
+            cwd=tmp_path,
+            tool="Bash",
+        )
+        result = await mgr.dispatch(events.HookEvent.PRE_TOOL_USE, context)
+
+        assert result.action == events.HookAction.CONTINUE
+
+    @_pytest.mark.asyncio
+    async def test_script_exception_continues_not_blocks(
+        self,
+        tmp_path: _pathlib.Path,
+    ) -> None:
+        """Script hook that raises exception should continue (not block)."""
+        # Create a script that raises an exception
+        script_file = tmp_path / "bad_script.py"
+        script_file.write_text("raise RuntimeError('Script failed!')")
+
+        hook = config.HookDefinition(
+            name="exception-script",
+            type="script",
+            script=str(script_file),
+        )
+        hooks_config = config.HooksConfig(hooks={"pre_tool_use": [hook]})
+        mgr = manager.HookManager(hooks_config, project_root=tmp_path)
+
+        context = events.HookContext(
+            event=events.HookEvent.PRE_TOOL_USE,
+            session_id="test",
+            cwd=tmp_path,
+            tool="Bash",
+        )
+        # Exception should be caught, hook continues
+        result = await mgr.dispatch(events.HookEvent.PRE_TOOL_USE, context)
+
+        assert result.action == events.HookAction.CONTINUE
+
+    @_pytest.mark.asyncio
+    async def test_multiple_hooks_error_in_first_continues_to_second(
+        self,
+        tmp_path: _pathlib.Path,
+    ) -> None:
+        """Error in first hook should not prevent second hook from running."""
+        # First hook errors
+        error_hook = config.HookDefinition(
+            name="error-hook",
+            type="script",
+            script="nonexistent.py",
+        )
+        # Second hook blocks
+        block_hook = config.HookDefinition(
+            name="block-hook",
+            type="command",
+            command="exit 1",
+            message="Second hook blocked",
+        )
+        hooks_config = config.HooksConfig(
+            hooks={"pre_tool_use": [error_hook, block_hook]}
+        )
+        mgr = manager.HookManager(hooks_config, project_root=tmp_path)
+
+        context = events.HookContext(
+            event=events.HookEvent.PRE_TOOL_USE,
+            session_id="test",
+            cwd=tmp_path,
+            tool="Bash",
+        )
+        result = await mgr.dispatch(events.HookEvent.PRE_TOOL_USE, context)
+
+        # First hook errored and continued, second hook should run and block
+        assert result.action == events.HookAction.BLOCK
+        assert result.message == "Second hook blocked"
 

@@ -80,14 +80,14 @@ class TestMessageWidget:
 
     def test_user_message_creation(self) -> None:
         """Should create a user message widget."""
-        widget = widgets.MessageWidget.user_message("Hello!")
+        widget = widgets.MessageWidget.construct_user_message("Hello!")
         assert widget._content == "Hello!"
         assert widget._role == "user"
         assert widget._title == "You"
 
     def test_assistant_message_creation(self) -> None:
         """Should create an assistant message widget."""
-        widget = widgets.MessageWidget.assistant_message("Hi there!")
+        widget = widgets.MessageWidget.construct_assistant_message("Hi there!")
         assert widget._content == "Hi there!"
         assert widget._role == "assistant"
         assert widget._title == "Assistant"
@@ -98,7 +98,7 @@ class TestMessageWidget:
             tool_name="Bash",
             tool_input={"command": "echo hello"},
         )
-        widget = widgets.MessageWidget.tool_call(tool_call)
+        widget = widgets.MessageWidget.construct_tool_call(tool_call)
         assert widget._role == "tool-call"
         assert "Bash" in widget._title
 
@@ -106,7 +106,7 @@ class TestMessageWidget:
         """Should create a success tool result widget."""
         result = tools_base.ToolResult(success=True, output="hello", error=None)
         display = ui.ToolResultDisplay(tool_name="Bash", result=result)
-        widget = widgets.MessageWidget.tool_result(display)
+        widget = widgets.MessageWidget.construct_tool_result(display)
         assert widget._role == "tool-result"
         assert "✓" in widget._title
 
@@ -114,13 +114,13 @@ class TestMessageWidget:
         """Should create an error tool result widget."""
         result = tools_base.ToolResult(success=False, output="", error="Failed!")
         display = ui.ToolResultDisplay(tool_name="Bash", result=result)
-        widget = widgets.MessageWidget.tool_result(display)
+        widget = widgets.MessageWidget.construct_tool_result(display)
         assert widget._role == "tool-result"
         assert "✗" in widget._title
 
     def test_error_message_creation(self) -> None:
         """Should create an error message widget."""
-        widget = widgets.MessageWidget.error_message("Something went wrong")
+        widget = widgets.MessageWidget.construct_error_message("Something went wrong")
         assert widget._content == "Something went wrong"
         assert widget._role == "error"
 

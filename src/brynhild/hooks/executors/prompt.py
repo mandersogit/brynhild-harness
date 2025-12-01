@@ -133,12 +133,12 @@ class PromptHookExecutor(base.HookExecutor):
         json_match = _re.search(r"\{[^{}]*\}", response)
         if not json_match:
             # No JSON found, assume continue
-            return events.HookResult.continue_()
+            return events.HookResult.construct_continue()
 
         try:
             data = _json.loads(json_match.group())
         except _json.JSONDecodeError:
-            return events.HookResult.continue_()
+            return events.HookResult.construct_continue()
 
         # Check for action-based response
         if "action" in data:
@@ -149,11 +149,11 @@ class PromptHookExecutor(base.HookExecutor):
             is_safe = data.get("safe", True)
             reason = data.get("reason", "")
             if is_safe:
-                return events.HookResult.continue_()
+                return events.HookResult.construct_continue()
             else:
                 message = reason or f"Hook '{hook_name}' determined operation is unsafe"
-                return events.HookResult.block(message)
+                return events.HookResult.construct_block(message)
 
         # Unknown format, continue
-        return events.HookResult.continue_()
+        return events.HookResult.construct_continue()
 

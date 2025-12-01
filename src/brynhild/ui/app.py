@@ -523,35 +523,35 @@ class BrynhildApp(_app.App[None]):
     async def _add_user_message(self, content: str) -> None:
         """Add a user message to the display."""
         container = self.query_one("#messages-container", _containers.ScrollableContainer)
-        message_widget = widgets.MessageWidget.user_message(content)
+        message_widget = widgets.MessageWidget.construct_user_message(content)
         await container.mount(message_widget)
         message_widget.scroll_visible()
 
     async def _add_assistant_message(self, content: str) -> None:
         """Add an assistant message to the display."""
         container = self.query_one("#messages-container", _containers.ScrollableContainer)
-        message_widget = widgets.MessageWidget.assistant_message(content)
+        message_widget = widgets.MessageWidget.construct_assistant_message(content)
         await container.mount(message_widget)
         message_widget.scroll_visible()
 
     async def _add_tool_call(self, tool_call: ui_base.ToolCallDisplay) -> None:
         """Add a tool call to the display."""
         container = self.query_one("#messages-container", _containers.ScrollableContainer)
-        message_widget = widgets.MessageWidget.tool_call(tool_call)
+        message_widget = widgets.MessageWidget.construct_tool_call(tool_call)
         await container.mount(message_widget)
         message_widget.scroll_visible()
 
     async def _add_tool_result(self, result: ui_base.ToolResultDisplay) -> None:
         """Add a tool result to the display."""
         container = self.query_one("#messages-container", _containers.ScrollableContainer)
-        message_widget = widgets.MessageWidget.tool_result(result)
+        message_widget = widgets.MessageWidget.construct_tool_result(result)
         await container.mount(message_widget)
         message_widget.scroll_visible()
 
     async def _add_error(self, error: str) -> None:
         """Add an error message to the display."""
         container = self.query_one("#messages-container", _containers.ScrollableContainer)
-        message_widget = widgets.MessageWidget.error_message(error)
+        message_widget = widgets.MessageWidget.construct_error_message(error)
         await container.mount(message_widget)
         message_widget.scroll_visible()
 

@@ -4,12 +4,21 @@ Settings configuration using pydantic-settings.
 Loads configuration from environment variables with BRYNHILD_ prefix.
 """
 
+import getpass as _getpass
 import pathlib as _pathlib
 import subprocess as _subprocess
 import typing as _typing
 
 import pydantic as _pydantic
 import pydantic_settings as _pydantic_settings
+
+
+def _get_username() -> str:
+    """Get the current username for directory naming."""
+    try:
+        return _getpass.getuser()
+    except Exception:
+        return "unknown"
 
 
 class ProjectRootTooWideError(Exception):
@@ -136,6 +145,17 @@ class Settings(_pydantic_settings.BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def construct_without_dotenv(cls, **kwargs: _typing.Any) -> "Settings":
+        """Create Settings from environment variables only, without loading .env file.
+
+        Useful for:
+        - Test isolation (prevent .env from polluting tests)
+        - CI/CD environments (pure env var config)
+        - Debugging (reproduce issues without .env interference)
+        """
+        return cls(_env_file=None, **kwargs)  # type: ignore[call-arg]
+
     # Provider settings
     provider: _typing.Literal["openrouter", "ollama", "vllm", "vertex"] = _pydantic.Field(
         default="openrouter",
@@ -143,7 +163,7 @@ class Settings(_pydantic_settings.BaseSettings):
     )
 
     model: str = _pydantic.Field(
-        default="anthropic/claude-sonnet-4",
+        default="openai/gpt-oss-120b",
         description="Model to use for completions (OpenRouter format)",
     )
 
@@ -212,13 +232,18 @@ class Settings(_pydantic_settings.BaseSettings):
     )
 
     log_dir: str = _pydantic.Field(
-        default="/tmp/brynhild-logs",
-        description="Directory for conversation log files",
+        default="",  # Empty = use config_dir/logs (computed at runtime)
+        description="Directory for conversation log files (default: ~/.brynhild-{user}/logs)",
     )
 
     log_file: str | None = _pydantic.Field(
         default=None,
         description="Explicit log file path (overrides log_dir + auto filename)",
+    )
+
+    log_dir_private: bool = _pydantic.Field(
+        default=True,
+        description="Lock down log directory to owner-only (drwx------). Set False for shared access.",
     )
 
     # Tool settings
@@ -248,6 +273,18 @@ class Settings(_pydantic_settings.BaseSettings):
         """Directory for session storage."""
         return self.config_dir / "sessions"
 
+    @property
+    def logs_dir(self) -> _pathlib.Path:
+        """Directory for conversation log files.
+
+        Default: /tmp/brynhild-logs-{username}
+        The username suffix prevents accidental log sharing in multi-user systems.
+        """
+        if self.log_dir:
+            return _pathlib.Path(self.log_dir)
+        username = _get_username()
+        return _pathlib.Path(f"/tmp/brynhild-logs-{username}")
+
     def get_api_key(self) -> str | None:
         """Get the API key for the configured provider."""
         if self.provider == "openrouter":
@@ -258,7 +295,7 @@ class Settings(_pydantic_settings.BaseSettings):
         """Get additional allowed paths as Path objects."""
         import os as _os
 
-        if not self.allowed_paths.strip():
+        if not self.allowed_paths or not self.allowed_paths.strip():
             return []
 
         paths = []
@@ -272,7 +309,7 @@ class Settings(_pydantic_settings.BaseSettings):
 
     def get_disabled_tools(self) -> set[str]:
         """Get set of disabled tool names."""
-        if not self.disabled_tools.strip():
+        if not self.disabled_tools or not self.disabled_tools.strip():
             return set()
 
         return {name.strip() for name in self.disabled_tools.split(",") if name.strip()}
@@ -300,7 +337,8 @@ class Settings(_pydantic_settings.BaseSettings):
             "allowed_paths": [str(p) for p in self.get_allowed_paths()],
             "allow_home_directory": self.allow_home_directory,
             "log_conversations": self.log_conversations,
-            "log_dir": self.log_dir,
+            "log_dir": str(self.logs_dir),
+            "log_dir_private": self.log_dir_private,
             "log_file": self.log_file,
             "disable_builtin_tools": self.disable_builtin_tools,
             "disabled_tools": list(self.get_disabled_tools()),

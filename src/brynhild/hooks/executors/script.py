@@ -87,7 +87,7 @@ class ScriptHookExecutor(base.HookExecutor):
         stdout_str = stdout.decode("utf-8", errors="replace").strip()
         if not stdout_str:
             # Empty output = continue
-            return events.HookResult.continue_()
+            return events.HookResult.construct_continue()
 
         try:
             result_data = _json.loads(stdout_str)

@@ -71,7 +71,7 @@ class HookManager:
         return cls(hooks_config, project_root=project_root)
 
     @classmethod
-    def empty(cls) -> HookManager:
+    def construct_empty(cls) -> HookManager:
         """Create a HookManager with no hooks configured."""
         return cls(config.HooksConfig())
 
@@ -97,10 +97,10 @@ class HookManager:
         """
         hooks = self._config.get_hooks_for_event(event)
         if not hooks:
-            return events.HookResult.continue_()
+            return events.HookResult.construct_continue()
 
         context_dict = context.to_dict()
-        accumulated_result = events.HookResult.continue_()
+        accumulated_result = events.HookResult.construct_continue()
 
         for hook_def in hooks:
             # Check if hook matches

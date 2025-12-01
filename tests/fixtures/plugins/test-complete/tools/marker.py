@@ -40,7 +40,8 @@ class Tool:
         message: str = "",
         **kwargs: _typing.Any,  # noqa: ARG002 - API compatibility
     ) -> dict[str, _typing.Any]:
-        """Execute the marker tool.
+        """
+        Execute the marker tool.
 
         Args:
             message: Optional message to include.
@@ -77,3 +78,4 @@ class Tool:
                 "parameters": self.input_schema,
             },
         }
+

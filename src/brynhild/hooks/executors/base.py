@@ -90,12 +90,12 @@ class HookExecutor(_abc.ABC):
             )
         except TimeoutError:
             if on_timeout == "block":
-                return events.HookResult.block(
+                return events.HookResult.construct_block(
                     f"Hook '{hook_def.name}' timed out after {timeout_seconds}s"
                 )
             else:
                 # on_timeout == "continue"
-                return events.HookResult.continue_()
+                return events.HookResult.construct_continue()
         except Exception as e:
             # Execution errors result in continue (don't block on hook failures)
             # The manager will log the error

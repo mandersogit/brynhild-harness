@@ -103,17 +103,17 @@ class MessageWidget(_widgets.Static):
             yield _widgets.Static(self._content)
 
     @classmethod
-    def user_message(cls, content: str) -> "MessageWidget":
+    def construct_user_message(cls, content: str) -> "MessageWidget":
         """Create a user message widget."""
         return cls(content, "user", title="You")
 
     @classmethod
-    def assistant_message(cls, content: str) -> "MessageWidget":
+    def construct_assistant_message(cls, content: str) -> "MessageWidget":
         """Create an assistant message widget."""
         return cls(content, "assistant", title="Assistant")
 
     @classmethod
-    def tool_call(cls, tool_call: ui_base.ToolCallDisplay) -> "MessageWidget":
+    def construct_tool_call(cls, tool_call: ui_base.ToolCallDisplay) -> "MessageWidget":
         """Create a tool call widget."""
         lines = [f"**Tool:** {tool_call.tool_name}"]
         for key, value in tool_call.tool_input.items():
@@ -125,7 +125,7 @@ class MessageWidget(_widgets.Static):
         return cls(content, "tool-call", title=f"⚡ {tool_call.tool_name}")
 
     @classmethod
-    def tool_result(cls, result: ui_base.ToolResultDisplay) -> "MessageWidget":
+    def construct_tool_result(cls, result: ui_base.ToolResultDisplay) -> "MessageWidget":
         """Create a tool result widget."""
         if result.result.success:
             output = result.result.output.strip()
@@ -142,7 +142,7 @@ class MessageWidget(_widgets.Static):
         return cls(content, "tool-result", title=title, classes=status_class)
 
     @classmethod
-    def error_message(cls, error: str) -> "MessageWidget":
+    def construct_error_message(cls, error: str) -> "MessageWidget":
         """Create an error message widget."""
         return cls(error, "error", title="Error")
 

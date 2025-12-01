@@ -102,7 +102,7 @@ def isolated_env(clean_env: dict[str, str]):
     Usage:
         def test_something(isolated_env):
             with isolated_env:
-                settings = config.Settings(_env_file=None)
+                settings = config.Settings.construct_without_dotenv()
     """
     return _mock.patch.dict(_os.environ, clean_env, clear=True)
 
@@ -115,7 +115,7 @@ def clean_settings(isolated_env) -> config.Settings:
     This fixture ensures tests get predictable default settings.
     """
     with isolated_env:
-        return config.Settings(_env_file=None)  # type: ignore[call-arg]
+        return config.Settings.construct_without_dotenv()
 
 
 @_pytest.fixture
@@ -152,7 +152,7 @@ def mock_api_key():
     Usage:
         def test_with_api_key(mock_api_key):
             # OPENROUTER_API_KEY is now set to "test-api-key"
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.get_api_key() == "test-api-key"
     """
     with _mock.patch.dict(

@@ -29,37 +29,37 @@ class TestSettingsDefaults:
     def test_default_provider_is_openrouter(self) -> None:
         """Default provider should be 'openrouter' when no env override."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.provider == "openrouter"
 
-    def test_default_model_is_claude_sonnet(self) -> None:
-        """Default model should be anthropic/claude-sonnet-4 when no env override."""
+    def test_default_model_is_gpt_oss(self) -> None:
+        """Default model should be openai/gpt-oss-120b when no env override."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
-            assert settings.model == "anthropic/claude-sonnet-4"
+            settings = config.Settings.construct_without_dotenv()
+            assert settings.model == "openai/gpt-oss-120b"
 
     def test_default_output_format_is_text(self) -> None:
         """Default output format should be 'text'."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.output_format == "text"
 
     def test_default_max_tokens_is_8192(self) -> None:
         """Default max_tokens should be 8192."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.max_tokens == 8192
 
     def test_default_verbose_is_false(self) -> None:
         """Verbose should be False by default."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.verbose is False
 
     def test_default_skip_permissions_is_false(self) -> None:
         """dangerously_skip_permissions should be False by default."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.dangerously_skip_permissions is False
 
 
@@ -71,7 +71,7 @@ class TestSettingsProviders:
         # Currently supported + planned providers
         valid_providers = ["openrouter", "ollama", "vllm", "vertex"]
         for provider in valid_providers:
-            settings = config.Settings(provider=provider, _env_file=None)  # type: ignore
+            settings = config.Settings.construct_without_dotenv(provider=provider)
             assert settings.provider == provider
 
     def test_get_api_key_returns_openrouter_key(self) -> None:
@@ -79,13 +79,13 @@ class TestSettingsProviders:
         with _mock.patch.dict(
             _os.environ, {"OPENROUTER_API_KEY": "test-openrouter-key"}, clear=False
         ):
-            settings = config.Settings(provider="openrouter", _env_file=None)  # type: ignore
+            settings = config.Settings.construct_without_dotenv(provider="openrouter")
             assert settings.get_api_key() == "test-openrouter-key"
 
     def test_get_api_key_returns_none_when_key_not_set(self) -> None:
         """get_api_key() should return None when no API key is configured."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.get_api_key() is None
 
 
@@ -95,13 +95,13 @@ class TestSettingsEnvironmentOverride:
     def test_brynhild_prefix_overrides_verbose(self) -> None:
         """BRYNHILD_VERBOSE=true should set verbose to True."""
         with _mock.patch.dict(_os.environ, {"BRYNHILD_VERBOSE": "true"}, clear=False):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.verbose is True
 
     def test_brynhild_prefix_overrides_provider(self) -> None:
         """BRYNHILD_PROVIDER should override default provider."""
         with _mock.patch.dict(_os.environ, {"BRYNHILD_PROVIDER": "openrouter"}, clear=False):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.provider == "openrouter"
 
 
@@ -111,17 +111,17 @@ class TestSettingsValidation:
     def test_max_tokens_rejects_zero(self) -> None:
         """max_tokens=0 should raise ValidationError."""
         with _pytest.raises(ValueError):
-            config.Settings(max_tokens=0, _env_file=None)
+            config.Settings.construct_without_dotenv(max_tokens=0)
 
     def test_max_tokens_rejects_over_limit(self) -> None:
         """max_tokens over 200000 should raise ValidationError."""
         with _pytest.raises(ValueError):
-            config.Settings(max_tokens=300000, _env_file=None)
+            config.Settings.construct_without_dotenv(max_tokens=300000)
 
     def test_max_tokens_accepts_valid_values(self) -> None:
         """Valid max_tokens values should be accepted."""
         for value in [1, 100, 8192, 200000]:
-            settings = config.Settings(max_tokens=value, _env_file=None)
+            settings = config.Settings.construct_without_dotenv(max_tokens=value)
             assert settings.max_tokens == value
 
 
@@ -130,7 +130,7 @@ class TestSettingsSerialization:
 
     def test_to_dict_includes_all_required_keys(self) -> None:
         """to_dict() should include all configuration keys."""
-        settings = config.Settings(_env_file=None)
+        settings = config.Settings.construct_without_dotenv()
         d = settings.to_dict()
         required_keys = [
             "provider",
@@ -148,7 +148,7 @@ class TestSettingsSerialization:
 
     def test_to_dict_has_api_key_is_boolean(self) -> None:
         """to_dict()['has_api_key'] should be a boolean."""
-        settings = config.Settings(_env_file=None)
+        settings = config.Settings.construct_without_dotenv()
         d = settings.to_dict()
         assert isinstance(d["has_api_key"], bool)
 
@@ -158,12 +158,12 @@ class TestSettingsDirectories:
 
     def test_config_dir_is_under_home(self) -> None:
         """config_dir should be under the user's home directory."""
-        settings = config.Settings(_env_file=None)
+        settings = config.Settings.construct_without_dotenv()
         assert settings.config_dir.parent == _pathlib.Path.home()
 
     def test_sessions_dir_is_under_config_dir(self) -> None:
         """sessions_dir should be a subdirectory of config_dir."""
-        settings = config.Settings(_env_file=None)
+        settings = config.Settings.construct_without_dotenv()
         assert settings.sessions_dir.parent == settings.config_dir
 
 
@@ -280,7 +280,7 @@ class TestProjectRootTooWideError:
     def test_settings_allow_home_directory_default_false(self) -> None:
         """allow_home_directory should default to False."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.allow_home_directory is False
 
     def test_settings_allow_home_directory_from_env(self) -> None:
@@ -288,5 +288,5 @@ class TestProjectRootTooWideError:
         env = clean_env()
         env["BRYNHILD_ALLOW_HOME_DIRECTORY"] = "true"
         with _mock.patch.dict(_os.environ, env, clear=True):
-            settings = config.Settings(_env_file=None)
+            settings = config.Settings.construct_without_dotenv()
             assert settings.allow_home_directory is True

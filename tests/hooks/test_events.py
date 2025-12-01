@@ -179,19 +179,19 @@ class TestHookResult:
 
     def test_continue_factory(self) -> None:
         """continue_() creates CONTINUE result."""
-        result = events.HookResult.continue_()
+        result = events.HookResult.construct_continue()
         assert result.action == events.HookAction.CONTINUE
         assert result.message is None
 
     def test_block_factory(self) -> None:
         """block() creates BLOCK result with message."""
-        result = events.HookResult.block("Operation blocked")
+        result = events.HookResult.construct_block("Operation blocked")
         assert result.action == events.HookAction.BLOCK
         assert result.message == "Operation blocked"
 
     def test_skip_factory(self) -> None:
         """skip() creates SKIP result."""
-        result = events.HookResult.skip()
+        result = events.HookResult.construct_skip()
         assert result.action == events.HookAction.SKIP
 
     def test_from_dict_continue(self) -> None:
@@ -236,7 +236,7 @@ class TestHookResult:
 
     def test_to_dict_minimal(self) -> None:
         """to_dict omits None fields."""
-        result = events.HookResult.continue_()
+        result = events.HookResult.construct_continue()
         d = result.to_dict()
         assert d == {"action": "continue"}
 
