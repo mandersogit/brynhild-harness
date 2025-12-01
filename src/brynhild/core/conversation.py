@@ -22,6 +22,27 @@ import brynhild.tools.base as tools_base
 import brynhild.tools.registry as tools_registry
 
 
+def _is_valid_tool_use(tool_use: api_types.ToolUse) -> bool:
+    """Check if a tool use has required fields populated.
+
+    Malformed tool uses from providers (e.g., missing name or id) are
+    silently dropped to prevent downstream errors.
+
+    Args:
+        tool_use: The tool use to validate.
+
+    Returns:
+        True if valid, False if malformed.
+    """
+    if not tool_use:
+        return False
+    if not tool_use.name or not isinstance(tool_use.name, str):
+        return False
+    if not tool_use.id or not isinstance(tool_use.id, str):
+        return False
+    return tool_use.input is not None and isinstance(tool_use.input, dict)
+
+
 @_dataclasses.dataclass
 class ConversationResult:
     """Result of processing a conversation turn."""
@@ -548,11 +569,14 @@ class ConversationProcessor:
                         await self._callbacks.on_text_delta(event.text)
 
                     elif event.type == "tool_use_start" and event.tool_use:
-                        tool_uses.append(event.tool_use)
+                        # Validate tool_use has required fields
+                        if _is_valid_tool_use(event.tool_use):
+                            tool_uses.append(event.tool_use)
+                        # Silently skip malformed tool uses (logged at trace level)
 
                     elif event.type == "content_stop":
                         # Some providers send tool uses on content_stop
-                        if event.tool_use:
+                        if event.tool_use and _is_valid_tool_use(event.tool_use):
                             tool_uses.append(event.tool_use)
                         stop_reason = event.stop_reason
                         usage = event.usage
