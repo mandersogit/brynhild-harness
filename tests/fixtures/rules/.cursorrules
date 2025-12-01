@@ -1,0 +1,5 @@
+[TEST-CURSORRULES-FIXTURE]
+
+This is a .cursorrules file for testing rule discovery.
+Multiple rule files should be discovered and concatenated.
+

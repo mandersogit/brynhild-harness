@@ -1,0 +1,51 @@
+---
+alwaysApply: true
+---
+
+# Workflow Folder Rule
+
+## Rule: All AI-Generated Documentation Goes in `workflow/`
+
+When creating documentation, plans, status reports, or tracking files, **always place them in the `workflow/` folder**.
+
+### Files That MUST Go in `workflow/`
+
+- Status reports and progress updates
+- Development plans and roadmaps
+- Architecture notes and design documents
+- Task tracking and TODO lists
+- Meeting notes or conversation summaries
+- Analysis documents
+- Any `.md` file that isn't a standard project file (like README.md)
+
+### Correct Examples
+
+```
+✅ workflow/python-port-roadmap.md
+✅ workflow/status-2024-01-15.md
+✅ workflow/tool-analysis.md
+✅ workflow/phase-1-notes.md
+```
+
+### Incorrect Examples
+
+```
+❌ PLAN.md (root level)
+❌ STATUS.md (root level)
+❌ notes.md (root level)
+❌ TODO.md (root level)
+```
+
+### Exceptions (OK at root level)
+
+- `README.md` - Standard project readme
+- `CHANGELOG.md` - Release changelog
+- `CONTRIBUTING.md` - Contribution guidelines
+- `LICENSE` / `LICENSE.md` - License file
+
+### Why This Rule Exists
+
+1. Keeps the project root clean and professional
+2. All AI-generated working documents are in one place
+3. Easy to find project context and history
+4. Clear separation between project files and development artifacts

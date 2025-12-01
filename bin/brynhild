@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# -*- mode: shell-script; sh-shell: bash -*-
+#
+# brynhild - AI coding assistant
+#
+# This is a polyglot wrapper script that invokes brynhild using the project's
+# virtual environment. It works whether run directly, via symlink, or from PATH.
+#
+# Usage:
+#   ./bin/brynhild [OPTIONS] [COMMAND] [ARGS...]
+#   brynhild [OPTIONS] [COMMAND] [ARGS...]
+#
+# Examples:
+#   brynhild                           # Interactive mode
+#   brynhild chat "explain this code"  # Single query
+#   brynhild chat -p "list files"      # Print mode
+#   brynhild --help                    # Show help
+#
+# Environment:
+#   BRYNHILD_VENV    Override path to virtual environment
+#   BRYNHILD_DEBUG   Set to 1 for debug output
+#
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Resolve script location (handles symlinks)
+# -----------------------------------------------------------------------------
+
+resolve_script_dir() {
+    local source="${BASH_SOURCE[0]}"
+    local dir
+
+    # Resolve symlinks
+    while [[ -L "$source" ]]; do
+        dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        # Handle relative symlinks
+        [[ "$source" != /* ]] && source="$dir/$source"
+    done
+
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    echo "$dir"
+}
+
+SCRIPT_DIR="$(resolve_script_dir)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# -----------------------------------------------------------------------------
+# Debug helper
+# -----------------------------------------------------------------------------
+
+debug() {
+    if [[ "${BRYNHILD_DEBUG:-}" == "1" ]]; then
+        echo "[brynhild] $*" >&2
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Locate virtual environment
+# -----------------------------------------------------------------------------
+
+find_venv() {
+    # Check environment override first
+    if [[ -n "${BRYNHILD_VENV:-}" ]]; then
+        if [[ -d "$BRYNHILD_VENV" ]]; then
+            echo "$BRYNHILD_VENV"
+            return 0
+        else
+            echo "Error: BRYNHILD_VENV='$BRYNHILD_VENV' does not exist" >&2
+            return 1
+        fi
+    fi
+
+    # Check project's local.venv
+    local venv_path="$PROJECT_ROOT/local.venv"
+    if [[ -d "$venv_path" ]]; then
+        echo "$venv_path"
+        return 0
+    fi
+
+    # Check for .venv (common alternative)
+    venv_path="$PROJECT_ROOT/.venv"
+    if [[ -d "$venv_path" ]]; then
+        echo "$venv_path"
+        return 0
+    fi
+
+    echo "Error: Virtual environment not found" >&2
+    echo "Expected: $PROJECT_ROOT/local.venv" >&2
+    echo "Run: python3 -m venv $PROJECT_ROOT/local.venv && $PROJECT_ROOT/local.venv/bin/pip install -e $PROJECT_ROOT" >&2
+    return 1
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+main() {
+    debug "Script dir: $SCRIPT_DIR"
+    debug "Project root: $PROJECT_ROOT"
+
+    # Find virtual environment
+    local venv
+    venv="$(find_venv)" || exit 1
+    debug "Using venv: $venv"
+
+    # Locate Python
+    local python="$venv/bin/python"
+    if [[ ! -x "$python" ]]; then
+        echo "Error: Python not found at $python" >&2
+        exit 1
+    fi
+    debug "Python: $python"
+
+    # Change to project root for .env loading
+    cd "$PROJECT_ROOT"
+    debug "Working directory: $(pwd)"
+
+    # Execute brynhild
+    exec "$python" -m brynhild "$@"
+}
+
+# Run main unless sourced (polyglot support)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+

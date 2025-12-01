@@ -1,0 +1,28 @@
+# Test hooks configuration
+version: 1
+
+hooks:
+  # Pre-tool hook: logs before tool execution
+  pre_tool_use:
+    - name: log_tool_start
+      type: command
+      command: "echo '[PLUGIN-HOOK] pre_tool_use: $BRYNHILD_TOOL_NAME' >&2"
+      
+  # Post-tool hook: logs after tool execution  
+  post_tool_use:
+    - name: log_tool_end
+      type: command
+      command: "echo '[PLUGIN-HOOK] post_tool_use: $BRYNHILD_TOOL_NAME success=$BRYNHILD_TOOL_SUCCESS' >&2"
+      
+  # Pre-message hook: could modify or log outgoing messages
+  pre_message:
+    - name: log_message
+      type: command
+      command: "echo '[PLUGIN-HOOK] pre_message' >&2"
+      
+  # Error hook: logs errors
+  on_error:
+    - name: log_error
+      type: command
+      command: "echo '[PLUGIN-HOOK] on_error: $BRYNHILD_ERROR_TYPE' >&2"
+

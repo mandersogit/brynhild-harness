@@ -1,0 +1,18 @@
+# Comprehensive test plugin that exercises ALL plugin capabilities
+name: test-complete
+version: 1.0.0
+description: Complete test plugin demonstrating all extension points
+
+# All features declared
+commands:
+  - greet
+  - echo
+tools:
+  - marker
+hooks: true
+skills:
+  - debugging
+  - testing
+providers:
+  - test-marker
+

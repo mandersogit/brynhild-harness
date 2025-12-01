@@ -1,0 +1,12 @@
+# Test model profile
+name: test-model
+family: test
+description: Test profile for verifying profile loading
+
+# System prompt additions
+system_prompt_prefix: "[TEST-PROFILE-PREFIX]"
+system_prompt_suffix: "[TEST-PROFILE-SUFFIX]"
+
+# Model-specific settings
+min_max_tokens: 1000
+

@@ -1,0 +1,6 @@
+name: test-ollama
+version: 1.0.0
+description: Test plugin provider wrapping Ollama with verification markers
+providers:
+  - test-ollama
+

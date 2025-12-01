@@ -1,0 +1,26 @@
+---
+description: Default LLM models for testing and development
+alwaysApply: true
+---
+
+# Testing Models Configuration
+
+## Default Models (via OpenRouter)
+
+| Model | Role | When to Use |
+|-------|------|-------------|
+| `allenai/olmo-3-32b-think` | **Primary** | Default for all development and testing |
+| `anthropic/claude-haiku-4.5` | **Secondary** | Only when explicitly requested |
+
+## Usage Rules
+
+1. **Default to primary model** - Use `allenai/olmo-3-32b-think` unless told otherwise
+2. **Be explicit about model choice** - When using a different model, state which one
+3. **Provider is OpenRouter** - All models are accessed via OpenRouter API
+
+## Environment Configuration
+
+```bash
+BRYNHILD_PROVIDER=openrouter
+BRYNHILD_MODEL=allenai/olmo-3-32b-think
+```

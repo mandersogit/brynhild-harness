@@ -1,0 +1,124 @@
+---
+description: Python environment rules for the Brynhild project
+globs:
+  - "**/*.py"
+  - "**/pyproject.toml"
+  - "**/requirements*.txt"
+  - "**/*.ipynb"
+alwaysApply: true
+---
+
+# Python Environment Rules
+
+## CRITICAL: Use Only the Project Virtual Environment
+
+This project uses a dedicated Python virtual environment. **NEVER** use system Python or any other Python installation.
+
+### Required Python Paths
+
+Always use these exact paths for Python operations:
+
+| Tool | Path |
+|------|------|
+| Python interpreter | `./local.venv/bin/python` |
+| Pip | `./local.venv/bin/pip` |
+| Any Python script | `./local.venv/bin/python script.py` |
+
+### Absolute Paths (when needed)
+
+```
+/Users/manderso/git/github/brynhild/local.venv/bin/python
+/Users/manderso/git/github/brynhild/local.venv/bin/pip
+```
+
+### FORBIDDEN Commands
+
+**NEVER use any of these:**
+
+```bash
+# ❌ WRONG - system Python
+python script.py
+python3 script.py
+/usr/bin/python3 script.py
+/usr/local/bin/python3 script.py
+
+# ❌ WRONG - system pip
+pip install package
+pip3 install package
+
+# ❌ WRONG - other environments
+conda run python script.py
+/usr/local/miniforge/envs/*/bin/python script.py
+```
+
+### CORRECT Commands
+
+**ALWAYS use these patterns:**
+
+```bash
+# ✅ CORRECT - project venv (relative)
+./local.venv/bin/python script.py
+./local.venv/bin/pip install package
+./local.venv/bin/pip list
+
+# ✅ CORRECT - project venv (absolute)
+/Users/manderso/git/github/brynhild/local.venv/bin/python script.py
+
+# ✅ CORRECT - running modules
+./local.venv/bin/python -m pytest
+./local.venv/bin/python -m mypy src/
+./local.venv/bin/python -m black src/
+```
+
+### Package Installation
+
+When installing packages:
+
+```bash
+# ✅ Install to project venv
+./local.venv/bin/pip install package-name
+
+# ✅ Install from requirements
+./local.venv/bin/pip install -r requirements.txt
+
+# ✅ Install in editable mode
+./local.venv/bin/pip install -e .
+```
+
+### Environment Activation (Optional)
+
+If you need to activate the environment for interactive use:
+
+```bash
+source ./local.venv/bin/activate
+```
+
+But prefer explicit paths over activation for reproducibility.
+
+### Python Version
+
+This project uses **Python 3.13** (as installed in the venv). Do not attempt to use other Python versions.
+
+### Type Checking
+
+Run mypy with the project Python:
+
+```bash
+./local.venv/bin/python -m mypy src/ --python-version 3.11
+```
+
+(We target 3.11+ type hints for compatibility, even though 3.13 is installed)
+
+### Testing
+
+Run tests with pytest:
+
+```bash
+./local.venv/bin/python -m pytest tests/
+./local.venv/bin/python -m pytest tests/ -v
+./local.venv/bin/python -m pytest tests/test_specific.py::test_function
+```
+
+## Summary
+
+**The single most important rule**: Every Python command must start with `./local.venv/bin/python` or `./local.venv/bin/pip`. No exceptions.
