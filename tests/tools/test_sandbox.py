@@ -373,3 +373,77 @@ class TestCustomBlockedPaths:
         with _pytest.raises(sandbox.PathValidationError):
             sandbox.validate_path("/opt/custom_secrets/key.txt", config, operation="read")
 
+
+class TestSandboxUnavailableError:
+    """Test sandbox failure modes."""
+
+    def test_unsupported_platform_raises_error(
+        self, tmp_path: _pathlib.Path, monkeypatch: _pytest.MonkeyPatch
+    ) -> None:
+        """Unsupported platforms should raise SandboxUnavailableError."""
+        import platform as _platform_module
+
+        # Simulate an unsupported platform
+        monkeypatch.setattr(_platform_module, "system", lambda: "Windows")
+
+        config = sandbox.SandboxConfig(project_root=tmp_path)
+
+        with _pytest.raises(sandbox.SandboxUnavailableError) as exc_info:
+            sandbox.get_sandbox_command("echo test", config)
+
+        error_msg = str(exc_info.value)
+        assert "Windows" in error_msg
+        assert "dangerously-skip-sandbox" in error_msg
+
+    def test_unsupported_platform_with_skip_sandbox_works(
+        self, tmp_path: _pathlib.Path, monkeypatch: _pytest.MonkeyPatch
+    ) -> None:
+        """skip_sandbox=True should work on unsupported platforms."""
+        import platform as _platform_module
+
+        monkeypatch.setattr(_platform_module, "system", lambda: "Windows")
+
+        config = sandbox.SandboxConfig(project_root=tmp_path, skip_sandbox=True)
+        command = "echo test"
+
+        wrapped, profile_path = sandbox.get_sandbox_command(command, config)
+
+        assert wrapped == command
+        assert profile_path is None
+
+    def test_macos_missing_sandbox_exec_raises_error(
+        self, tmp_path: _pathlib.Path, monkeypatch: _pytest.MonkeyPatch
+    ) -> None:
+        """Missing sandbox-exec on macOS should raise SandboxUnavailableError."""
+        import platform as _platform_module
+        import shutil as _shutil_module
+
+        monkeypatch.setattr(_platform_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(_shutil_module, "which", lambda _: None)
+
+        config = sandbox.SandboxConfig(project_root=tmp_path)
+
+        with _pytest.raises(sandbox.SandboxUnavailableError) as exc_info:
+            sandbox.get_sandbox_command("echo test", config)
+
+        error_msg = str(exc_info.value)
+        assert "sandbox-exec" in error_msg
+        assert "dangerously-skip-sandbox" in error_msg
+
+    def test_error_message_includes_override_instructions(
+        self, tmp_path: _pathlib.Path, monkeypatch: _pytest.MonkeyPatch
+    ) -> None:
+        """Error messages should explain how to override."""
+        import platform as _platform_module
+
+        monkeypatch.setattr(_platform_module, "system", lambda: "FreeBSD")
+
+        config = sandbox.SandboxConfig(project_root=tmp_path)
+
+        with _pytest.raises(sandbox.SandboxUnavailableError) as exc_info:
+            sandbox.get_sandbox_command("echo test", config)
+
+        error_msg = str(exc_info.value)
+        assert "--dangerously-skip-sandbox" in error_msg
+        assert "BRYNHILD_DANGEROUSLY_SKIP_SANDBOX" in error_msg
+

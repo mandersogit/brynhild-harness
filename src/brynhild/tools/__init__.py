@@ -28,6 +28,7 @@ from brynhild.tools.registry import (
 from brynhild.tools.sandbox import (
     PathValidationError,
     SandboxConfig,
+    SandboxUnavailableError,
     check_read_path,
     check_write_path,
     resolve_and_validate,
@@ -47,6 +48,7 @@ __all__ = [
     "get_default_registry",
     # Sandbox
     "SandboxConfig",
+    "SandboxUnavailableError",
     "PathValidationError",
     "validate_path",
     "resolve_and_validate",

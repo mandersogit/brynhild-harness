@@ -99,6 +99,18 @@ class PathValidationError(Exception):
     pass
 
 
+class SandboxUnavailableError(Exception):
+    """Raised when sandbox protection is required but not available.
+
+    This error indicates the platform or system configuration does not
+    support the required sandbox mechanism. To proceed without sandbox
+    protection (DANGEROUS), set skip_sandbox=True in SandboxConfig or
+    use the --dangerously-skip-sandbox CLI flag.
+    """
+
+    pass
+
+
 class SandboxConfig:
     """Configuration for sandbox behavior."""
 
@@ -459,16 +471,18 @@ def get_sandbox_command(
     elif system == "Linux":
         return _get_linux_sandbox_command(command, config)
     else:
-        # Unsupported platform - warn and run unsandboxed
-        import warnings as _warnings
-
-        _warnings.warn(
-            f"No sandbox available for {system}. "
-            "Running command without OS-level protection.",
-            RuntimeWarning,
-            stacklevel=2,
+        # Unsupported platform - refuse to run without sandbox
+        raise SandboxUnavailableError(
+            f"No sandbox available for {system}.\n"
+            "\n"
+            "Brynhild requires OS-level sandbox protection for command execution.\n"
+            f"The '{system}' platform is not currently supported.\n"
+            "\n"
+            "To run without sandbox protection (DANGEROUS - for testing only):\n"
+            "  --dangerously-skip-sandbox\n"
+            "or set:\n"
+            "  BRYNHILD_DANGEROUSLY_SKIP_SANDBOX=true"
         )
-        return command, None
 
 
 def _get_seatbelt_command(
@@ -477,6 +491,22 @@ def _get_seatbelt_command(
     profile_path: _pathlib.Path | None = None,
 ) -> tuple[str, _pathlib.Path | None]:
     """macOS sandbox-exec implementation."""
+    import shutil as _shutil
+
+    # Check if sandbox-exec is available
+    if not _shutil.which("sandbox-exec"):
+        raise SandboxUnavailableError(
+            "macOS sandbox-exec not found.\n"
+            "\n"
+            "The 'sandbox-exec' command is required for sandbox protection on macOS.\n"
+            "This is normally included with macOS but may be missing or inaccessible.\n"
+            "\n"
+            "To run without sandbox protection (DANGEROUS - for testing only):\n"
+            "  --dangerously-skip-sandbox\n"
+            "or set:\n"
+            "  BRYNHILD_DANGEROUSLY_SKIP_SANDBOX=true"
+        )
+
     # Generate profile
     profile = generate_seatbelt_profile(config)
 
