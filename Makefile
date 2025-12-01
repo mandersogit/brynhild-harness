@@ -15,7 +15,7 @@
 PYTHON := ./local.venv/bin/python
 PIP := ./local.venv/bin/pip
 
-.PHONY: test test-fast test-integration test-system test-e2e test-live test-ollama test-cov lint typecheck format all clean help
+.PHONY: test test-fast test-integration test-system test-e2e test-live test-ollama test-cov lint typecheck typecheck-pyright format all clean help
 
 # Default target
 help:
@@ -32,10 +32,11 @@ help:
 	@echo "  make test-cov         Run tests with coverage report"
 	@echo ""
 	@echo "Code Quality:"
-	@echo "  make lint        Run ruff linter"
-	@echo "  make typecheck   Run mypy type checker"
-	@echo "  make format      Format code with ruff and black"
-	@echo "  make all         Run lint, typecheck, and all tests"
+	@echo "  make lint             Run ruff linter"
+	@echo "  make typecheck        Run mypy type checker"
+	@echo "  make typecheck-pyright Run pyright type checker"
+	@echo "  make format           Format code with ruff and black"
+	@echo "  make all              Run lint, typecheck, and all tests"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean       Remove build artifacts and coverage reports"
@@ -89,6 +90,10 @@ lint:
 # Type check with mypy
 typecheck:
 	$(PYTHON) -m mypy src/ --ignore-missing-imports
+
+# Type check with pyright (alternative)
+typecheck-pyright:
+	$(PYTHON) -m pyright src/
 
 # Format code
 format:

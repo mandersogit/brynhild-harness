@@ -51,9 +51,8 @@ coverage_html/
 # macOS
 .DS_Store
 
-# Reference materials (symlinks to copyrighted content)
-# The symlinks themselves are okay to track, but ensure the targets are not committed
-# reference/  # Uncomment if you want to exclude the symlinks too
+# Reference materials (external documentation, guides, etc.)
+reference/
 
 # Environment files (contain secrets)
 .env
