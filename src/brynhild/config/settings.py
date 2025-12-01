@@ -157,9 +157,9 @@ class Settings(_pydantic_settings.BaseSettings):
         return cls(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
     # Provider settings
-    provider: _typing.Literal["openrouter", "ollama", "vllm", "vertex"] = _pydantic.Field(
+    provider: str = _pydantic.Field(
         default="openrouter",
-        description="LLM provider to use. Supported: openrouter, ollama. Planned: vllm, vertex.",
+        description="LLM provider to use. Built-in: openrouter, ollama. Plugins can add more.",
     )
 
     model: str = _pydantic.Field(
