@@ -29,8 +29,8 @@ from brynhild.plugins.hooks import (
 from brynhild.plugins.loader import PluginLoader
 from brynhild.plugins.manifest import Plugin, PluginManifest
 from brynhild.plugins.providers import (
-    ProviderLoadError,
     ProviderLoader,
+    ProviderLoadError,
     get_all_plugin_providers,
     get_plugin_provider,
     load_all_plugin_providers,

@@ -268,7 +268,9 @@ async def _run_conversation(
 
     # Build conversation context with rules, skills, and profile
     # Pass tool_registry so prompt reflects which tools are actually available
-    base_prompt = core.get_system_prompt(settings.model, tool_registry=tool_registry)
+    # Use empty registry if tools disabled (prompt will say "no tools available")
+    prompt_registry = tool_registry if tool_registry is not None else tools.ToolRegistry()
+    base_prompt = core.get_system_prompt(settings.model, tool_registry=prompt_registry)
     context = core.build_context(
         base_prompt,
         project_root=settings.project_root,
@@ -372,7 +374,9 @@ def _handle_interactive_mode(
 
     # Build conversation context with rules, skills, and profile
     # Pass tool_registry so prompt reflects which tools are actually available
-    base_prompt = core.get_system_prompt(settings.model, tool_registry=tool_registry)
+    # Use empty registry if tools disabled (prompt will say "no tools available")
+    prompt_registry = tool_registry if tool_registry is not None else tools.ToolRegistry()
+    base_prompt = core.get_system_prompt(settings.model, tool_registry=prompt_registry)
     context = core.build_context(
         base_prompt,
         project_root=settings.project_root,

@@ -14,9 +14,7 @@ Also tests standalone fixtures:
 - Model profiles (test-model.yaml)
 """
 
-import os as _os
 import pathlib as _pathlib
-import unittest.mock as _mock
 
 import pytest as _pytest
 

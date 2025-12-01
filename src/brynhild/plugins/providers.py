@@ -68,7 +68,7 @@ def load_provider_module(
 
 def get_provider_class_from_module(
     module: _typing.Any,
-    expected_name: str | None = None,
+    expected_name: str | None = None,  # noqa: ARG001 - reserved for future use
 ) -> ProviderClass | None:
     """
     Find a Provider class in a loaded module.

@@ -2,11 +2,7 @@
 
 import pathlib as _pathlib
 import tempfile as _tempfile
-import typing as _typing
 
-import pytest as _pytest
-
-import brynhild.api.base as base
 import brynhild.plugins.manifest as manifest
 import brynhild.plugins.providers as providers
 

@@ -64,6 +64,29 @@ def test_chat_command_does_not_crash(self):
     # Explicitly just checking no exception
 ```
 
+### 4. Hacky Workarounds
+
+No clever tricks to silence linters or avoid proper fixes:
+
+```python
+# ❌ BAD - Underscore prefix to hide unused argument
+def __init__(self, model: str, **_kwargs: Any) -> None:
+    self._model = model
+
+# ✅ GOOD - Remove if not needed
+def __init__(self, model: str) -> None:
+    self._model = model
+
+# ✅ GOOD - Explicit noqa if intentionally unused (with reason)
+def __init__(self, model: str, **kwargs: Any) -> None:  # noqa: ARG002 - API compat
+    self._model = model
+```
+
+If lint complains about something, either:
+1. Fix the underlying issue
+2. Use explicit `# noqa: XXXX` with a reason comment
+3. Never use underscore prefixes or other tricks to hide problems
+
 ## Required Test Patterns
 
 ### 1. Test Specific Behavior

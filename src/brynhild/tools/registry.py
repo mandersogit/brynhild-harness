@@ -180,7 +180,7 @@ def build_registry_from_settings(
         return registry
 
     # Get set of specifically disabled tools
-    disabled_tools = getattr(settings, "get_disabled_tools", lambda: set())()
+    disabled_tools: set[str] = getattr(settings, "get_disabled_tools", lambda: set())()
 
     project_root = settings.project_root
     allowed_paths = settings.get_allowed_paths()

@@ -184,5 +184,5 @@ class TestBuiltinToolNames:
     def test_builtin_tool_names_contains_expected_tools(self) -> None:
         """Should contain all expected builtin tool names."""
         expected = {"Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect"}
-        assert tools.BUILTIN_TOOL_NAMES == expected
+        assert expected == tools.BUILTIN_TOOL_NAMES
 
