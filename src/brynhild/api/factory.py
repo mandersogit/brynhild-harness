@@ -12,6 +12,7 @@ import os as _os
 import typing as _typing
 
 import brynhild.api.base as base
+import brynhild.constants as _constants
 
 _logger = _logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def create_provider(
         import brynhild.api.openrouter_provider as openrouter_provider
 
         resolved_model = model or _os.environ.get(
-            "BRYNHILD_MODEL", "anthropic/claude-sonnet-4"
+            "BRYNHILD_MODEL", _constants.DEFAULT_MODEL
         )
         llm_provider = openrouter_provider.OpenRouterProvider(
             api_key=api_key or _os.environ.get("OPENROUTER_API_KEY"),
@@ -217,7 +218,7 @@ def get_available_providers(load_plugins: bool = True) -> list[dict[str, _typing
             "description": "OpenRouter (access to multiple model providers)",
             "key_env_var": "OPENROUTER_API_KEY",
             "key_configured": bool(_os.environ.get("OPENROUTER_API_KEY")),
-            "default_model": "anthropic/claude-sonnet-4",
+            "default_model": _constants.DEFAULT_MODEL,
             "available": True,
             "source": "builtin",
         },

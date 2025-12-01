@@ -5,6 +5,13 @@ This module provides a single source of truth for default values
 that are used across multiple modules.
 """
 
+# Provider/Model defaults
+DEFAULT_PROVIDER = "openrouter"
+"""Default LLM provider."""
+
+DEFAULT_MODEL = "openai/gpt-oss-120b"
+"""Default model in OpenRouter format."""
+
 # LLM interaction defaults
 DEFAULT_MAX_TOKENS = 8192
 """Default maximum tokens for LLM responses."""
