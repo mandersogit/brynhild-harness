@@ -38,6 +38,7 @@ class ConversationLogger:
         *,
         log_dir: _pathlib.Path | str | None = None,
         log_file: _pathlib.Path | str | None = None,
+        private_mode: bool = True,
         provider: str = "unknown",
         model: str = "unknown",
         enabled: bool = True,
@@ -46,8 +47,9 @@ class ConversationLogger:
         Initialize the conversation logger.
 
         Args:
-            log_dir: Directory for log files (default: /tmp/brynhild-logs).
+            log_dir: Directory for log files (default: /tmp/brynhild-logs-{user}).
             log_file: Explicit log file path (overrides log_dir + auto name).
+            private_mode: If True, set log directory to drwx------ (0o700).
             provider: LLM provider name.
             model: Model name.
             enabled: Whether logging is enabled.
@@ -73,6 +75,11 @@ class ConversationLogger:
 
             # Create directory if needed
             base_dir.mkdir(parents=True, exist_ok=True)
+
+            # Lock down permissions if private_mode (drwx------)
+            if private_mode:
+                import os as _os
+                _os.chmod(base_dir, 0o700)
 
             # Generate filename with timestamp
             filename = f"brynhild_{self._session_id}.jsonl"
