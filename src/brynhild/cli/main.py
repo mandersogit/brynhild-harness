@@ -257,8 +257,9 @@ async def _run_conversation(
     conv_logger: logging.ConversationLogger | None = None
     if should_log:
         conv_logger = logging.ConversationLogger(
-            log_dir=settings.log_dir,
+            log_dir=settings.logs_dir,
             log_file=log_file or settings.log_file,
+            private_mode=settings.log_dir_private,
             provider=settings.provider,
             model=settings.model,
             enabled=True,
@@ -365,8 +366,9 @@ def _handle_interactive_mode(
     conv_logger: logging.ConversationLogger | None = None
     if settings.log_conversations:
         conv_logger = logging.ConversationLogger(
-            log_dir=settings.log_dir,
+            log_dir=settings.logs_dir,
             log_file=settings.log_file,
+            private_mode=settings.log_dir_private,
             provider=settings.provider,
             model=settings.model,
             enabled=True,
@@ -629,7 +631,15 @@ def session_show(ctx: _click.Context, session_id: str, json_output: bool) -> Non
     """Show session details."""
     session_manager: session.SessionManager = ctx.obj["session_manager"]
 
-    sess = session_manager.load(session_id)
+    try:
+        sess = session_manager.load(session_id)
+    except session.InvalidSessionIdError as e:
+        if json_output:
+            _click.echo(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            _click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from None
+
     if not sess:
         if json_output:
             _click.echo(_json.dumps({"error": f"Session not found: {session_id}"}, indent=2))
@@ -664,7 +674,15 @@ def session_delete(ctx: _click.Context, session_id: str, json_output: bool, yes:
     """Delete a session."""
     session_manager: session.SessionManager = ctx.obj["session_manager"]
 
-    sess = session_manager.load(session_id)
+    try:
+        sess = session_manager.load(session_id)
+    except session.InvalidSessionIdError as e:
+        if json_output:
+            _click.echo(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            _click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from None
+
     if not sess:
         if json_output:
             _click.echo(_json.dumps({"error": f"Session not found: {session_id}"}, indent=2))
@@ -1220,7 +1238,7 @@ def logs_group() -> None:
 def logs_list(ctx: _click.Context, limit: int, json_output: bool) -> None:
     """List recent conversation log files."""
     settings: config.Settings = ctx.obj["settings"]
-    log_dir = _pathlib.Path(settings.log_dir)
+    log_dir = settings.logs_dir
 
     if not log_dir.exists():
         if json_output:
@@ -1279,7 +1297,7 @@ def logs_view(
     By default shows full content. Use --summary for truncated view.
     """
     settings: config.Settings = ctx.obj["settings"]
-    log_dir = _pathlib.Path(settings.log_dir)
+    log_dir = settings.logs_dir
 
     # Determine which file to view
     if log_file:

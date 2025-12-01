@@ -96,7 +96,7 @@ class TestConfigSessionIntegration:
             clear=False,
         ):
             # Load settings (without .env file)
-            settings = config.Settings(_env_file=None)  # type: ignore[call-arg]
+            settings = config.Settings.construct_without_dotenv()
 
             # Verify: Environment values used
             assert settings.provider == "ollama"
@@ -140,8 +140,8 @@ class TestConfigSessionIntegration:
         sessions_dir = tmp_path / "sessions"
         manager = session.SessionManager(sessions_dir)
 
-        # Try to load non-existent session
-        result = manager.load("nonexistent-session-id")
+        # Try to load non-existent session (valid format, but doesn't exist)
+        result = manager.load("zzzzzzzz")
 
         # Verify: Returns None, doesn't crash
         assert result is None

@@ -28,6 +28,77 @@ class TestGenerateSessionId:
         assert len(ids) == 100
 
 
+class TestValidateSessionId:
+    """Tests for session ID validation (path traversal prevention)."""
+
+    def test_valid_session_id(self) -> None:
+        """Valid session IDs pass validation."""
+        assert session.validate_session_id("abcd1234") == "abcd1234"
+        assert session.validate_session_id("00000000") == "00000000"
+        assert session.validate_session_id("zzzzzzzz") == "zzzzzzzz"
+
+    def test_generated_ids_are_valid(self) -> None:
+        """Generated session IDs always pass validation."""
+        for _ in range(100):
+            sid = session.generate_session_id()
+            assert session.validate_session_id(sid) == sid
+
+    def test_rejects_path_traversal(self) -> None:
+        """Rejects path traversal attempts."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("../../../etc/passwd")
+
+    def test_rejects_relative_path(self) -> None:
+        """Rejects relative paths."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("../foo")
+
+    def test_rejects_absolute_path(self) -> None:
+        """Rejects absolute paths."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("/etc/passwd")
+
+    def test_rejects_too_short(self) -> None:
+        """Rejects IDs that are too short."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc123")
+
+    def test_rejects_too_long(self) -> None:
+        """Rejects IDs that are too long."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abcd12345")
+
+    def test_rejects_uppercase(self) -> None:
+        """Rejects uppercase characters."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("ABCD1234")
+
+    def test_rejects_special_chars(self) -> None:
+        """Rejects special characters."""
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc-1234")
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc_1234")
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc.1234")
+
+    def test_manager_rejects_invalid_on_load(
+        self, tmp_path: _pathlib.Path
+    ) -> None:
+        """SessionManager.load rejects invalid session IDs."""
+        manager = session.SessionManager(tmp_path / "sessions")
+        with _pytest.raises(session.InvalidSessionIdError):
+            manager.load("../../../etc/passwd")
+
+    def test_manager_rejects_invalid_on_delete(
+        self, tmp_path: _pathlib.Path
+    ) -> None:
+        """SessionManager.delete rejects invalid session IDs."""
+        manager = session.SessionManager(tmp_path / "sessions")
+        with _pytest.raises(session.InvalidSessionIdError):
+            manager.delete("../malicious")
+
+
 class TestMessage:
     """Tests for Message dataclass."""
 
@@ -146,7 +217,8 @@ class TestSessionManager:
 
     def test_load_nonexistent(self, manager: session.SessionManager) -> None:
         """Loading nonexistent session returns None."""
-        loaded = manager.load("nonexistent")
+        # Use a valid format ID that doesn't exist
+        loaded = manager.load("zzzzzzzz")
         assert loaded is None
 
     def test_delete(self, manager: session.SessionManager) -> None:
@@ -159,7 +231,8 @@ class TestSessionManager:
 
     def test_delete_nonexistent(self, manager: session.SessionManager) -> None:
         """Deleting nonexistent session returns False."""
-        assert manager.delete("nonexistent") is False
+        # Use a valid format ID that doesn't exist
+        assert manager.delete("zzzzzzzz") is False
 
     def test_list_sessions(self, manager: session.SessionManager) -> None:
         """List all sessions."""

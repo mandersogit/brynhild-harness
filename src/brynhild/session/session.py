@@ -21,6 +21,37 @@ def generate_session_id() -> str:
     return "".join(_secrets.choice(alphabet) for _ in range(8))
 
 
+class InvalidSessionIdError(ValueError):
+    """Raised when a session ID has an invalid format."""
+
+    pass
+
+
+def validate_session_id(session_id: str) -> str:
+    """Validate session ID format to prevent path traversal attacks.
+
+    Session IDs must be exactly 8 lowercase alphanumeric characters.
+    This prevents path traversal attacks like '../../../etc/passwd'.
+
+    Args:
+        session_id: The session ID to validate.
+
+    Returns:
+        The validated session ID (unchanged if valid).
+
+    Raises:
+        InvalidSessionIdError: If the session ID format is invalid.
+    """
+    import re as _re
+
+    if not _re.match(r"^[a-z0-9]{8}$", session_id):
+        raise InvalidSessionIdError(
+            f"Invalid session ID: '{session_id}'. "
+            "Session IDs must be exactly 8 lowercase alphanumeric characters."
+        )
+    return session_id
+
+
 @_dataclasses.dataclass
 class Message:
     """A single message in the conversation."""
@@ -97,8 +128,8 @@ class Session:
     def create(
         cls,
         cwd: _pathlib.Path | str | None = None,
-        model: str = "claude-sonnet-4-20250514",
-        provider: str = "anthropic",
+        model: str = "openai/gpt-oss-120b",
+        provider: str = "openrouter",
     ) -> Session:
         """Create a new session."""
         now = _datetime.datetime.now(_datetime.UTC).isoformat()
@@ -182,7 +213,18 @@ class SessionManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def _session_path(self, session_id: str) -> _pathlib.Path:
-        """Get path to session file."""
+        """Get path to session file.
+
+        Args:
+            session_id: Validated session ID.
+
+        Returns:
+            Path to the session JSON file.
+
+        Raises:
+            InvalidSessionIdError: If session_id format is invalid.
+        """
+        validate_session_id(session_id)
         return self.sessions_dir / f"{session_id}.json"
 
     def save(self, session: Session) -> _pathlib.Path:
