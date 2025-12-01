@@ -35,6 +35,8 @@ __all__ = [
     "create_provider",
     "get_available_providers",
     "get_default_provider",
+    # Exceptions
+    "OpenRouterAPIError",
     # Types
     "CompletionResponse",
     "ContentBlock",
@@ -60,4 +62,8 @@ def __getattr__(name: str) -> _typing.Any:
         from brynhild.api.ollama_provider import OllamaProvider
 
         return OllamaProvider
+    if name == "OpenRouterAPIError":
+        from brynhild.api.openrouter_provider import OpenRouterAPIError
+
+        return OpenRouterAPIError
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

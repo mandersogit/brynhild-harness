@@ -17,6 +17,62 @@ import brynhild.api.base as base
 import brynhild.api.types as types
 import brynhild.constants as _constants
 
+
+class OpenRouterAPIError(Exception):
+    """Error from OpenRouter API with structured information."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_type = error_type
+
+
+def _translate_http_error(error: _httpx.HTTPStatusError) -> OpenRouterAPIError:
+    """Translate an httpx HTTP error to a user-friendly error message."""
+    status = error.response.status_code
+
+    # Try to parse error body for more details
+    error_detail = ""
+    error_type = None
+    try:
+        body = error.response.json()
+        if "error" in body:
+            err = body["error"]
+            error_detail = err.get("message", "")
+            error_type = err.get("type")
+    except Exception:
+        error_detail = error.response.text[:200] if error.response.text else ""
+
+    # Map common status codes to user-friendly messages
+    if status == 400:
+        msg = f"Bad request: {error_detail or 'Invalid request parameters'}"
+    elif status == 401:
+        msg = "Authentication failed. Check your OPENROUTER_API_KEY."
+    elif status == 402:
+        msg = "Payment required. Check your OpenRouter account balance or limits."
+    elif status == 403:
+        msg = f"Access forbidden: {error_detail or 'Model may not be available for your account'}"
+    elif status == 404:
+        msg = f"Not found: {error_detail or 'Invalid endpoint or model not found'}"
+    elif status == 429:
+        msg = "Rate limit exceeded. Please wait and retry."
+    elif status == 500:
+        msg = "OpenRouter server error. Please try again later."
+    elif status == 502:
+        msg = "OpenRouter gateway error. The upstream model provider may be unavailable."
+    elif status == 503:
+        msg = "OpenRouter service temporarily unavailable. Please try again later."
+    else:
+        msg = f"HTTP {status}: {error_detail or str(error)}"
+
+    return OpenRouterAPIError(msg, status_code=status, error_type=error_type)
+
+
 # Popular models available on OpenRouter (November 2025)
 # Model IDs verified against OpenRouter API
 OPENROUTER_MODELS = {
@@ -103,7 +159,7 @@ class OpenRouterProvider(base.LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "anthropic/claude-sonnet-4",
+        model: str = "openai/gpt-oss-120b",
         site_url: str = "https://example.com/brynhild",
         site_name: str = "Brynhild",
         require_data_policy: bool = True,
@@ -227,9 +283,16 @@ class OpenRouterProvider(base.LLMProvider):
             stream=False,
         )
 
-        response = await self._client.post("/chat/completions", json=payload)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = await self._client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except _httpx.HTTPStatusError as e:
+            raise _translate_http_error(e) from e
+        except _httpx.RequestError as e:
+            raise OpenRouterAPIError(
+                f"Network error connecting to OpenRouter: {e}"
+            ) from e
 
         return self._parse_response(data)
 
@@ -260,108 +323,115 @@ class OpenRouterProvider(base.LLMProvider):
         # Track accumulated tool calls
         tool_calls: dict[int, dict[str, _typing.Any]] = {}
 
-        async with self._client.stream("POST", "/chat/completions", json=payload) as response:
-            response.raise_for_status()
+        try:
+            async with self._client.stream("POST", "/chat/completions", json=payload) as response:
+                response.raise_for_status()
 
-            yield types.StreamEvent(type="message_start")
+                yield types.StreamEvent(type="message_start")
 
-            async for line in response.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
 
-                data_str = line[6:]  # Remove "data: " prefix
+                    data_str = line[6:]  # Remove "data: " prefix
 
-                if data_str == "[DONE]":
-                    # Emit final tool use events if any
-                    for tool_call in tool_calls.values():
-                        if tool_call.get("function"):
-                            try:
-                                parsed_args = _json.loads(
-                                    tool_call["function"].get("arguments", "{}")
+                    if data_str == "[DONE]":
+                        # Emit final tool use events if any
+                        for tool_call in tool_calls.values():
+                            if tool_call.get("function"):
+                                try:
+                                    parsed_args = _json.loads(
+                                        tool_call["function"].get("arguments", "{}")
+                                    )
+                                except _json.JSONDecodeError:
+                                    parsed_args = {}
+
+                                yield types.StreamEvent(
+                                    type="content_stop",
+                                    tool_use=types.ToolUse(
+                                        id=tool_call.get("id", ""),
+                                        name=tool_call["function"].get("name", ""),
+                                        input=parsed_args,
+                                    ),
                                 )
-                            except _json.JSONDecodeError:
-                                parsed_args = {}
 
+                        yield types.StreamEvent(type="message_stop")
+                        break
+
+                    try:
+                        data = _json.loads(data_str)
+                    except _json.JSONDecodeError:
+                        continue
+
+                    # Process the chunk
+                    for choice in data.get("choices", []):
+                        delta = choice.get("delta", {})
+
+                        # Reasoning/thinking content (various model formats)
+                        # DeepSeek uses "reasoning_content", some use "reasoning"
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                        if reasoning:
                             yield types.StreamEvent(
-                                type="content_stop",
-                                tool_use=types.ToolUse(
-                                    id=tool_call.get("id", ""),
-                                    name=tool_call["function"].get("name", ""),
-                                    input=parsed_args,
-                                ),
+                                type="thinking_delta",
+                                thinking=reasoning,
                             )
 
-                    yield types.StreamEvent(type="message_stop")
-                    break
+                        # Text content
+                        if "content" in delta and delta["content"]:
+                            yield types.StreamEvent(
+                                type="text_delta",
+                                text=delta["content"],
+                            )
 
-                try:
-                    data = _json.loads(data_str)
-                except _json.JSONDecodeError:
-                    continue
+                        # Tool calls
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                idx = tc.get("index", 0)
 
-                # Process the chunk
-                for choice in data.get("choices", []):
-                    delta = choice.get("delta", {})
+                                if idx not in tool_calls:
+                                    tool_calls[idx] = {
+                                        "id": tc.get("id", ""),
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                    yield types.StreamEvent(type="tool_use_start")
 
-                    # Reasoning/thinking content (various model formats)
-                    # DeepSeek uses "reasoning_content", some use "reasoning"
-                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-                    if reasoning:
-                        yield types.StreamEvent(
-                            type="thinking_delta",
-                            thinking=reasoning,
-                        )
+                                if "id" in tc and tc["id"]:
+                                    tool_calls[idx]["id"] = tc["id"]
 
-                    # Text content
-                    if "content" in delta and delta["content"]:
-                        yield types.StreamEvent(
-                            type="text_delta",
-                            text=delta["content"],
-                        )
+                                if "function" in tc:
+                                    func = tc["function"]
+                                    if "name" in func:
+                                        tool_calls[idx]["function"]["name"] = func["name"]
+                                    if "arguments" in func:
+                                        tool_calls[idx]["function"]["arguments"] += func["arguments"]
+                                        yield types.StreamEvent(
+                                            type="tool_use_delta",
+                                            tool_input_delta=func["arguments"],
+                                        )
 
-                    # Tool calls
-                    if "tool_calls" in delta:
-                        for tc in delta["tool_calls"]:
-                            idx = tc.get("index", 0)
+                        # Finish reason
+                        if choice.get("finish_reason"):
+                            yield types.StreamEvent(
+                                type="message_delta",
+                                stop_reason=choice["finish_reason"],
+                            )
 
-                            if idx not in tool_calls:
-                                tool_calls[idx] = {
-                                    "id": tc.get("id", ""),
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                                yield types.StreamEvent(type="tool_use_start")
-
-                            if "id" in tc and tc["id"]:
-                                tool_calls[idx]["id"] = tc["id"]
-
-                            if "function" in tc:
-                                func = tc["function"]
-                                if "name" in func:
-                                    tool_calls[idx]["function"]["name"] = func["name"]
-                                if "arguments" in func:
-                                    tool_calls[idx]["function"]["arguments"] += func["arguments"]
-                                    yield types.StreamEvent(
-                                        type="tool_use_delta",
-                                        tool_input_delta=func["arguments"],
-                                    )
-
-                    # Finish reason
-                    if choice.get("finish_reason"):
+                    # Usage info
+                    if "usage" in data:
+                        usage_data = data["usage"]
                         yield types.StreamEvent(
                             type="message_delta",
-                            stop_reason=choice["finish_reason"],
+                            usage=types.Usage(
+                                input_tokens=usage_data.get("prompt_tokens", 0),
+                                output_tokens=usage_data.get("completion_tokens", 0),
+                            ),
                         )
-
-                # Usage info
-                if "usage" in data:
-                    usage_data = data["usage"]
-                    yield types.StreamEvent(
-                        type="message_delta",
-                        usage=types.Usage(
-                            input_tokens=usage_data.get("prompt_tokens", 0),
-                            output_tokens=usage_data.get("completion_tokens", 0),
-                        ),
-                    )
+        except _httpx.HTTPStatusError as e:
+            raise _translate_http_error(e) from e
+        except _httpx.RequestError as e:
+            raise OpenRouterAPIError(
+                f"Network error connecting to OpenRouter: {e}"
+            ) from e
 
     def _build_payload(
         self,
