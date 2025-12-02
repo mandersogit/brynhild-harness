@@ -1,0 +1,12 @@
+# Example Calculator Plugin
+#
+# This plugin demonstrates how to create a Brynhild plugin with a custom tool.
+# See docs/plugin-development-guide.md for the full guide.
+
+name: calculator
+version: 1.0.0
+description: A calculator tool for evaluating mathematical expressions
+
+tools:
+  - calculator
+
