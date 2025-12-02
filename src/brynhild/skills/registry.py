@@ -14,6 +14,9 @@ import brynhild.skills.discovery as discovery
 import brynhild.skills.loader as loader
 import brynhild.skills.skill as skill_module
 
+if _typing.TYPE_CHECKING:
+    import brynhild.plugins.manifest as _manifest
+
 
 class SkillRegistry:
     """
@@ -29,6 +32,7 @@ class SkillRegistry:
         self,
         project_root: _pathlib.Path | None = None,
         search_paths: list[_pathlib.Path] | None = None,
+        plugins: list[_manifest.Plugin] | None = None,
     ) -> None:
         """
         Initialize the skill registry.
@@ -36,9 +40,13 @@ class SkillRegistry:
         Args:
             project_root: Project root for skill discovery.
             search_paths: Custom search paths (overrides defaults).
+            plugins: List of enabled plugins to include skills from.
         """
         self._project_root = project_root
-        self._discovery = discovery.SkillDiscovery(project_root, search_paths)
+        self._plugins = plugins
+        self._discovery = discovery.SkillDiscovery(
+            project_root, search_paths, plugins=plugins
+        )
         self._loader = loader.SkillLoader()
         self._skills: dict[str, skill_module.Skill] | None = None
 
