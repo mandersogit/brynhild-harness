@@ -48,7 +48,8 @@ class GlobTool(base.Tool, base.SandboxMixin):
             "Searches are restricted to the project directory."
         )
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {

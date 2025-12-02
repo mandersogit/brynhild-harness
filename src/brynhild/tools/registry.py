@@ -312,22 +312,48 @@ def _load_plugin_tools(
                             tool_name,
                             plugin.name,
                         )
+                    except AttributeError as e:
+                        _logger.error(
+                            "Failed to load tool '%s' from plugin '%s':\n"
+                            "  %s\n\n"
+                            "  This usually means the tool doesn't implement the required interface.\n"
+                            "  Required: @property name, @property description, @property input_schema, execute()\n\n"
+                            "  See: docs/plugin-tool-interface.md",
+                            tool_name,
+                            plugin.name,
+                            e,
+                        )
+                    except TypeError as e:
+                        _logger.error(
+                            "Failed to instantiate tool '%s' from plugin '%s':\n"
+                            "  %s\n\n"
+                            "  Check that the Tool class has a no-argument __init__ or compatible signature.\n\n"
+                            "  See: docs/plugin-tool-interface.md",
+                            tool_name,
+                            plugin.name,
+                            e,
+                        )
                     except Exception as e:
-                        _logger.warning(
-                            "Failed to instantiate tool '%s' from plugin '%s': %s",
+                        _logger.error(
+                            "Failed to load tool '%s' from plugin '%s':\n"
+                            "  %s\n\n"
+                            "  See: docs/plugin-tool-interface.md",
                             tool_name,
                             plugin.name,
                             e,
                         )
             except Exception as e:
-                _logger.warning(
-                    "Failed to load tools from plugin '%s': %s",
+                _logger.error(
+                    "Failed to load tools from plugin '%s':\n"
+                    "  %s\n\n"
+                    "  Check that plugin.yaml lists valid tool files in the tools/ directory.\n\n"
+                    "  See: docs/plugin-development-guide.md",
                     plugin.name,
                     e,
                 )
     except Exception as e:
         # Log but don't fail - builtin tools still work
-        _logger.warning("Failed to load plugin tools: %s", e)
+        _logger.warning("Plugin tool loading failed: %s", e)
 
 
 # Builtin tool names for reference

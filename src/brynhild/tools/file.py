@@ -51,7 +51,8 @@ class FileReadTool(base.Tool, base.SandboxMixin):
             "Use offset and limit for partial reads of large files."
         )
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {
@@ -193,7 +194,8 @@ class FileWriteTool(base.Tool, base.SandboxMixin):
             "Creates parent directories as needed. Overwrites existing content."
         )
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {
@@ -311,7 +313,8 @@ class FileEditTool(base.Tool, base.SandboxMixin):
             "appear exactly once in the file. Use replace_all to replace all occurrences."
         )
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {

@@ -272,7 +272,7 @@ class ConversationProcessor:
                 api_types.Tool(
                     name=tool.name,
                     description=tool.description,
-                    input_schema=tool.get_input_schema(),
+                    input_schema=tool.input_schema,
                 )
             )
         return tools if tools else None

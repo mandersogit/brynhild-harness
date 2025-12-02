@@ -42,9 +42,9 @@ class Tool(_abc.ABC):
     Abstract base class for all tools.
 
     Subclasses must implement:
-    - name: The tool's identifier (used in API calls)
-    - description: Human-readable description for the LLM
-    - get_input_schema(): JSON schema for input validation
+    - name (property): The tool's identifier (used in API calls)
+    - description (property): Human-readable description for the LLM
+    - input_schema (property): JSON schema for input validation
     - execute(): The actual tool implementation
     """
 
@@ -60,10 +60,11 @@ class Tool(_abc.ABC):
         """Human-readable description for the LLM."""
         ...
 
+    @property
     @_abc.abstractmethod
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    def input_schema(self) -> dict[str, _typing.Any]:
         """
-        Return JSON schema for tool input.
+        JSON schema for tool input.
 
         This schema is sent to the LLM to describe what parameters
         the tool accepts.
@@ -106,7 +107,7 @@ class Tool(_abc.ABC):
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.get_input_schema(),
+            "input_schema": self.input_schema,
         }
 
     def to_openai_format(self) -> dict[str, _typing.Any]:
@@ -120,7 +121,7 @@ class Tool(_abc.ABC):
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.get_input_schema(),
+                "parameters": self.input_schema,
             },
         }
 

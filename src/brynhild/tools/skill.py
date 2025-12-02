@@ -62,7 +62,8 @@ class LearnSkillTool(base.Tool):
         """
         self._registry = skill_registry
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {

@@ -761,7 +761,7 @@ def tools_schema(tool_name: str) -> None:
     schema = {
         "name": tool.name,
         "description": tool.description,
-        "input_schema": tool.get_input_schema(),
+        "input_schema": tool.input_schema,
     }
 
     _click.echo(_json.dumps(schema, indent=2))
@@ -1758,6 +1758,86 @@ def plugin_show(ctx: _click.Context, name: str, json_output: bool) -> None:
         _click.echo(f"  Tools: {plugin.manifest.tools or '(none)'}")
         _click.echo(f"  Hooks: {'yes' if plugin.manifest.hooks else 'no'}")
         _click.echo(f"  Skills: {plugin.manifest.skills or '(none)'}")
+
+
+@plugin_group.command(name="paths")
+@_click.option("--json", "json_output", is_flag=True, help="JSON output")
+@_click.pass_context
+def plugin_paths(ctx: _click.Context, json_output: bool) -> None:
+    """Show plugin discovery paths and how they're configured."""
+    import os as _os
+
+    import brynhild.plugins as plugins
+
+    settings: config.Settings = ctx.obj["settings"]
+    search_paths = plugins.get_plugin_search_paths(settings.project_root)
+
+    if json_output:
+        data = {
+            "search_paths": [
+                {
+                    "path": str(p),
+                    "exists": p.exists(),
+                    "source": _get_path_source(p, settings),
+                }
+                for p in search_paths
+            ],
+            "env_vars": {
+                "BRYNHILD_PLUGIN_PATH": _os.environ.get("BRYNHILD_PLUGIN_PATH", ""),
+                "BRYNHILD_ENABLED_PLUGINS": _os.environ.get(
+                    "BRYNHILD_ENABLED_PLUGINS", ""
+                ),
+            },
+        }
+        _click.echo(_json.dumps(data, indent=2))
+    else:
+        _click.echo("Plugin Discovery Paths (searched in order):")
+        _click.echo()
+        for i, path in enumerate(search_paths, 1):
+            exists = "✓ exists" if path.exists() else "✗ not found"
+            source = _get_path_source(path, settings)
+            _click.echo(f"  {i}. {path}")
+            _click.echo(f"     [{exists}] ({source})")
+            _click.echo()
+
+        _click.echo("Environment Variables:")
+        plugin_path = _os.environ.get("BRYNHILD_PLUGIN_PATH", "")
+        enabled = _os.environ.get("BRYNHILD_ENABLED_PLUGINS", "")
+        _click.echo(f"  BRYNHILD_PLUGIN_PATH: {plugin_path or '(not set)'}")
+        _click.echo(f"  BRYNHILD_ENABLED_PLUGINS: {enabled or '(not set)'}")
+        _click.echo()
+        _click.echo("Notes:")
+        _click.echo("  - Plugins are discovered in order; first match wins")
+        _click.echo("  - Set BRYNHILD_PLUGIN_PATH to add custom paths (colon-separated)")
+        _click.echo("  - Set BRYNHILD_ENABLED_PLUGINS to filter which plugins load")
+
+
+def _get_path_source(path: _pathlib.Path, settings: _typing.Any) -> str:
+    """Determine the source/reason for a plugin path."""
+    import os as _os
+
+    path_str = str(path)
+
+    # Check if from environment variable
+    env_path = _os.environ.get("BRYNHILD_PLUGIN_PATH", "")
+    if env_path:
+        for p in env_path.split(":"):
+            if p and path_str == str(_pathlib.Path(p).expanduser().resolve()):
+                return "from BRYNHILD_PLUGIN_PATH"
+
+    # Check if global plugins dir
+    global_dir = _pathlib.Path.home() / ".config" / "brynhild" / "plugins"
+    if path == global_dir:
+        return "global plugins directory"
+
+    # Check if project plugins dir
+    project_root = getattr(settings, "project_root", None)
+    if project_root:
+        project_plugins = project_root / ".brynhild" / "plugins"
+        if path == project_plugins:
+            return "project plugins directory"
+
+    return "configured"
 
 
 @plugin_group.command(name="enable")

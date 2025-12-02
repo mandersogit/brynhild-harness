@@ -67,7 +67,8 @@ class InspectTool(base.Tool, base.SandboxMixin):
             "largest file (sort_by='size', reverse=true, filter='files')"
         )
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {
