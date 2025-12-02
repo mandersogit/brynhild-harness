@@ -104,11 +104,11 @@ class TestPluginToolsLoadedIntoRegistry:
         marker_tool = tool_registry.get("marker")
         assert marker_tool is not None, "marker tool not found in registry"
 
-        result = await marker_tool.execute(message="integration test")
+        result = await marker_tool.execute({"message": "integration test"})
 
-        assert result["success"] is True
-        assert "[PLUGIN-TOOL-MARKER]" in result["output"]
-        assert "integration test" in result["output"]
+        assert result.success is True
+        assert "[PLUGIN-TOOL-MARKER]" in result.output
+        assert "integration test" in result.output
 
     def test_plugin_tools_appear_in_api_format(self, tmp_path: _pathlib.Path) -> None:
         """Plugin tools should appear in to_api_format() output (for system prompt)."""

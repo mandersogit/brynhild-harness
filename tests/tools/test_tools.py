@@ -135,7 +135,7 @@ class TestBashTool:
     def test_schema(self) -> None:
         """Should have valid input schema."""
         tool = tools.BashTool()
-        schema = tool.get_input_schema()
+        schema = tool.input_schema
 
         assert schema["type"] == "object"
         assert "command" in schema["properties"]

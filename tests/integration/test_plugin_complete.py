@@ -86,8 +86,10 @@ class TestCompletePluginTools:
 
         assert "marker" in loaded
         tool_cls = loaded["marker"]
-        assert tool_cls.name == "marker"
-        assert "marker" in tool_cls.description.lower()
+        # Instantiate to access properties
+        tool_instance = tool_cls()
+        assert tool_instance.name == "marker"
+        assert "marker" in tool_instance.description.lower()
 
     @_pytest.mark.asyncio
     async def test_marker_tool_executes(self) -> None:
@@ -98,11 +100,11 @@ class TestCompletePluginTools:
         loaded = loader.load_from_plugin(TEST_COMPLETE_PLUGIN, "test-complete")
 
         tool = loaded["marker"]()
-        result = await tool.execute(message="test")
+        result = await tool.execute({"message": "test"})
 
-        assert result["success"] is True
-        assert "[PLUGIN-TOOL-MARKER]" in result["output"]
-        assert "test" in result["output"]
+        assert result.success is True
+        assert "[PLUGIN-TOOL-MARKER]" in result.output
+        assert "test" in result.output
 
 
 class TestCompletePluginProviders:

@@ -31,7 +31,7 @@ class TestInspectTool:
     def test_input_schema(self) -> None:
         """Schema defines expected operations."""
         tool = inspect_tool.InspectTool()
-        schema = tool.get_input_schema()
+        schema = tool.input_schema
         assert schema["type"] == "object"
         assert "operation" in schema["properties"]
         ops = schema["properties"]["operation"]["enum"]

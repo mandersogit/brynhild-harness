@@ -73,7 +73,7 @@ class TestLearnSkillToolBasics:
         """Schema should have all expected parameters."""
         registry = skills.SkillRegistry(project_root=tmp_path)
         tool = skill_tool.LearnSkillTool(skill_registry=registry)
-        schema = tool.get_input_schema()
+        schema = tool.input_schema
 
         assert schema["type"] == "object"
         props = schema["properties"]

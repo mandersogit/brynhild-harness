@@ -494,7 +494,8 @@ class MockTool(tools_base.Tool):
     def requires_permission(self) -> bool:
         return self._requires_permission
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
             "properties": {
@@ -536,7 +537,8 @@ class FailingTool(tools_base.Tool):
     def requires_permission(self) -> bool:
         return False
 
-    def get_input_schema(self) -> dict[str, _typing.Any]:
+    @property
+    def input_schema(self) -> dict[str, _typing.Any]:
         return {"type": "object", "properties": {}}
 
     async def execute(self, input: dict[str, _typing.Any]) -> tools_base.ToolResult:  # noqa: ARG002

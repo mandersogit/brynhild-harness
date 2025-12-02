@@ -27,7 +27,8 @@ class MockTool(tools_base.Tool):
     def requires_permission(self) -> bool:
         return False  # Don't require permission for tests
 
-    def get_input_schema(self) -> dict:
+    @property
+    def input_schema(self) -> dict:
         return {
             "type": "object",
             "properties": {
