@@ -9,22 +9,29 @@ exec "$PROJECT_ROOT/local.venv/bin/python" "$0" "$@"
 '''
 
 """
-Commit helper tool for managing commits across brynhild and brynhild-public.
+Commit helper for brynhild repositories.
+
+Manages commits across the development repo and public repo via YAML plans.
 
 Usage:
-    ./scripts/commit-helper --dry-run workflow/commits/plan.yaml
-    ./scripts/commit-helper --execute workflow/commits/plan.yaml
-    ./scripts/commit-helper --sync-public workflow/commits/plan.yaml
+    ./scripts/commit-helper plan.yaml                    # Preview
+    ./scripts/commit-helper plan.yaml --execute          # Execute in source repo
+    ./scripts/commit-helper plan.yaml --sync-public      # Sync to public repo
 """
 
-import argparse as _argparse
 import pathlib as _pathlib
 import shutil as _shutil
 import subprocess as _subprocess
 import sys as _sys
 import typing as _typing
 
+import click as _click
 import yaml as _yaml
+
+
+# Default repository paths for brynhild
+DEFAULT_SOURCE_REPO = _pathlib.Path("/Users/manderso/git/github/brynhild")
+DEFAULT_PUBLIC_REPO = _pathlib.Path("/Users/manderso/git/github/brynhild-public")
 
 
 def _run_git(
@@ -35,9 +42,9 @@ def _run_git(
     """Run a git command."""
     cmd = ["git"] + args
     if dry_run:
-        print(f"  [DRY-RUN] {' '.join(cmd)}")
+        _click.echo(f"  [DRY-RUN] {' '.join(cmd)}")
         return _subprocess.CompletedProcess(cmd, 0, "", "")
-    
+
     result = _subprocess.run(
         cmd,
         cwd=cwd,
@@ -45,8 +52,8 @@ def _run_git(
         text=True,
     )
     if result.returncode != 0:
-        print(f"  ERROR: git {' '.join(args)}")
-        print(f"  {result.stderr}")
+        _click.echo(f"  ERROR: git {' '.join(args)}", err=True)
+        _click.echo(f"  {result.stderr}", err=True)
         _sys.exit(1)
     return result
 
@@ -70,88 +77,126 @@ def _load_plan(plan_path: _pathlib.Path) -> dict[str, _typing.Any]:
         return _yaml.safe_load(f)
 
 
-def _get_repo_paths(plan: dict[str, _typing.Any]) -> tuple[_pathlib.Path, _pathlib.Path]:
-    """Get source and destination repo paths from plan or defaults."""
-    src = _pathlib.Path(plan.get("source_repo", "/Users/manderso/git/github/brynhild"))
-    dst = _pathlib.Path(plan.get("public_repo", "/Users/manderso/git/github/brynhild-public"))
+def _get_repo_paths(
+    plan: dict[str, _typing.Any],
+) -> tuple[_pathlib.Path, _pathlib.Path]:
+    """Get source and public repo paths from plan or defaults."""
+    src = _pathlib.Path(plan.get("source_repo", DEFAULT_SOURCE_REPO))
+    dst = _pathlib.Path(plan.get("public_repo", DEFAULT_PUBLIC_REPO))
     return src, dst
 
 
-def cmd_dry_run(plan_path: _pathlib.Path) -> None:
+@_click.group(invoke_without_command=True)
+@_click.argument("plan_file", type=_click.Path(exists=True, path_type=_pathlib.Path))
+@_click.pass_context
+def cli(ctx: _click.Context, plan_file: _pathlib.Path) -> None:
+    """
+    Commit helper for brynhild repositories.
+
+    Manages commits across development and public repos via YAML plans.
+
+    \b
+    By default (no subcommand), shows a preview of the plan.
+    Use subcommands to execute or sync.
+
+    \b
+    Examples:
+        ./scripts/commit-helper plan.yaml                    # Preview
+        ./scripts/commit-helper plan.yaml execute            # Execute commits
+        ./scripts/commit-helper plan.yaml execute --dry-run  # Show what execute would do
+        ./scripts/commit-helper plan.yaml sync-public        # Sync to public repo
+    """
+    ctx.ensure_object(dict)
+    ctx.obj["plan_file"] = plan_file
+
+    # If no subcommand, show preview
+    if ctx.invoked_subcommand is None:
+        _preview(plan_file)
+
+
+def _preview(plan_path: _pathlib.Path) -> None:
     """Show what would happen without executing."""
     plan = _load_plan(plan_path)
     src_repo, dst_repo = _get_repo_paths(plan)
-    
-    print(f"=== Commit Plan: {plan_path.name} ===")
-    print(f"Source repo: {src_repo}")
-    print(f"Public repo: {dst_repo}")
-    print(f"Commits: {len(plan.get('commits', []))}")
-    print()
-    
+
+    _click.echo(f"=== Commit Plan: {plan_path.name} ===")
+    _click.echo(f"Source repo: {src_repo}")
+    _click.echo(f"Public repo: {dst_repo}")
+    _click.echo(f"Commits: {len(plan.get('commits', []))}")
+    _click.echo()
+
     # Validate all files exist
     all_files: set[str] = set()
     for commit in plan.get("commits", []):
         all_files.update(commit.get("files", []))
-    
+
     missing = _validate_files(list(all_files), src_repo)
     if missing:
-        print("ERROR: Missing files in source repo:")
+        _click.echo("ERROR: Missing files in source repo:", err=True)
         for f in missing:
-            print(f"  - {f}")
+            _click.echo(f"  - {f}", err=True)
         _sys.exit(1)
-    
-    print(f"✓ All {len(all_files)} files exist in source repo")
-    print()
-    
+
+    _click.echo(_click.style(f"✓ All {len(all_files)} files exist in source repo", fg="green"))
+    _click.echo()
+
     # Show each commit
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg_lines = commit["message"].strip().split("\n")
         title = msg_lines[0]
         files = commit.get("files", [])
-        
-        print(f"--- Commit {i}: {title} ---")
-        print(f"Files ({len(files)}):")
+
+        _click.echo(f"--- Commit {i}: {title} ---")
+        _click.echo(f"Files ({len(files)}):")
         for f in files[:5]:
-            print(f"  + {f}")
+            _click.echo(f"  + {f}")
         if len(files) > 5:
-            print(f"  ... and {len(files) - 5} more")
-        print()
+            _click.echo(f"  ... and {len(files) - 5} more")
+        _click.echo()
 
 
-def cmd_execute(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
-    """Execute commits in the source (main) repo."""
+@cli.command()
+@_click.option(
+    "--dry-run", "-n",
+    is_flag=True,
+    help="Show what would happen without committing",
+)
+@_click.pass_context
+def execute(ctx: _click.Context, dry_run: bool) -> None:
+    """Execute commits in the source (development) repository."""
+    plan_path: _pathlib.Path = ctx.obj["plan_file"]
     plan = _load_plan(plan_path)
     src_repo, _ = _get_repo_paths(plan)
-    
-    print(f"=== Executing commits in {src_repo} ===")
+
+    _click.echo(f"=== Executing commits in {src_repo} ===")
     if dry_run:
-        print("(DRY RUN - no changes will be made)")
-    print()
-    
+        _click.echo("(DRY RUN - no changes will be made)")
+    _click.echo()
+
     # Validate all files exist
     all_files: set[str] = set()
     for commit in plan.get("commits", []):
         all_files.update(commit.get("files", []))
-    
+
     missing = _validate_files(list(all_files), src_repo)
     if missing:
-        print("ERROR: Missing files:")
+        _click.echo("ERROR: Missing files:", err=True)
         for f in missing:
-            print(f"  - {f}")
+            _click.echo(f"  - {f}", err=True)
         _sys.exit(1)
-    
+
     # Execute each commit
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
         title = msg.split("\n")[0]
-        
-        print(f">>> Commit {i}: {title}")
-        
+
+        _click.echo(f">>> Commit {i}: {title}")
+
         # Stage files
         for f in files:
             _run_git(["add", f], src_repo, dry_run)
-        
+
         # Check if there are staged changes
         if not dry_run:
             result = _subprocess.run(
@@ -159,58 +204,67 @@ def cmd_execute(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
                 cwd=src_repo,
             )
             if result.returncode == 0:
-                print("  (no changes to commit, skipping)")
+                _click.echo("  (no changes to commit, skipping)")
                 continue
-        
+
         # Commit
         _run_git(["commit", "-m", msg], src_repo, dry_run)
-        print()
-    
-    print("=== Done ===")
+        _click.echo()
+
+    _click.echo("=== Done ===")
     if not dry_run:
-        _run_git(["log", "--oneline", f"-{len(plan.get('commits', []))}"], src_repo, dry_run)
+        commit_count = len(plan.get("commits", []))
+        _run_git(["log", "--oneline", f"-{commit_count}"], src_repo, dry_run)
 
 
-def cmd_sync_public(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
-    """Copy files and create matching commits in public repo."""
+@cli.command("sync-public")
+@_click.option(
+    "--dry-run", "-n",
+    is_flag=True,
+    help="Show what would happen without committing",
+)
+@_click.pass_context
+def sync_public(ctx: _click.Context, dry_run: bool) -> None:
+    """Copy files and create matching commits in the public repository."""
+    plan_path: _pathlib.Path = ctx.obj["plan_file"]
     plan = _load_plan(plan_path)
     src_repo, dst_repo = _get_repo_paths(plan)
-    
-    print(f"=== Syncing to {dst_repo} ===")
+
+    _click.echo(f"=== Syncing to {dst_repo} ===")
     if dry_run:
-        print("(DRY RUN - no changes will be made)")
-    print()
-    
+        _click.echo("(DRY RUN - no changes will be made)")
+    _click.echo()
+
     if not dst_repo.exists():
-        print(f"ERROR: Public repo not found: {dst_repo}")
+        _click.echo(f"ERROR: Public repo not found: {dst_repo}", err=True)
         _sys.exit(1)
-    
+
     # Execute each commit
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
         title = msg.split("\n")[0]
-        
-        print(f">>> Commit {i}: {title}")
-        
+
+        _click.echo(f">>> Commit {i}: {title}")
+
         # Copy files
         for f in files:
             src_path = src_repo / f
             dst_path = dst_repo / f
-            
+
             if not src_path.exists():
-                print(f"  WARNING: Source file missing: {f}")
+                _click.echo(f"  WARNING: Source file missing: {f}")
                 continue
-            
+
             # Create parent directories
             if not dry_run:
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 _shutil.copy2(src_path, dst_path)
-            print(f"  [COPY] {f}")
-        
+            _click.echo(f"  [COPY] {f}")
+
         # Stage all changes
         _run_git(["add", "-A"], dst_repo, dry_run)
-        
+
         # Check if there are staged changes
         if not dry_run:
             result = _subprocess.run(
@@ -218,80 +272,18 @@ def cmd_sync_public(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
                 cwd=dst_repo,
             )
             if result.returncode == 0:
-                print("  (no changes to commit, skipping)")
+                _click.echo("  (no changes to commit, skipping)")
                 continue
-        
+
         # Commit
         _run_git(["commit", "-m", msg], dst_repo, dry_run)
-        print()
-    
-    print("=== Done ===")
+        _click.echo()
+
+    _click.echo("=== Done ===")
     if not dry_run:
-        _run_git(["log", "--oneline", f"-{len(plan.get('commits', []))}"], dst_repo, dry_run)
-
-
-def main() -> None:
-    parser = _argparse.ArgumentParser(
-        description="Commit helper for brynhild repositories",
-        formatter_class=_argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s --dry-run workflow/commits/plan.yaml
-  %(prog)s --execute workflow/commits/plan.yaml
-  %(prog)s --sync-public workflow/commits/plan.yaml
-  %(prog)s --execute --dry-run workflow/commits/plan.yaml
-        """,
-    )
-    
-    parser.add_argument(
-        "plan_file",
-        type=_pathlib.Path,
-        help="Path to commit plan YAML file",
-    )
-    
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--dry-run",
-        dest="action",
-        action="store_const",
-        const="dry_run",
-        help="Show what would happen without executing",
-    )
-    action.add_argument(
-        "--execute",
-        dest="action",
-        action="store_const",
-        const="execute",
-        help="Execute commits in source repo",
-    )
-    action.add_argument(
-        "--sync-public",
-        dest="action",
-        action="store_const",
-        const="sync_public",
-        help="Copy files and commit in public repo",
-    )
-    
-    parser.add_argument(
-        "--preview",
-        action="store_true",
-        help="With --execute or --sync-public: show what would happen without executing",
-    )
-    
-    args = parser.parse_args()
-    
-    if not args.plan_file.exists():
-        print(f"ERROR: Plan file not found: {args.plan_file}")
-        _sys.exit(1)
-    
-    if args.action == "dry_run":
-        cmd_dry_run(args.plan_file)
-    elif args.action == "execute":
-        cmd_execute(args.plan_file, dry_run=args.preview)
-    elif args.action == "sync_public":
-        cmd_sync_public(args.plan_file, dry_run=args.preview)
+        commit_count = len(plan.get("commits", []))
+        _run_git(["log", "--oneline", f"-{commit_count}"], dst_repo, dry_run)
 
 
 if __name__ == "__main__":
-    main()
-
+    cli()

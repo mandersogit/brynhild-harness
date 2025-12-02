@@ -156,7 +156,7 @@ def cli(
     settings = config.Settings()
 
     if provider:
-        settings.provider = provider  # type: ignore
+        settings.provider = provider
     if model:
         settings.model = model
     if verbose:
@@ -293,6 +293,7 @@ async def _run_conversation(
         provider=provider_instance,
         renderer=renderer,
         tool_registry=tool_registry,
+        skill_registry=context.skill_registry,  # For runtime skill triggering
         max_tokens=settings.max_tokens,
         auto_approve_tools=auto_approve or settings.dangerously_skip_permissions,
         dry_run=dry_run,
@@ -395,6 +396,7 @@ def _handle_interactive_mode(
         app = ui.create_app(
             provider=provider_instance,
             tool_registry=tool_registry,
+            skill_registry=context.skill_registry,  # For runtime skill triggering
             max_tokens=settings.max_tokens,
             auto_approve_tools=settings.dangerously_skip_permissions,
             conv_logger=conv_logger,
@@ -547,7 +549,7 @@ def api_test(
     settings: config.Settings = ctx.obj["settings"]
 
     if provider:
-        settings.provider = provider  # type: ignore
+        settings.provider = provider
     if model:
         settings.model = model
 

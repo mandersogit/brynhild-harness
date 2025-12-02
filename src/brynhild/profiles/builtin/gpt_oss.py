@@ -122,6 +122,43 @@ VERIFICATION_PATTERN = """<verification_spec>
 - Run tests if available to confirm your changes work.
 </verification_spec>"""
 
+LOOP_PREVENTION_PATTERN = """<loop_prevention>
+Before making any tool call, ask yourself:
+- Have I already run this exact command or a very similar one?
+- Will running it again produce genuinely NEW information, or the SAME output?
+- Did the previous result already answer the user's question, even if indirectly?
+
+If your previous tool call showed unexpected output (like a symlink, redirect, or alias):
+- This IS often the answer - explain what you found rather than retrying
+- Symlinks, aliases, and redirects are normal filesystem behavior
+- Running the same command again will show the same symlink/redirect
+
+Stop conditions:
+- You have output you can interpret and present to the user
+- Repeating the same action would yield the same result
+- You've already gathered the essential information
+
+If you find yourself about to repeat a command because "it didn't work":
+- First explain to the user what you observed
+- Then ask if they want you to try a different approach
+- Do NOT silently retry the same command expecting different results
+</loop_prevention>"""
+
+SHELL_BEHAVIOR_PATTERN = """<shell_understanding>
+Common shell behaviors that ARE the answer (not errors to retry):
+- Symlinks: `lrwxr-xr-x ... /tmp -> private/tmp` means /tmp IS private/tmp - this is the answer
+- Empty output from ls/find means the directory IS empty (success, not failure)
+- Exit code 0 with no output is often successful completion
+- Permission denied on system files is expected behavior, not something to retry
+
+When you see these, interpret and report them to the user - don't retry hoping for different results.
+
+macOS-specific:
+- /tmp is a symlink to /private/tmp - this is normal and expected
+- /var is a symlink to /private/var - this is normal and expected
+- /etc is a symlink to /private/etc - this is normal and expected
+</shell_understanding>"""
+
 # ============================================================================
 # Full Profile: GPT-OSS-120B (Thorough Mode)
 # ============================================================================
@@ -153,6 +190,8 @@ GPT_OSS_120B = types.ModelProfile(
         "preambles": PREAMBLES_PATTERN,
         "output_format": OUTPUT_FORMAT_PATTERN,
         "verification": VERIFICATION_PATTERN,
+        "loop_prevention": LOOP_PREVENTION_PATTERN,
+        "shell_understanding": SHELL_BEHAVIOR_PATTERN,
     },
     # Default enabled patterns
     enabled_patterns=[
@@ -164,6 +203,8 @@ GPT_OSS_120B = types.ModelProfile(
         "self_reflection",
         "preambles",
         "output_format",
+        "loop_prevention",
+        "shell_understanding",
     ],
     # Tool configuration
     tool_format="openai",
@@ -203,12 +244,16 @@ GPT_OSS_120B_FAST = types.ModelProfile(
         "tool_policy": TOOL_POLICY_PATTERN,
         "coding": CODING_PATTERN,
         "fast_path": FAST_PATH_PATTERN,
+        "loop_prevention": LOOP_PREVENTION_PATTERN,
+        "shell_understanding": SHELL_BEHAVIOR_PATTERN,
     },
     enabled_patterns=[
         "persistence",
         "tool_policy",
         "coding",
         "fast_path",
+        "loop_prevention",
+        "shell_understanding",
     ],
     # Tool configuration - more restrictive
     tool_format="openai",
