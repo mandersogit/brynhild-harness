@@ -116,6 +116,38 @@ def _is_tool_class(obj: _typing.Any) -> bool:
     )
 
 
+def _get_tool_name(tool_cls: ToolClass, fallback: str) -> str:
+    """
+    Get the name from a tool class.
+
+    Handles both class attributes and @property-based names.
+
+    Args:
+        tool_cls: The Tool class.
+        fallback: Fallback name if name can't be determined.
+
+    Returns:
+        The tool's name.
+    """
+    # Check if 'name' is a property descriptor
+    name_attr = getattr(tool_cls, "name", None)
+
+    if isinstance(name_attr, property):
+        # It's a property - need to instantiate to get the value
+        try:
+            instance = tool_cls()
+            return str(instance.name)
+        except Exception:
+            # If instantiation fails, use fallback
+            return fallback
+    elif isinstance(name_attr, str):
+        # It's a class attribute
+        return name_attr
+    else:
+        # Unknown type, use fallback
+        return fallback
+
+
 class ToolLoader:
     """
     Loads custom tools from plugin directories.
@@ -179,7 +211,7 @@ class ToolLoader:
 
             tool_cls = self.load_from_file(py_file, plugin_name)
             if tool_cls is not None:
-                tool_name = getattr(tool_cls, "name", py_file.stem)
+                tool_name = _get_tool_name(tool_cls, py_file.stem)
                 tools[tool_name] = tool_cls
 
         return tools
