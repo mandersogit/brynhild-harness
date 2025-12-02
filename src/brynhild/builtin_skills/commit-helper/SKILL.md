@@ -169,6 +169,37 @@ git diff
 - Single file per commit (too granular)
 - Feature + formatting in same commit
 
+### ⚠️ IMPORTANT: Each File Can Only Appear Once
+
+**Each file must appear in exactly ONE commit in a plan.**
+
+The commit-helper stages entire files, not hunks. If you list a file in multiple commits:
+- First commit: File is staged and committed
+- Later commits: File has no changes (already committed), commit is skipped
+
+**Wrong:**
+```yaml
+commits:
+  - message: "feat: add auth"
+    files:
+      - src/auth.py        # <-- appears here
+  - message: "test: add auth tests"
+    files:
+      - src/auth.py        # <-- ERROR: already committed above!
+      - tests/test_auth.py
+```
+
+**Correct:**
+```yaml
+commits:
+  - message: "feat: add auth with tests"
+    files:
+      - src/auth.py
+      - tests/test_auth.py  # All related files in one commit
+```
+
+If you need fine-grained control (committing different hunks of the same file separately), you must use manual `git add -p` workflow instead of the commit-helper.
+
 ### Step 3: Write the Plan
 
 Create `YYYY-MM-DD-description.yaml` with:
