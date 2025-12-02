@@ -14,6 +14,7 @@ import brynhild.constants as _constants
 import brynhild.core.conversation as core_conversation
 import brynhild.core.prompts as core_prompts
 import brynhild.logging as logging
+import brynhild.skills as skills
 import brynhild.tools.registry as tools_registry
 import brynhild.ui.adapters as ui_adapters
 import brynhild.ui.base as ui_base
@@ -36,6 +37,7 @@ class ConversationRunner:
         renderer: ui_base.Renderer,
         *,
         tool_registry: tools_registry.ToolRegistry | None = None,
+        skill_registry: skills.SkillRegistry | None = None,
         max_tokens: int = _constants.DEFAULT_MAX_TOKENS,
         max_tool_rounds: int = _constants.DEFAULT_MAX_TOOL_ROUNDS,
         auto_approve_tools: bool = False,
@@ -51,6 +53,7 @@ class ConversationRunner:
             provider: LLM provider instance.
             renderer: UI renderer for output.
             tool_registry: Tool registry (uses default if not provided).
+            skill_registry: Skill registry for runtime skill triggering.
             max_tokens: Maximum tokens for LLM response.
             max_tool_rounds: Maximum rounds of tool execution.
             auto_approve_tools: Auto-approve all tool executions.
@@ -61,6 +64,7 @@ class ConversationRunner:
         """
         self._provider = provider
         self._renderer = renderer
+        self._skill_registry = skill_registry
         if system_prompt is None:
             raise ValueError("system_prompt is required")
         self._system_prompt = system_prompt
@@ -95,6 +99,55 @@ class ConversationRunner:
         if self._logger:
             self._logger.log_system_prompt(self._system_prompt)
 
+    def _preprocess_for_skills(self, prompt: str) -> tuple[str, str | None]:
+        """
+        Preprocess prompt for skill triggers.
+
+        Args:
+            prompt: Original user prompt.
+
+        Returns:
+            Tuple of (processed_prompt, skill_injection or None).
+        """
+        preprocess_result = skills.preprocess_for_skills(
+            prompt,
+            self._skill_registry,
+        )
+
+        # Handle skill errors
+        if preprocess_result.error:
+            self._renderer.show_info(f"Skill error: {preprocess_result.error}")
+
+        # Log skill trigger if one was activated
+        if preprocess_result.skill_injection and self._logger:
+            self._logger.log_skill_triggered(
+                skill_name=preprocess_result.skill_name or "unknown",
+                skill_content=preprocess_result.skill_injection,
+                trigger_type=preprocess_result.trigger_type or "explicit",
+                trigger_match=prompt if preprocess_result.trigger_type == "explicit" else None,
+            )
+
+        # If skill was triggered, inject it as a message
+        if preprocess_result.skill_injection:
+            skill_message = skills.format_skill_injection_message(
+                preprocess_result.skill_injection,
+                preprocess_result.skill_name or "unknown",
+            )
+            self._messages.append({
+                "role": "user",
+                "content": f"[System: The following skill has been activated]\n\n{skill_message}",
+            })
+            if self._verbose:
+                self._renderer.show_info(f"Skill '{preprocess_result.skill_name}' activated")
+
+        # Return processed prompt
+        user_message = preprocess_result.user_message
+        if not user_message.strip() and preprocess_result.skill_injection:
+            # Just the skill was injected, add minimal prompt
+            user_message = "Please acknowledge the skill and wait for my request."
+
+        return user_message, preprocess_result.skill_name
+
     async def run_streaming(
         self,
         prompt: str,
@@ -108,12 +161,15 @@ class ConversationRunner:
         Returns:
             Conversation result with response, usage, etc.
         """
+        # Preprocess for skill triggers
+        user_message, triggered_skill = self._preprocess_for_skills(prompt)
+
         # Add user message
-        self._messages.append({"role": "user", "content": prompt})
+        self._messages.append({"role": "user", "content": user_message})
 
         # Log user message
         if self._logger:
-            self._logger.log_user_message(prompt)
+            self._logger.log_user_message(user_message)
 
         # Process with streaming
         result = await self._processor.process_streaming(
@@ -135,6 +191,7 @@ class ConversationRunner:
             "provider": self._provider.name,
             "model": self._provider.model,
             "stop_reason": result.stop_reason,
+            "triggered_skill": triggered_skill,
             "usage": {
                 "input_tokens": self._total_input_tokens,
                 "output_tokens": self._total_output_tokens,
@@ -155,12 +212,15 @@ class ConversationRunner:
         Returns:
             Conversation result with response, usage, etc.
         """
+        # Preprocess for skill triggers
+        user_message, triggered_skill = self._preprocess_for_skills(prompt)
+
         # Add user message
-        self._messages.append({"role": "user", "content": prompt})
+        self._messages.append({"role": "user", "content": user_message})
 
         # Log user message
         if self._logger:
-            self._logger.log_user_message(prompt)
+            self._logger.log_user_message(user_message)
 
         # Process without streaming
         result = await self._processor.process_complete(

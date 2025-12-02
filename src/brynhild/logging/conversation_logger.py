@@ -354,6 +354,44 @@ class ConversationLogger:
         return self._context_version
 
     # =========================================================================
+    # Skill Triggering
+    # =========================================================================
+
+    def log_skill_triggered(
+        self,
+        skill_name: str,
+        skill_content: str,
+        trigger_type: str,
+        *,
+        trigger_match: str | None = None,
+        metadata: dict[str, _typing.Any] | None = None,
+    ) -> None:
+        """
+        Log that a skill was triggered and its body injected.
+
+        This is a convenience wrapper around log_context_injection
+        specifically for skill triggering.
+
+        Args:
+            skill_name: Name of the triggered skill.
+            skill_content: Full skill body content.
+            trigger_type: How the skill was triggered:
+                - "explicit": User used /skill command
+                - "auto": Automatic keyword matching
+            trigger_match: The match that triggered (e.g., "/skill commit-helper").
+            metadata: Additional metadata.
+        """
+        self.log_context_injection(
+            source="skill_trigger",
+            location="message_inject",
+            content=skill_content,
+            origin=skill_name,
+            trigger_type=trigger_type,
+            trigger_match=trigger_match,
+            metadata=metadata,
+        )
+
+    # =========================================================================
     # Model Switching (Future Extension)
     # =========================================================================
 

@@ -52,6 +52,9 @@ class ConversationContext:
     profile: profiles_types.ModelProfile | None = None
     """The profile used (if any)."""
 
+    skill_registry: "skills.SkillRegistry | None" = None
+    """The skill registry for runtime skill triggering."""
+
 
 class ContextBuilder:
     """
@@ -301,6 +304,7 @@ class ContextBuilder:
             base_prompt=base_system_prompt,
             injections=injections,
             profile=profile,
+            skill_registry=self._skill_registry,
         )
 
     def get_skill_registry(self) -> skills.SkillRegistry:

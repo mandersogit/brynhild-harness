@@ -2,14 +2,17 @@
 Integration tests for skills loading and injection.
 
 Test IDs from design-plan-phase6.md:
-- SI-01: Skill metadata at startup
-- SI-02: Skill auto-triggers (keyword) - DEFERRED
-- SI-03: Skill auto-triggers (tag) - DEFERRED
-- SI-04: Skill explicit trigger - DEFERRED
-- SI-05: Skill body injected correctly
-- SI-06: Skill triggering logged
-- SI-07: Multiple skill directories
-- SI-08: Invalid skill gracefully handled
+- SI-01: Skill metadata at startup ✅
+- SI-02: Skill auto-triggers (keyword) - REMOVED BY DESIGN (use LearnSkill tool)
+- SI-03: Skill auto-triggers (tag) - REMOVED BY DESIGN (never implemented)
+- SI-04: Skill explicit trigger ✅ - /skill command in test_skill_injection.py
+- SI-05: Skill body injected correctly ✅
+- SI-06: Skill triggering logged ✅
+- SI-07: Multiple skill directories ✅
+- SI-08: Invalid skill gracefully handled ✅
+
+Note: Auto-triggering was removed. Models should use the LearnSkill tool
+for explicit skill access. See test_skill_injection.py for LearnSkill tests.
 """
 
 import pathlib as _pathlib

@@ -23,6 +23,11 @@ from brynhild.skills.discovery import (
     get_skill_search_paths,
 )
 from brynhild.skills.loader import SkillLoader
+from brynhild.skills.preprocessor import (
+    SkillPreprocessResult,
+    format_skill_injection_message,
+    preprocess_for_skills,
+)
 from brynhild.skills.registry import SkillRegistry
 from brynhild.skills.skill import (
     SKILL_BODY_SOFT_LIMIT,
@@ -48,5 +53,9 @@ __all__ = [
     # Loader and Registry
     "SkillLoader",
     "SkillRegistry",
+    # Preprocessing
+    "SkillPreprocessResult",
+    "preprocess_for_skills",
+    "format_skill_injection_message",
 ]
 

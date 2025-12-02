@@ -24,6 +24,7 @@ import brynhild.core.conversation as core_conversation
 import brynhild.core.prompts as core_prompts
 import brynhild.core.types as core_types
 import brynhild.logging as brynhild_logging
+import brynhild.skills as skills
 import brynhild.tools.registry as tools_registry
 import brynhild.ui.base as ui_base
 import brynhild.ui.widgets as widgets
@@ -113,8 +114,14 @@ class HelpScreen(_screen.Screen[None]):
         self.dismiss()
 
 
-class PermissionScreen(_screen.Screen[bool]):
-    """Modal screen for tool permission requests."""
+class PermissionScreen(_screen.Screen[bool | None]):
+    """Modal screen for tool permission requests.
+
+    Returns:
+        True: Allow the tool
+        False: Deny the tool (continue generation)
+        None: Cancel entire generation
+    """
 
     BINDINGS = [
         _binding.Binding("a", "allow", "Allow"),
@@ -123,6 +130,9 @@ class PermissionScreen(_screen.Screen[bool]):
         _binding.Binding("d", "deny", "Deny"),
         _binding.Binding("n", "deny", "Deny", show=False),
         _binding.Binding("escape", "deny", "Deny", show=False),
+        _binding.Binding("c", "cancel", "Cancel All"),
+        _binding.Binding("q", "cancel", "Cancel All", show=False),
+        _binding.Binding("ctrl+c", "cancel", "Cancel All", show=False),
     ]
 
     CSS = """
@@ -193,7 +203,7 @@ class PermissionScreen(_screen.Screen[bool]):
                 )
 
             yield _widgets.Static(
-                "[b]a[/b]/[b]y[/b]/Enter = Allow  |  [b]d[/b]/[b]n[/b]/Esc = Deny",
+                "[b]a[/b] Allow  |  [b]d[/b] Deny  |  [b]c[/b] Cancel All",
                 id="permission-footer",
             )
 
@@ -204,6 +214,10 @@ class PermissionScreen(_screen.Screen[bool]):
     def action_deny(self) -> None:
         """Deny the tool execution."""
         self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Cancel entire generation."""
+        self.dismiss(None)
 
 
 class TUICallbacks(core_conversation.ConversationCallbacks):
@@ -387,6 +401,7 @@ class BrynhildApp(_app.App[None]):
         provider: api_base.LLMProvider,
         *,
         tool_registry: tools_registry.ToolRegistry | None = None,
+        skill_registry: skills.SkillRegistry | None = None,
         max_tokens: int = _constants.DEFAULT_MAX_TOKENS,
         auto_approve_tools: bool = False,
         dry_run: bool = False,
@@ -399,6 +414,7 @@ class BrynhildApp(_app.App[None]):
         Args:
             provider: LLM provider instance.
             tool_registry: Tool registry (None to disable tools).
+            skill_registry: Skill registry for runtime skill triggering.
             max_tokens: Maximum tokens for responses.
             auto_approve_tools: Auto-approve all tool executions.
             dry_run: Show tool calls without executing.
@@ -408,6 +424,7 @@ class BrynhildApp(_app.App[None]):
         super().__init__()
         self._provider = provider
         self._tool_registry = tool_registry
+        self._skill_registry = skill_registry
         self._max_tokens = max_tokens
         self._auto_approve = auto_approve_tools
         self._dry_run = dry_run
@@ -580,13 +597,26 @@ class BrynhildApp(_app.App[None]):
         self,
         tool_call: ui_base.ToolCallDisplay,
     ) -> bool:
-        """Request permission to execute a tool."""
+        """Request permission to execute a tool.
+
+        Returns:
+            True: User allowed the tool
+            False: User denied OR cancelled (check _generation_cancelled)
+        """
         if self._auto_approve:
             return True
 
         # Show permission modal and wait for user response
+        # Returns: True (allow), False (deny), None (cancel all)
         result = await self.push_screen_wait(PermissionScreen(tool_call))
-        return result if result is not None else False
+
+        if result is None:
+            # User chose to cancel entire generation
+            self._generation_cancelled = True
+            self.notify("Generation cancelled.", severity="warning")
+            return False
+
+        return result
 
     @_textual.work(exclusive=True)
     async def _process_message(self, prompt: str) -> None:
@@ -601,12 +631,59 @@ class BrynhildApp(_app.App[None]):
         self._is_processing = True
 
         try:
+            # Preprocess for skill triggers (/skill command)
+            preprocess_result = skills.preprocess_for_skills(
+                prompt,
+                self._skill_registry,
+            )
+
+            # Handle skill errors (e.g., /skill unknown-name)
+            if preprocess_result.error:
+                self.notify(preprocess_result.error, severity="warning")
+                # Continue with original message (don't abort)
+
+            # If a skill was triggered, inject it as a system message
+            if preprocess_result.skill_injection:
+                # Log the skill trigger
+                if self._conv_logger:
+                    self._conv_logger.log_skill_triggered(
+                        skill_name=preprocess_result.skill_name or "unknown",
+                        skill_content=preprocess_result.skill_injection,
+                        trigger_type=preprocess_result.trigger_type or "explicit",
+                        trigger_match=prompt if preprocess_result.trigger_type == "explicit" else None,
+                    )
+
+                # Inject skill as a system message before user message
+                skill_message = skills.format_skill_injection_message(
+                    preprocess_result.skill_injection,
+                    preprocess_result.skill_name or "unknown",
+                )
+                self._messages.append({
+                    "role": "user",
+                    "content": f"[System: The following skill has been activated]\n\n{skill_message}",
+                })
+
+                # Notify user that skill was activated
+                self.notify(
+                    f"Skill '{preprocess_result.skill_name}' activated",
+                    severity="information",
+                )
+
+            # Use the (possibly modified) user message
+            user_message = preprocess_result.user_message
+
+            # If the message is empty after /skill command, don't send anything
+            if not user_message.strip() and preprocess_result.skill_injection:
+                # Just the skill was injected, no additional user message
+                # Add a minimal prompt to get the model to respond
+                user_message = "Please acknowledge the skill and wait for my request."
+
             # Add user message to history
-            self._messages.append({"role": "user", "content": prompt})
+            self._messages.append({"role": "user", "content": user_message})
 
             # Log user message
             if self._conv_logger:
-                self._conv_logger.log_user_message(prompt)
+                self._conv_logger.log_user_message(user_message)
 
             # Create callbacks and processor
             callbacks = TUICallbacks(self)
@@ -739,6 +816,7 @@ def create_app(
     provider: api_base.LLMProvider,
     *,
     tool_registry: tools_registry.ToolRegistry | None = None,
+    skill_registry: skills.SkillRegistry | None = None,
     max_tokens: int = _constants.DEFAULT_MAX_TOKENS,
     auto_approve_tools: bool = False,
     dry_run: bool = False,
@@ -754,6 +832,7 @@ def create_app(
     return BrynhildApp(
         provider=provider,
         tool_registry=tool_registry,
+        skill_registry=skill_registry,
         max_tokens=max_tokens,
         auto_approve_tools=auto_approve_tools,
         dry_run=dry_run,
