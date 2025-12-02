@@ -305,8 +305,9 @@ class TestPermissionScreen:
 
     def test_screen_return_type_allows_none(self) -> None:
         """Screen should return bool | None (None = cancel)."""
-        import brynhild.ui.app as app_module
         import typing as _typing
+
+        import brynhild.ui.app as app_module
 
         # Check the type annotation
         # PermissionScreen inherits from Screen[bool | None]
