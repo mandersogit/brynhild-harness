@@ -85,6 +85,9 @@ class ToolBase:
 
     Optional overrides:
         - requires_permission (property): Default True
+        - version (property): Default "0.0.0"
+        - categories (property): Default []
+        - examples (property): Default []
     """
 
     @property
@@ -106,6 +109,21 @@ class ToolBase:
     def input_schema(self) -> dict[str, _typing.Any]:
         """JSON schema for tool input (must override)."""
         raise NotImplementedError("Tool must implement 'input_schema' property")
+
+    @property
+    def version(self) -> str:
+        """Tool version string (default "0.0.0")."""
+        return "0.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        """Category tags for tool organization (default [])."""
+        return []
+
+    @property
+    def examples(self) -> list[dict[str, _typing.Any]]:
+        """Usage examples for the LLM (default [])."""
+        return []
 
     async def execute(
         self,
@@ -145,8 +163,51 @@ class ToolBase:
         return f"<Tool {self.name}>"
 
 
+@_dataclasses.dataclass
+class ToolMetrics:
+    """
+    Stub for tool metrics tracking.
+
+    This is a standalone stub compatible with brynhild.tools.base.ToolMetrics.
+    """
+
+    tool_name: str
+    call_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    total_duration_ms: float = 0.0
+    last_used: str | None = None
+
+    @property
+    def success_rate(self) -> float:
+        """Success rate as a percentage (0.0 to 100.0)."""
+        if self.call_count == 0:
+            return 0.0
+        return (self.success_count / self.call_count) * 100.0
+
+    @property
+    def average_duration_ms(self) -> float:
+        """Average duration per call in milliseconds."""
+        if self.call_count == 0:
+            return 0.0
+        return self.total_duration_ms / self.call_count
+
+    def to_dict(self) -> dict[str, _typing.Any]:
+        """Convert to JSON-serializable dict."""
+        return {
+            "tool_name": self.tool_name,
+            "call_count": self.call_count,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+            "total_duration_ms": self.total_duration_ms,
+            "average_duration_ms": self.average_duration_ms,
+            "success_rate": self.success_rate,
+            "last_used": self.last_used,
+        }
+
+
 # Aliases for compatibility
 Tool = ToolBase
 
-__all__ = ["ToolResult", "ToolBase", "Tool"]
+__all__ = ["ToolResult", "ToolBase", "Tool", "ToolMetrics"]
 
