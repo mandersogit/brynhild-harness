@@ -2065,10 +2065,16 @@ def skill_group() -> None:
 @_click.pass_context
 def skill_list(ctx: _click.Context, json_output: bool) -> None:
     """List all discovered skills."""
+    import brynhild.plugins.registry as plugin_registry
     import brynhild.skills as skills
 
     settings: config.Settings = ctx.obj["settings"]
-    registry = skills.SkillRegistry(project_root=settings.project_root)
+    plugins_reg = plugin_registry.PluginRegistry(project_root=settings.project_root)
+    plugins = list(plugins_reg.get_enabled_plugins())
+    registry = skills.SkillRegistry(
+        project_root=settings.project_root,
+        plugins=plugins,
+    )
 
     skill_list = registry.list_skills()
 
@@ -2102,10 +2108,16 @@ def skill_show(
     ctx: _click.Context, name: str, json_output: bool, body: bool
 ) -> None:
     """Show details for a specific skill."""
+    import brynhild.plugins.registry as plugin_registry
     import brynhild.skills as skills
 
     settings: config.Settings = ctx.obj["settings"]
-    registry = skills.SkillRegistry(project_root=settings.project_root)
+    plugins_reg = plugin_registry.PluginRegistry(project_root=settings.project_root)
+    plugins = list(plugins_reg.get_enabled_plugins())
+    registry = skills.SkillRegistry(
+        project_root=settings.project_root,
+        plugins=plugins,
+    )
 
     skill = registry.get_skill(name)
 
