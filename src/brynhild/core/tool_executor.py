@@ -6,6 +6,7 @@ used by both interactive (TUI) and non-interactive (CLI) modes.
 """
 
 import abc as _abc
+import time as _time
 
 import brynhild.api.types as api_types
 import brynhild.core.types as core_types
@@ -65,6 +66,8 @@ class ToolExecutor:
 
     This class consolidates the tool execution logic that was previously
     duplicated between app.py (TUI) and runner.py (CLI).
+
+    Tool metrics are always collected during execution.
     """
 
     def __init__(
@@ -88,6 +91,12 @@ class ToolExecutor:
         self._callbacks = callbacks
         self._dry_run = dry_run
         self._logger = logger
+        self._metrics = tools_base.MetricsCollector()
+
+    @property
+    def metrics(self) -> tools_base.MetricsCollector:
+        """Get the metrics collector for this executor."""
+        return self._metrics
 
     async def execute(
         self,
@@ -159,18 +168,24 @@ class ToolExecutor:
                 "Permission denied by user",
             )
 
-        # Execute the tool
+        # Execute the tool with metrics
+        start_time = _time.perf_counter()
         try:
             result = await tool.execute(tool_use.input)
-            self._log_result(tool_use, result)
+            duration_ms = (_time.perf_counter() - start_time) * 1000
+            self._metrics.record(tool_use.name, result.success, duration_ms)
+            self._log_result(tool_use, result, duration_ms)
             return result
         except Exception as e:
-            return self._make_error_result(tool_use, str(e))
+            duration_ms = (_time.perf_counter() - start_time) * 1000
+            self._metrics.record(tool_use.name, False, duration_ms)
+            return self._make_error_result(tool_use, str(e), duration_ms)
 
     def _make_error_result(
         self,
         tool_use: api_types.ToolUse,
         error: str,
+        duration_ms: float | None = None,
     ) -> tools_base.ToolResult:
         """Create and log an error result."""
         result = tools_base.ToolResult(
@@ -178,13 +193,14 @@ class ToolExecutor:
             output="",
             error=error,
         )
-        self._log_result(tool_use, result)
+        self._log_result(tool_use, result, duration_ms)
         return result
 
     def _make_success_result(
         self,
         tool_use: api_types.ToolUse,
         output: str,
+        duration_ms: float | None = None,
     ) -> tools_base.ToolResult:
         """Create and log a success result."""
         result = tools_base.ToolResult(
@@ -192,13 +208,14 @@ class ToolExecutor:
             output=output,
             error=None,
         )
-        self._log_result(tool_use, result)
+        self._log_result(tool_use, result, duration_ms)
         return result
 
     def _log_result(
         self,
         tool_use: api_types.ToolUse,
         result: tools_base.ToolResult,
+        duration_ms: float | None = None,
     ) -> None:
         """Log a tool result if logger is configured."""
         if self._logger:
@@ -208,5 +225,6 @@ class ToolExecutor:
                 output=result.output if result.success else None,
                 error=result.error,
                 tool_id=tool_use.id,
+                duration_ms=duration_ms,
             )
 

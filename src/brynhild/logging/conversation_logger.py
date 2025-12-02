@@ -192,18 +192,19 @@ class ConversationLogger:
         output: str | None = None,
         error: str | None = None,
         tool_id: str | None = None,
+        duration_ms: float | None = None,
     ) -> None:
         """Log a tool execution result."""
-        self._write_event(
-            "tool_result",
-            {
-                "tool_name": tool_name,
-                "success": success,
-                "output": output,
-                "error": error,
-                "tool_id": tool_id,
-            },
-        )
+        data: dict[str, _typing.Any] = {
+            "tool_name": tool_name,
+            "success": success,
+            "output": output,
+            "error": error,
+            "tool_id": tool_id,
+        }
+        if duration_ms is not None:
+            data["duration_ms"] = round(duration_ms, 2)
+        self._write_event("tool_result", data)
 
     def log_error(self, error: str, context: str | None = None) -> None:
         """Log an error event."""
@@ -227,6 +228,38 @@ class ConversationLogger:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+            },
+        )
+
+    def log_tool_metrics(
+        self,
+        metrics: dict[str, dict[str, _typing.Any]],
+    ) -> None:
+        """
+        Log tool metrics summary.
+
+        Called at end of session to record cumulative tool statistics.
+
+        Args:
+            metrics: Dictionary of tool name -> metrics dict from MetricsCollector.to_dict()
+        """
+        # Calculate summary
+        total_calls = sum(m.get("call_count", 0) for m in metrics.values())
+        total_success = sum(m.get("success_count", 0) for m in metrics.values())
+        total_duration = sum(m.get("total_duration_ms", 0) for m in metrics.values())
+
+        self._write_event(
+            "tool_metrics",
+            {
+                "tools": metrics,
+                "summary": {
+                    "total_calls": total_calls,
+                    "total_success": total_success,
+                    "total_failures": total_calls - total_success,
+                    "success_rate": (total_success / total_calls * 100.0) if total_calls else 0.0,
+                    "total_duration_ms": round(total_duration, 2),
+                    "tools_used": len(metrics),
+                },
             },
         )
 
