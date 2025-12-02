@@ -26,6 +26,12 @@ from brynhild.plugins.hooks import (
     load_plugin_hooks,
     merge_plugin_hooks,
 )
+from brynhild.plugins.lifecycle import (
+    fire_plugin_init,
+    fire_plugin_init_for_all,
+    fire_plugin_init_for_all_sync,
+    fire_plugin_init_sync,
+)
 from brynhild.plugins.loader import PluginLoader
 from brynhild.plugins.manifest import Plugin, PluginManifest
 from brynhild.plugins.providers import (
@@ -75,6 +81,11 @@ __all__ = [
     "load_merged_config_with_plugins",
     "load_plugin_hooks",
     "merge_plugin_hooks",
+    # Lifecycle
+    "fire_plugin_init",
+    "fire_plugin_init_for_all",
+    "fire_plugin_init_for_all_sync",
+    "fire_plugin_init_sync",
     # Rules
     "RULE_FILES",
     "RulesManager",
