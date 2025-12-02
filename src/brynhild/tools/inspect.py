@@ -68,6 +68,14 @@ class InspectTool(base.Tool, base.SandboxMixin):
         )
 
     @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["filesystem", "read"]
+
+    @property
     def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",

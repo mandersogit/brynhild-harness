@@ -80,6 +80,14 @@ class BashTool(base.Tool):
         }
 
     @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["shell", "system"]
+
+    @property
     def working_dir(self) -> _pathlib.Path:
         """Get the current working directory."""
         return self._working_dir

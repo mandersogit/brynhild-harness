@@ -72,6 +72,18 @@ class FileReadTool(base.Tool, base.SandboxMixin):
             "required": ["file_path"],
         }
 
+    @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["filesystem", "read"]
+
+    @property
+    def requires_permission(self) -> bool:
+        return False  # Read-only tool
+
     async def execute(self, input: dict[str, _typing.Any]) -> base.ToolResult:
         """Read a file and return its contents with line numbers."""
         file_path = input.get("file_path", "")
@@ -211,6 +223,14 @@ class FileWriteTool(base.Tool, base.SandboxMixin):
             "required": ["file_path", "content"],
         }
 
+    @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["filesystem", "write"]
+
     async def execute(self, input: dict[str, _typing.Any]) -> base.ToolResult:
         """Write content to a file."""
         file_path = input.get("file_path", "")
@@ -337,6 +357,14 @@ class FileEditTool(base.Tool, base.SandboxMixin):
             },
             "required": ["file_path", "old_string", "new_string"],
         }
+
+    @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["filesystem", "write"]
 
     async def execute(self, input: dict[str, _typing.Any]) -> base.ToolResult:
         """Edit a file by replacing text."""

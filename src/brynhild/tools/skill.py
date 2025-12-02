@@ -63,6 +63,14 @@ class LearnSkillTool(base.Tool):
         self._registry = skill_registry
 
     @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["skills", "learning"]
+
+    @property
     def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",

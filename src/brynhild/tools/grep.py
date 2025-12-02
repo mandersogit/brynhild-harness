@@ -59,6 +59,18 @@ class GrepTool(base.Tool, base.SandboxMixin):
         )
 
     @property
+    def version(self) -> str:
+        return "1.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        return ["search", "filesystem"]
+
+    @property
+    def requires_permission(self) -> bool:
+        return False  # Read-only search tool
+
+    @property
     def input_schema(self) -> dict[str, _typing.Any]:
         return {
             "type": "object",
