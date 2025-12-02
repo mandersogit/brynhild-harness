@@ -1,12 +1,13 @@
 """
 Skill discovery from standard locations.
 
-Skills are discovered from (in priority order):
-1. ~/.config/brynhild/skills/ - User skills (global)
-2. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
-3. Project .brynhild/skills/ - Project-local skills
+Skills are discovered from (in priority order, lowest to highest):
+1. Builtin skills (shipped with brynhild package)
+2. ~/.config/brynhild/skills/ - User skills (global)
+3. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
+4. Project .brynhild/skills/ - Project-local skills
 
-Later sources have higher priority (project overrides global).
+Later sources have higher priority (project overrides global overrides builtin).
 """
 
 from __future__ import annotations
@@ -15,7 +16,13 @@ import os as _os
 import pathlib as _pathlib
 import typing as _typing
 
+import brynhild.builtin_skills as builtin_skills
 import brynhild.skills.skill as skill_module
+
+
+def get_builtin_skills_path() -> _pathlib.Path:
+    """Get the path to builtin skills directory (shipped with package)."""
+    return builtin_skills.get_builtin_skills_path()
 
 
 def get_global_skills_path() -> _pathlib.Path:
@@ -30,23 +37,30 @@ def get_project_skills_path(project_root: _pathlib.Path) -> _pathlib.Path:
 
 def get_skill_search_paths(
     project_root: _pathlib.Path | None = None,
+    *,
+    include_builtin: bool = True,
 ) -> list[_pathlib.Path]:
     """
     Get all skill search paths in priority order.
 
     Args:
-        project_root: Project root directory. If None, only global
-                      and env paths are included.
+        project_root: Project root directory. If None, only global,
+                      builtin, and env paths are included.
+        include_builtin: Whether to include builtin skills (default True).
 
     Returns:
         List of paths to search (lowest to highest priority).
     """
     paths: list[_pathlib.Path] = []
 
-    # 1. Global skills (lowest priority)
+    # 1. Builtin skills (lowest priority)
+    if include_builtin:
+        paths.append(get_builtin_skills_path())
+
+    # 2. Global skills
     paths.append(get_global_skills_path())
 
-    # 2. Environment variable paths
+    # 3. Environment variable paths
     env_path = _os.environ.get("BRYNHILD_SKILL_PATH", "")
     if env_path:
         for p in env_path.split(":"):
@@ -54,7 +68,7 @@ def get_skill_search_paths(
             if p:
                 paths.append(_pathlib.Path(p).expanduser().resolve())
 
-    # 3. Project-local skills (highest priority)
+    # 4. Project-local skills (highest priority)
     if project_root is not None:
         paths.append(get_project_skills_path(project_root))
 
@@ -94,7 +108,10 @@ class SkillDiscovery:
 
     def _get_source_for_path(self, search_path: _pathlib.Path) -> str:
         """Determine the source type for a search path."""
+        builtin_path = get_builtin_skills_path()
         global_path = get_global_skills_path()
+        if search_path == builtin_path:
+            return "builtin"
         if search_path == global_path:
             return "global"
         if self._project_root and search_path == get_project_skills_path(

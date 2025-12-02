@@ -1,0 +1,115 @@
+# =========================================================================
+# EXAMPLE: Multi-commit plan
+# =========================================================================
+# This is an example. Create your own plans in your project.
+# Naming convention: YYYY-MM-DD-description.yaml
+# =========================================================================
+
+# Optional: specify repo path (defaults to directory containing this file)
+# repo: /path/to/my/project
+
+commits:
+  # ============================================================
+  # Commit 1: Security fix (highest priority)
+  # ============================================================
+  - message: |
+      security: validate session IDs to prevent path traversal
+
+      - Add InvalidSessionIdError exception
+      - Add validate_session_id() function
+      - Update SessionManager to validate IDs before file operations
+
+      Prevents malicious IDs like '../../../etc/passwd' from
+      escaping the sessions directory.
+    files:
+      - src/session/manager.py
+      - src/session/validation.py
+      - tests/test_session.py
+
+  # ============================================================
+  # Commit 2: Bug fix
+  # ============================================================
+  - message: |
+      fix: correct timezone handling in date formatting
+
+      Dates were displaying in server timezone instead of user's
+      configured timezone. Now respects user preferences.
+
+      - Updated DateFormatter to accept timezone parameter
+      - Modified all callers to pass user timezone
+      - Added tests for timezone edge cases
+    files:
+      - src/utils/dates.py
+      - src/api/reports.py
+      - src/api/dashboard.py
+      - tests/test_dates.py
+
+  # ============================================================
+  # Commit 3: Refactoring
+  # ============================================================
+  - message: |
+      refactor: rename alternate constructors to construct_* pattern
+
+      Establishes consistent naming convention:
+      - construct_* for alternate constructors
+      - from_* reserved for deserialization
+
+      Updated classes:
+      - Settings.construct_without_env()
+      - Result.construct_success/error()
+      - Widget.construct_* factories
+    files:
+      - src/config/settings.py
+      - src/core/result.py
+      - src/ui/widgets.py
+      - tests/test_config.py
+      - tests/test_result.py
+
+  # ============================================================
+  # Commit 4: New feature
+  # ============================================================
+  - message: |
+      feat: add CSV export functionality
+
+      Users can now export their data as CSV files:
+      - New /api/export endpoint
+      - Configurable column selection
+      - Streaming for large datasets
+      - Rate limiting to prevent abuse
+    files:
+      - src/api/export.py
+      - src/utils/csv_writer.py
+      - src/config/export_settings.py
+      - tests/test_export.py
+
+  # ============================================================
+  # Commit 5: Configuration
+  # ============================================================
+  - message: |
+      config: centralize default values in constants module
+
+      - Add DEFAULT_TIMEOUT and DEFAULT_RETRIES to constants.py
+      - Update all modules to use centralized defaults
+      - Remove duplicated magic numbers
+
+      Single source of truth for configuration defaults.
+    files:
+      - src/constants.py
+      - src/api/client.py
+      - src/utils/retry.py
+
+  # ============================================================
+  # Commit 6: Build/tooling
+  # ============================================================
+  - message: |
+      build: update dependencies and add type checking
+
+      - Update requirements.txt with pinned versions
+      - Add pyright to dev dependencies
+      - Add typecheck target to Makefile
+      - Fix type errors in core modules
+    files:
+      - requirements.txt
+      - requirements-dev.txt
+      - Makefile
+      - src/core/types.py

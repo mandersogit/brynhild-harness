@@ -1,0 +1,25 @@
+# =========================================================================
+# EXAMPLE: Simple single-commit plan
+# =========================================================================
+# This is an example. Create your own plans in your project.
+# Naming convention: YYYY-MM-DD-description.yaml
+# =========================================================================
+
+# Optional: specify repo path (defaults to directory containing this file)
+# repo: /path/to/my/project
+
+commits:
+  - message: |
+      feat: add user authentication
+
+      Implement basic username/password authentication:
+      - Login endpoint with session creation
+      - Logout endpoint with session cleanup
+      - Session middleware for protected routes
+
+      Includes unit tests for all new functionality.
+    files:
+      - src/auth/login.py
+      - src/auth/session.py
+      - src/middleware/auth.py
+      - tests/test_auth.py

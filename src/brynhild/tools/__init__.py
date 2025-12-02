@@ -34,6 +34,7 @@ from brynhild.tools.sandbox import (
     resolve_and_validate,
     validate_path,
 )
+from brynhild.tools.skill import LearnSkillTool
 
 __all__ = [
     # Base classes
@@ -62,4 +63,5 @@ __all__ = [
     "GrepTool",
     "GlobTool",
     "InspectTool",
+    "LearnSkillTool",
 ]

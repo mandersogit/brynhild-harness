@@ -2,7 +2,7 @@
 Tests for skill discovery.
 
 Tests verify that:
-- Skills are discovered from global, env, and project paths
+- Skills are discovered from builtin, global, env, and project paths
 - Later sources override earlier sources by name
 - Invalid skills are skipped
 """
@@ -17,10 +17,15 @@ import brynhild.skills.discovery as discovery
 class TestSkillSearchPaths:
     """Tests for get_skill_search_paths function."""
 
-    def test_includes_global_path_first(self) -> None:
-        """Global skills path is always included first."""
+    def test_includes_builtin_path_first(self) -> None:
+        """Builtin skills path is always included first (lowest priority)."""
         paths = discovery.get_skill_search_paths()
-        assert paths[0] == discovery.get_global_skills_path()
+        assert paths[0] == discovery.get_builtin_skills_path()
+
+    def test_includes_global_path_second(self) -> None:
+        """Global skills path is included second."""
+        paths = discovery.get_skill_search_paths()
+        assert paths[1] == discovery.get_global_skills_path()
 
     def test_includes_project_path_last(self, tmp_path: _pathlib.Path) -> None:
         """Project-local path is included last (highest priority)."""
@@ -39,10 +44,17 @@ class TestSkillSearchPaths:
         ):
             paths = discovery.get_skill_search_paths(tmp_path)
 
-        assert paths[0] == discovery.get_global_skills_path()
+        assert paths[0] == discovery.get_builtin_skills_path()
+        assert paths[1] == discovery.get_global_skills_path()
         assert env_path1.resolve() in paths
         assert env_path2.resolve() in paths
         assert paths[-1] == discovery.get_project_skills_path(tmp_path)
+
+    def test_can_exclude_builtin(self) -> None:
+        """Builtin skills can be excluded."""
+        paths = discovery.get_skill_search_paths(include_builtin=False)
+        assert discovery.get_builtin_skills_path() not in paths
+        assert paths[0] == discovery.get_global_skills_path()
 
 
 class TestSkillDiscovery:

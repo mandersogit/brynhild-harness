@@ -6,9 +6,12 @@ The registry provides a central place to register, look up, and list tools.
 
 from __future__ import annotations
 
+import logging as _logging
 import typing as _typing
 
 import brynhild.tools.base as base
+
+_logger = _logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -157,12 +160,13 @@ def build_registry_from_settings(
     - Sandbox settings (enabled, allowed paths, network)
     - Consistent base directories
     - Respects disabled_tools and disable_builtin_tools settings
+    - Tools from enabled plugins are loaded and registered
 
     Args:
         settings: Settings instance with sandbox configuration
 
     Returns:
-        New ToolRegistry with properly configured tools
+        New ToolRegistry with built-in and plugin tools registered
     """
     # Import tools here to avoid circular imports
     import brynhild.tools.bash as bash
@@ -248,9 +252,84 @@ def build_registry_from_settings(
             sandbox_config=sandbox_config,
         ))
 
+    # Register LearnSkill tool (requires SkillRegistry)
+    if "LearnSkill" not in disabled_tools:
+        import brynhild.skills as skills
+        import brynhild.tools.skill as skill_tool
+
+        skill_registry = skills.SkillRegistry(project_root=project_root)
+        registry.register(skill_tool.LearnSkillTool(skill_registry=skill_registry))
+
+    # Load tools from enabled plugins
+    _load_plugin_tools(registry, settings)
+
     return registry
 
 
+def _load_plugin_tools(
+    registry: ToolRegistry,
+    settings: _typing.Any,
+) -> None:
+    """
+    Load tools from enabled plugins and register them.
+
+    This uses a fail-soft approach: errors loading plugins don't prevent
+    built-in tools from working, and errors loading individual tools
+    don't prevent other tools from loading.
+
+    Args:
+        registry: Tool registry to add plugin tools to.
+        settings: Settings instance for plugin discovery.
+    """
+    try:
+        import brynhild.plugins.registry as plugin_registry
+        import brynhild.plugins.tools as plugin_tools
+
+        # Discover plugins
+        project_root = getattr(settings, "project_root", None)
+        plugins = plugin_registry.PluginRegistry(project_root=project_root)
+
+        # Load tools from each enabled plugin
+        tool_loader = plugin_tools.ToolLoader()
+        for plugin in plugins.get_enabled_plugins():
+            if not plugin.has_tools():
+                continue
+
+            try:
+                # Load tool classes from plugin
+                tool_classes = tool_loader.load_from_plugin(
+                    plugin.path,
+                    plugin.name,
+                )
+
+                # Instantiate and register each tool
+                for tool_name, tool_cls in tool_classes.items():
+                    try:
+                        tool_instance = tool_cls()
+                        registry.register(tool_instance)
+                        _logger.debug(
+                            "Loaded tool '%s' from plugin '%s'",
+                            tool_name,
+                            plugin.name,
+                        )
+                    except Exception as e:
+                        _logger.warning(
+                            "Failed to instantiate tool '%s' from plugin '%s': %s",
+                            tool_name,
+                            plugin.name,
+                            e,
+                        )
+            except Exception as e:
+                _logger.warning(
+                    "Failed to load tools from plugin '%s': %s",
+                    plugin.name,
+                    e,
+                )
+    except Exception as e:
+        # Log but don't fail - builtin tools still work
+        _logger.warning("Failed to load plugin tools: %s", e)
+
+
 # Builtin tool names for reference
-BUILTIN_TOOL_NAMES = frozenset({"Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect"})
+BUILTIN_TOOL_NAMES = frozenset({"Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect", "LearnSkill"})
 

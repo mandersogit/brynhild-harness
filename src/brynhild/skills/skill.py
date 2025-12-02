@@ -134,15 +134,26 @@ class Skill:
 
     def list_reference_files(self) -> list[_pathlib.Path]:
         """
-        List additional reference files in the skill directory.
+        List reference files in the skill's references/ directory.
 
-        Returns all .md files except SKILL.md.
+        Returns all files in references/ (typically .md files).
+        Also includes any top-level .md files except SKILL.md for backwards compat.
         """
         refs: list[_pathlib.Path] = []
+
+        # Check references/ directory (preferred location per Anthropic spec)
+        refs_dir = self.path / "references"
+        if refs_dir.is_dir():
+            for ref_file in refs_dir.iterdir():
+                if ref_file.is_file() and not ref_file.name.startswith("."):
+                    refs.append(ref_file)
+
+        # Also check top-level .md files (backwards compatibility)
         if self.path.is_dir():
             for md_file in self.path.glob("*.md"):
                 if md_file.name != "SKILL.md":
                     refs.append(md_file)
+
         return refs
 
     def list_scripts(self) -> list[_pathlib.Path]:

@@ -256,7 +256,7 @@ class TestBrynhildAppAsync:
 
 
 class TestPermissionDialog:
-    """Tests for PermissionDialog."""
+    """Tests for PermissionDialog widget."""
 
     def test_dialog_creation(self) -> None:
         """Should create dialog with tool call info."""
@@ -267,4 +267,52 @@ class TestPermissionDialog:
         dialog = widgets.PermissionDialog(tool_call)
         assert "Bash" in dialog.border_title
         assert dialog._tool_call == tool_call
+
+
+class TestPermissionScreen:
+    """Tests for PermissionScreen modal."""
+
+    def test_screen_has_cancel_binding(self) -> None:
+        """Screen should have cancel keybinding."""
+        import brynhild.ui.app as app_module
+
+        tool_call = ui.ToolCallDisplay(
+            tool_name="Bash",
+            tool_input={"command": "ls"},
+        )
+        screen = app_module.PermissionScreen(tool_call)
+
+        # Check bindings include cancel
+        binding_keys = [b.key for b in screen.BINDINGS]
+        assert "c" in binding_keys
+        assert "q" in binding_keys
+        assert "ctrl+c" in binding_keys
+
+    def test_screen_has_allow_deny_cancel_actions(self) -> None:
+        """Screen should have all three action methods."""
+        import brynhild.ui.app as app_module
+
+        tool_call = ui.ToolCallDisplay(
+            tool_name="Bash",
+            tool_input={"command": "ls"},
+        )
+        screen = app_module.PermissionScreen(tool_call)
+
+        # Check all actions exist
+        assert hasattr(screen, "action_allow")
+        assert hasattr(screen, "action_deny")
+        assert hasattr(screen, "action_cancel")
+
+    def test_screen_return_type_allows_none(self) -> None:
+        """Screen should return bool | None (None = cancel)."""
+        import brynhild.ui.app as app_module
+        import typing as _typing
+
+        # Check the type annotation
+        # PermissionScreen inherits from Screen[bool | None]
+        origin = _typing.get_origin(app_module.PermissionScreen.__orig_bases__[0])  # type: ignore  # noqa: F841
+        args = _typing.get_args(app_module.PermissionScreen.__orig_bases__[0])  # type: ignore
+
+        # Should be Screen[bool | None]
+        assert args == (bool | None,)
 
