@@ -289,19 +289,71 @@ Hooks are defined in YAML and can trigger on specific events:
 
 ```yaml
 # hooks.yaml
-hooks:
-  - name: log-tool-usage
-    event: post_tool_use
-    type: command
-    command: "echo 'Tool used: {{tool_name}}' >> /tmp/tool-log.txt"
+version: 1
 
-  - name: block-dangerous
-    event: pre_tool_use
-    type: script
-    script: |
-      if tool_name == "Bash" and "rm -rf" in tool_input.get("command", ""):
-          return {"action": "block", "message": "Dangerous command blocked"}
+hooks:
+  # Plugin lifecycle hooks
+  plugin_init:
+    - name: initialize_resources
+      type: command
+      command: "./scripts/init.sh"
+
+  plugin_shutdown:
+    - name: cleanup_resources
+      type: command
+      command: "./scripts/cleanup.sh"
+
+  # Tool hooks
+  pre_tool_use:
+    - name: block-dangerous
+      type: script
+      script: |
+        if tool_name == "Bash" and "rm -rf" in tool_input.get("command", ""):
+            return {"action": "block", "message": "Dangerous command blocked"}
+
+  post_tool_use:
+    - name: log-tool-usage
+      type: command
+      command: "echo 'Tool used: $BRYNHILD_TOOL_NAME' >> /tmp/tool-log.txt"
 ```
+
+#### Available Hook Events
+
+| Event | Description | Can Block | Can Modify |
+|-------|-------------|-----------|------------|
+| `plugin_init` | Plugin loaded and initialized | No | No |
+| `plugin_shutdown` | Brynhild is exiting | No | No |
+| `pre_tool_use` | Before tool execution | Yes | Yes (input) |
+| `post_tool_use` | After tool execution | No | Yes (output) |
+| `pre_message` | Before sending to LLM | Yes | Yes (message) |
+| `post_message` | After receiving from LLM | No | Yes (response) |
+
+#### Plugin Lifecycle Hooks
+
+Use `plugin_init` and `plugin_shutdown` for resource management:
+
+```yaml
+hooks:
+  plugin_init:
+    - name: connect_database
+      type: command
+      command: |
+        echo "Initializing plugin: $BRYNHILD_PLUGIN_NAME"
+        ./scripts/connect.sh
+
+  plugin_shutdown:
+    - name: disconnect_database
+      type: command
+      command: |
+        echo "Shutting down plugin: $BRYNHILD_PLUGIN_NAME"
+        ./scripts/disconnect.sh
+```
+
+Environment variables available in plugin hooks:
+- `BRYNHILD_PLUGIN_NAME` - Plugin name
+- `BRYNHILD_PLUGIN_PATH` - Plugin directory path
+- `BRYNHILD_EVENT` - Event name
+- `BRYNHILD_CWD` - Current working directory
 
 ## Testing Plugins
 

@@ -2,6 +2,17 @@
 version: 1
 
 hooks:
+  # Plugin lifecycle hooks
+  plugin_init:
+    - name: on_plugin_init
+      type: command
+      command: "echo '[PLUGIN-HOOK] plugin_init: $BRYNHILD_PLUGIN_NAME at $BRYNHILD_PLUGIN_PATH' >&2"
+
+  plugin_shutdown:
+    - name: on_plugin_shutdown
+      type: command
+      command: "echo '[PLUGIN-HOOK] plugin_shutdown: $BRYNHILD_PLUGIN_NAME' >&2"
+
   # Pre-tool hook: logs before tool execution
   pre_tool_use:
     - name: log_tool_start
