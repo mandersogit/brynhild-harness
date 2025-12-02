@@ -252,23 +252,52 @@ def build_registry_from_settings(
             sandbox_config=sandbox_config,
         ))
 
-    # Register LearnSkill tool (requires SkillRegistry)
+    # Discover plugins once (used for both tools and skills)
+    discovered_plugins = _discover_plugins(settings)
+
+    # Register LearnSkill tool (requires SkillRegistry with plugin skills)
     if "LearnSkill" not in disabled_tools:
         import brynhild.skills as skills
         import brynhild.tools.skill as skill_tool
 
-        skill_registry = skills.SkillRegistry(project_root=project_root)
+        skill_registry = skills.SkillRegistry(
+            project_root=project_root,
+            plugins=discovered_plugins,
+        )
         registry.register(skill_tool.LearnSkillTool(skill_registry=skill_registry))
 
     # Load tools from enabled plugins
-    _load_plugin_tools(registry, settings)
+    _load_plugin_tools(registry, discovered_plugins)
 
     return registry
 
 
+def _discover_plugins(
+    settings: _typing.Any,  # brynhild.config.Settings
+) -> list[_typing.Any]:  # list[brynhild.plugins.manifest.Plugin]
+    """
+    Discover enabled plugins from settings.
+
+    Args:
+        settings: Settings instance with project_root.
+
+    Returns:
+        List of enabled Plugin instances.
+    """
+    try:
+        import brynhild.plugins.registry as plugin_registry
+
+        project_root = getattr(settings, "project_root", None)
+        plugins = plugin_registry.PluginRegistry(project_root=project_root)
+        return list(plugins.get_enabled_plugins())
+    except Exception as e:
+        _logger.warning("Plugin discovery failed: %s", e)
+        return []
+
+
 def _load_plugin_tools(
     registry: ToolRegistry,
-    settings: _typing.Any,
+    plugins: list[_typing.Any],  # list[brynhild.plugins.manifest.Plugin]
 ) -> None:
     """
     Load tools from enabled plugins and register them.
@@ -279,19 +308,14 @@ def _load_plugin_tools(
 
     Args:
         registry: Tool registry to add plugin tools to.
-        settings: Settings instance for plugin discovery.
+        plugins: List of enabled Plugin instances.
     """
     try:
-        import brynhild.plugins.registry as plugin_registry
         import brynhild.plugins.tools as plugin_tools
-
-        # Discover plugins
-        project_root = getattr(settings, "project_root", None)
-        plugins = plugin_registry.PluginRegistry(project_root=project_root)
 
         # Load tools from each enabled plugin
         tool_loader = plugin_tools.ToolLoader()
-        for plugin in plugins.get_enabled_plugins():
+        for plugin in plugins:
             if not plugin.has_tools():
                 continue
 
