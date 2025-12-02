@@ -111,6 +111,7 @@ class Session:
         model: Model used for this session
         provider: Provider used for this session
         messages: List of messages in the conversation
+        tool_metrics: Accumulated tool usage metrics (optional)
     """
 
     id: str
@@ -123,6 +124,10 @@ class Session:
 
     # Metadata
     title: str | None = None  # Auto-generated or user-set title
+
+    # Tool metrics (accumulated during session)
+    # Format: {tool_name: {call_count, success_count, failure_count, total_duration_ms, ...}}
+    tool_metrics: dict[str, dict[str, _typing.Any]] | None = None
 
     @classmethod
     def create(
@@ -157,7 +162,7 @@ class Session:
 
     def to_dict(self) -> dict[str, _typing.Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        d: dict[str, _typing.Any] = {
             "id": self.id,
             "cwd": self.cwd,
             "created_at": self.created_at,
@@ -167,6 +172,9 @@ class Session:
             "title": self.title,
             "messages": [m.to_dict() for m in self.messages],
         }
+        if self.tool_metrics:
+            d["tool_metrics"] = self.tool_metrics
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, _typing.Any]) -> Session:
@@ -181,6 +189,7 @@ class Session:
             provider=data["provider"],
             title=data.get("title"),
             messages=messages,
+            tool_metrics=data.get("tool_metrics"),
         )
 
     def summary(self) -> dict[str, _typing.Any]:
