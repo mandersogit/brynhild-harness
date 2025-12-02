@@ -37,6 +37,159 @@ class ToolResult:
         }
 
 
+@_dataclasses.dataclass
+class ToolMetrics:
+    """
+    Metrics for a single tool's usage.
+
+    Tracks call counts, durations, and success rates for observability.
+    These metrics are accumulated during a session and can be logged
+    or stored in session data.
+    """
+
+    tool_name: str
+    call_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    total_duration_ms: float = 0.0
+    last_used: str | None = None  # ISO timestamp
+
+    @property
+    def success_rate(self) -> float:
+        """Success rate as a percentage (0.0 to 100.0)."""
+        if self.call_count == 0:
+            return 0.0
+        return (self.success_count / self.call_count) * 100.0
+
+    @property
+    def average_duration_ms(self) -> float:
+        """Average duration per call in milliseconds."""
+        if self.call_count == 0:
+            return 0.0
+        return self.total_duration_ms / self.call_count
+
+    def record_call(
+        self,
+        success: bool,
+        duration_ms: float,
+        timestamp: str | None = None,
+    ) -> None:
+        """
+        Record a tool call.
+
+        Args:
+            success: Whether the call succeeded
+            duration_ms: How long the call took in milliseconds
+            timestamp: ISO timestamp of the call (default: now)
+        """
+        import datetime as _dt
+
+        self.call_count += 1
+        if success:
+            self.success_count += 1
+        else:
+            self.failure_count += 1
+        self.total_duration_ms += duration_ms
+        self.last_used = timestamp or _dt.datetime.now(_dt.UTC).isoformat()
+
+    def to_dict(self) -> dict[str, _typing.Any]:
+        """Convert to JSON-serializable dict."""
+        return {
+            "tool_name": self.tool_name,
+            "call_count": self.call_count,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+            "total_duration_ms": self.total_duration_ms,
+            "average_duration_ms": self.average_duration_ms,
+            "success_rate": self.success_rate,
+            "last_used": self.last_used,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, _typing.Any]) -> ToolMetrics:
+        """Create from dictionary."""
+        return cls(
+            tool_name=data["tool_name"],
+            call_count=data.get("call_count", 0),
+            success_count=data.get("success_count", 0),
+            failure_count=data.get("failure_count", 0),
+            total_duration_ms=data.get("total_duration_ms", 0.0),
+            last_used=data.get("last_used"),
+        )
+
+
+class MetricsCollector:
+    """
+    Collects tool metrics across a session.
+
+    This collector is always on - metrics are recorded for every tool call.
+    Metrics can be retrieved for logging, session storage, or CLI display.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty metrics collector."""
+        self._metrics: dict[str, ToolMetrics] = {}
+
+    def record(
+        self,
+        tool_name: str,
+        success: bool,
+        duration_ms: float,
+        timestamp: str | None = None,
+    ) -> None:
+        """
+        Record a tool call.
+
+        Args:
+            tool_name: Name of the tool
+            success: Whether the call succeeded
+            duration_ms: How long the call took in milliseconds
+            timestamp: ISO timestamp of the call (default: now)
+        """
+        if tool_name not in self._metrics:
+            self._metrics[tool_name] = ToolMetrics(tool_name=tool_name)
+        self._metrics[tool_name].record_call(success, duration_ms, timestamp)
+
+    def get(self, tool_name: str) -> ToolMetrics | None:
+        """Get metrics for a specific tool."""
+        return self._metrics.get(tool_name)
+
+    def all(self) -> list[ToolMetrics]:
+        """Get all tool metrics, sorted by call count (descending)."""
+        return sorted(
+            self._metrics.values(),
+            key=lambda m: m.call_count,
+            reverse=True,
+        )
+
+    def to_dict(self) -> dict[str, dict[str, _typing.Any]]:
+        """Convert all metrics to JSON-serializable dict."""
+        return {name: m.to_dict() for name, m in self._metrics.items()}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, dict[str, _typing.Any]]) -> MetricsCollector:
+        """Create from dictionary."""
+        collector = cls()
+        for name, metrics_data in data.items():
+            collector._metrics[name] = ToolMetrics.from_dict(metrics_data)
+        return collector
+
+    def summary(self) -> dict[str, _typing.Any]:
+        """Get a summary of all metrics."""
+        total_calls = sum(m.call_count for m in self._metrics.values())
+        total_success = sum(m.success_count for m in self._metrics.values())
+        total_duration = sum(m.total_duration_ms for m in self._metrics.values())
+
+        return {
+            "total_calls": total_calls,
+            "total_success": total_success,
+            "total_failures": total_calls - total_success,
+            "success_rate": (total_success / total_calls * 100.0) if total_calls else 0.0,
+            "total_duration_ms": total_duration,
+            "tools_used": len(self._metrics),
+        }
+
+
 class Tool(_abc.ABC):
     """
     Abstract base class for all tools.
@@ -46,6 +199,11 @@ class Tool(_abc.ABC):
     - description (property): Human-readable description for the LLM
     - input_schema (property): JSON schema for input validation
     - execute(): The actual tool implementation
+
+    Optional metadata (override for richer tool information):
+    - version (property): Tool version string (default: "0.0.0")
+    - categories (property): List of category tags (default: [])
+    - examples (property): Usage examples for the LLM (default: [])
     """
 
     @property
@@ -83,6 +241,49 @@ class Tool(_abc.ABC):
             ToolResult with success status, output, and optional error
         """
         ...
+
+    # Optional metadata properties with null-ish defaults
+
+    @property
+    def version(self) -> str:
+        """
+        Tool version string.
+
+        Override to track tool versioning. Default is "0.0.0" indicating
+        version is not tracked for this tool.
+
+        Returns:
+            Semantic version string (e.g., "1.2.3")
+        """
+        return "0.0.0"
+
+    @property
+    def categories(self) -> list[str]:
+        """
+        Category tags for tool organization.
+
+        Override to categorize tools. Useful for filtering and grouping.
+        Common categories: "filesystem", "search", "shell", "network", etc.
+
+        Returns:
+            List of category strings
+        """
+        return []
+
+    @property
+    def examples(self) -> list[dict[str, _typing.Any]]:
+        """
+        Usage examples for the LLM.
+
+        Override to provide examples that help the LLM understand how
+        to use the tool effectively. Each example is a dict with:
+        - "description": What the example demonstrates
+        - "input": Example input dict matching input_schema
+
+        Returns:
+            List of example dictionaries
+        """
+        return []
 
     @property
     def requires_permission(self) -> bool:
