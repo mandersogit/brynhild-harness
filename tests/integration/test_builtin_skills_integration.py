@@ -9,9 +9,6 @@ Verifies the full path from:
 """
 
 import pathlib as _pathlib
-import typing as _typing
-
-import pytest as _pytest
 
 import brynhild.core.context as context
 import brynhild.skills.discovery as discovery

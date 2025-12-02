@@ -67,8 +67,8 @@ class SkillLoader:
             lines.append(skill.get_metadata_for_prompt())
         lines.append("")
         lines.append(
-            "To use a skill, either let it activate automatically based on your "
-            "task, or explicitly request it with /skill <name>."
+            "To use a skill: use LearnSkill(skill=\"name\") to load guidance, "
+            "or the user can type /skill <name> in the chat."
         )
 
         return "\n".join(lines)
@@ -150,10 +150,13 @@ class SkillLoader:
         if skill_name in self._loaded_refs and filename in self._loaded_refs[skill_name]:
             return self._loaded_refs[skill_name][filename]
 
-        # Load from disk
+        # Load from disk - check both direct path and references/ subdirectory
         ref_path = skill.path / filename
         if not ref_path.is_file():
-            return None
+            # Try references/ subdirectory (preferred location)
+            ref_path = skill.path / "references" / filename
+            if not ref_path.is_file():
+                return None
 
         try:
             content = ref_path.read_text(encoding="utf-8")
