@@ -7,11 +7,12 @@ expertise. They provide:
 - Progressive disclosure (only load what's needed)
 - Optional scripts and reference materials
 
-Skill discovery locations (in priority order):
-1. ~/.config/brynhild/skills/ - User skills
-2. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
-3. Project .brynhild/skills/ - Project-local skills
+Skill discovery locations (in priority order, lowest to highest):
+1. Builtin skills (shipped with brynhild package)
+2. ~/.config/brynhild/skills/ - User skills (global)
+3. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
 4. Plugin-bundled skills - Skills bundled in plugins
+5. Project .brynhild/skills/ - Project-local skills
 
 Based on Anthropic's Agent Skills Spec and obra/superpowers.
 """
@@ -19,6 +20,7 @@ Based on Anthropic's Agent Skills Spec and obra/superpowers.
 from brynhild.skills.discovery import (
     SkillDiscovery,
     get_global_skills_path,
+    get_plugin_skill_paths,
     get_project_skills_path,
     get_skill_search_paths,
 )
@@ -48,6 +50,7 @@ __all__ = [
     # Discovery
     "SkillDiscovery",
     "get_global_skills_path",
+    "get_plugin_skill_paths",
     "get_project_skills_path",
     "get_skill_search_paths",
     # Loader and Registry

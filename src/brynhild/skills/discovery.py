@@ -5,9 +5,10 @@ Skills are discovered from (in priority order, lowest to highest):
 1. Builtin skills (shipped with brynhild package)
 2. ~/.config/brynhild/skills/ - User skills (global)
 3. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
-4. Project .brynhild/skills/ - Project-local skills
+4. Plugin-bundled skills - Skills provided by enabled plugins
+5. Project .brynhild/skills/ - Project-local skills
 
-Later sources have higher priority (project overrides global overrides builtin).
+Later sources have higher priority (project overrides plugin overrides global overrides builtin).
 """
 
 from __future__ import annotations
@@ -18,6 +19,9 @@ import typing as _typing
 
 import brynhild.builtin_skills as builtin_skills
 import brynhild.skills.skill as skill_module
+
+if _typing.TYPE_CHECKING:
+    import brynhild.plugins.manifest as _manifest
 
 
 def get_builtin_skills_path() -> _pathlib.Path:
@@ -35,10 +39,36 @@ def get_project_skills_path(project_root: _pathlib.Path) -> _pathlib.Path:
     return project_root / ".brynhild" / "skills"
 
 
+def get_plugin_skill_paths(
+    plugins: list[_manifest.Plugin] | None = None,
+) -> list[tuple[_pathlib.Path, str]]:
+    """
+    Get skill paths from plugins.
+
+    Args:
+        plugins: List of enabled plugins.
+
+    Returns:
+        List of (skill_path, plugin_name) tuples.
+    """
+    if not plugins:
+        return []
+
+    paths: list[tuple[_pathlib.Path, str]] = []
+    for plugin in plugins:
+        if plugin.enabled and plugin.has_skills():
+            skills_dir = plugin.skills_path
+            if skills_dir.is_dir():
+                paths.append((skills_dir, plugin.name))
+
+    return paths
+
+
 def get_skill_search_paths(
     project_root: _pathlib.Path | None = None,
     *,
     include_builtin: bool = True,
+    plugins: list[_manifest.Plugin] | None = None,
 ) -> list[_pathlib.Path]:
     """
     Get all skill search paths in priority order.
@@ -47,6 +77,7 @@ def get_skill_search_paths(
         project_root: Project root directory. If None, only global,
                       builtin, and env paths are included.
         include_builtin: Whether to include builtin skills (default True).
+        plugins: List of enabled plugins to include skills from.
 
     Returns:
         List of paths to search (lowest to highest priority).
@@ -68,7 +99,11 @@ def get_skill_search_paths(
             if p:
                 paths.append(_pathlib.Path(p).expanduser().resolve())
 
-    # 4. Project-local skills (highest priority)
+    # 4. Plugin-bundled skills
+    for plugin_path, _plugin_name in get_plugin_skill_paths(plugins):
+        paths.append(plugin_path)
+
+    # 5. Project-local skills (highest priority)
     if project_root is not None:
         paths.append(get_project_skills_path(project_root))
 
@@ -89,6 +124,7 @@ class SkillDiscovery:
         self,
         project_root: _pathlib.Path | None = None,
         search_paths: list[_pathlib.Path] | None = None,
+        plugins: list[_manifest.Plugin] | None = None,
     ) -> None:
         """
         Initialize skill discovery.
@@ -96,15 +132,21 @@ class SkillDiscovery:
         Args:
             project_root: Project root for local skill discovery.
             search_paths: Custom search paths (overrides default locations).
+            plugins: List of enabled plugins to include skills from.
         """
         self._project_root = project_root
         self._search_paths = search_paths
+        self._plugins = plugins or []
+        # Build mapping of plugin skill paths for source identification
+        self._plugin_paths: dict[_pathlib.Path, str] = {}
+        for path, name in get_plugin_skill_paths(self._plugins):
+            self._plugin_paths[path] = name
 
     def get_search_paths(self) -> list[_pathlib.Path]:
         """Get the search paths in use."""
         if self._search_paths is not None:
             return self._search_paths
-        return get_skill_search_paths(self._project_root)
+        return get_skill_search_paths(self._project_root, plugins=self._plugins)
 
     def _get_source_for_path(self, search_path: _pathlib.Path) -> str:
         """Determine the source type for a search path."""
@@ -114,6 +156,8 @@ class SkillDiscovery:
             return "builtin"
         if search_path == global_path:
             return "global"
+        if search_path in self._plugin_paths:
+            return f"plugin:{self._plugin_paths[search_path]}"
         if self._project_root and search_path == get_project_skills_path(
             self._project_root
         ):
