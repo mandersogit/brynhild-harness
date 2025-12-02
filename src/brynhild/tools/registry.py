@@ -276,7 +276,7 @@ def _discover_plugins(
     settings: _typing.Any,  # brynhild.config.Settings
 ) -> list[_typing.Any]:  # list[brynhild.plugins.manifest.Plugin]
     """
-    Discover enabled plugins from settings.
+    Discover enabled plugins from settings and fire init hooks.
 
     Args:
         settings: Settings instance with project_root.
@@ -285,11 +285,17 @@ def _discover_plugins(
         List of enabled Plugin instances.
     """
     try:
+        import brynhild.plugins.lifecycle as lifecycle
         import brynhild.plugins.registry as plugin_registry
 
         project_root = getattr(settings, "project_root", None)
         plugins = plugin_registry.PluginRegistry(project_root=project_root)
-        return list(plugins.get_enabled_plugins())
+        enabled_plugins = list(plugins.get_enabled_plugins())
+
+        # Fire PLUGIN_INIT hooks for all discovered plugins
+        lifecycle.fire_plugin_init_for_all_sync(enabled_plugins, project_root=project_root)
+
+        return enabled_plugins
     except Exception as e:
         _logger.warning("Plugin discovery failed: %s", e)
         return []
