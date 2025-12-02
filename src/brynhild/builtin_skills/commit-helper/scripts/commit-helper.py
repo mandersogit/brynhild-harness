@@ -16,7 +16,6 @@ Usage (with specific interpreter):
 """
 
 import pathlib as _pathlib
-import shutil as _shutil
 import subprocess as _subprocess
 import sys as _sys
 import typing as _typing
@@ -65,7 +64,8 @@ def _validate_files(
 def _load_plan(plan_path: _pathlib.Path) -> dict[str, _typing.Any]:
     """Load commit plan from YAML file."""
     with plan_path.open() as f:
-        return _yaml.safe_load(f)
+        result: dict[str, _typing.Any] = _yaml.safe_load(f)
+        return result
 
 
 def _get_repo_path(plan: dict[str, _typing.Any], plan_path: _pathlib.Path) -> _pathlib.Path:
