@@ -727,7 +727,8 @@ def _get_tool_registry() -> tools.ToolRegistry:
 
 @tools_cmd.command(name="list")
 @_click.option("--json", "json_output", is_flag=True, help="JSON output")
-def tools_list(json_output: bool) -> None:
+@_click.option("-v", "--verbose", is_flag=True, help="Show version and categories")
+def tools_list(json_output: bool, verbose: bool) -> None:
     """List all available tools."""
     registry = _get_tool_registry()
 
@@ -736,6 +737,9 @@ def tools_list(json_output: bool) -> None:
             {
                 "name": t.name,
                 "description": t.description,
+                "version": t.version,
+                "categories": t.categories,
+                "requires_permission": t.requires_permission,
             }
             for t in registry.list_tools()
         ]
@@ -743,7 +747,14 @@ def tools_list(json_output: bool) -> None:
     else:
         _click.echo("Available Tools:")
         for t in registry.list_tools():
-            _click.echo(f"  {t.name}: {t.description[:60]}...")
+            if verbose:
+                version_str = f" v{t.version}" if t.version != "0.0.0" else ""
+                categories_str = f" [{', '.join(t.categories)}]" if t.categories else ""
+                perm_str = " [requires permission]" if t.requires_permission else ""
+                _click.echo(f"  {t.name}{version_str}{categories_str}{perm_str}")
+                _click.echo(f"    {t.description[:70]}...")
+            else:
+                _click.echo(f"  {t.name}: {t.description[:60]}...")
 
 
 @tools_cmd.command(name="schema")
@@ -808,6 +819,123 @@ def tools_exec(
         else:
             _click.echo(f"Error: {result.error}", err=True)
             raise SystemExit(1)
+
+
+@tools_cmd.command(name="stats")
+@_click.option("--json", "json_output", is_flag=True, help="JSON output")
+@_click.option("--log", "log_file", type=_click.Path(exists=True), help="Read stats from specific log file")
+@_click.option("--session", "session_id", help="Read stats from specific session")
+def tools_stats(
+    json_output: bool,
+    log_file: str | None,
+    session_id: str | None,
+) -> None:
+    """Show tool usage statistics from logs or sessions."""
+    import brynhild.tools.base as tools_base
+
+    metrics: dict[str, dict[str, _typing.Any]] = {}
+
+    if session_id:
+        # Load from session
+        settings = config.Settings()
+        import brynhild.session as session_mod
+
+        manager = session_mod.SessionManager(settings.sessions_dir)
+        sess = manager.load(session_id)
+        if not sess:
+            _click.echo(f"Session not found: {session_id}", err=True)
+            raise SystemExit(1)
+        if sess.tool_metrics:
+            metrics = sess.tool_metrics
+        else:
+            _click.echo("No tool metrics in session", err=True)
+            raise SystemExit(1)
+
+    elif log_file:
+        # Parse log file for tool_result events
+        import pathlib as _pathlib
+
+        log_path = _pathlib.Path(log_file)
+        collector = tools_base.MetricsCollector()
+
+        with log_path.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = _json.loads(line)
+                    if event.get("event_type") == "tool_result":
+                        tool_name = event.get("tool_name", "unknown")
+                        success = event.get("success", False)
+                        duration_ms = event.get("duration_ms", 0.0)
+                        collector.record(tool_name, success, duration_ms)
+                except _json.JSONDecodeError:
+                    continue
+
+        metrics = collector.to_dict()
+
+    else:
+        # No source specified - show message
+        _click.echo("Specify --log or --session to read tool statistics.", err=True)
+        _click.echo()
+        _click.echo("Examples:")
+        _click.echo("  brynhild tools stats --log ~/.brynhild/logs/brynhild_20251202_143022.jsonl")
+        _click.echo("  brynhild tools stats --session abc12345")
+        raise SystemExit(1)
+
+    if not metrics:
+        _click.echo("No tool usage found", err=True)
+        raise SystemExit(1)
+
+    if json_output:
+        # Include summary in JSON output
+        total_calls = sum(m.get("call_count", 0) for m in metrics.values())
+        total_success = sum(m.get("success_count", 0) for m in metrics.values())
+        total_duration = sum(m.get("total_duration_ms", 0) for m in metrics.values())
+        output = {
+            "tools": metrics,
+            "summary": {
+                "total_calls": total_calls,
+                "total_success": total_success,
+                "total_failures": total_calls - total_success,
+                "success_rate": (total_success / total_calls * 100.0) if total_calls else 0.0,
+                "total_duration_ms": round(total_duration, 2),
+                "tools_used": len(metrics),
+            },
+        }
+        _click.echo(_json.dumps(output, indent=2))
+    else:
+        _click.echo("Tool Usage Statistics")
+        _click.echo("=" * 60)
+        _click.echo()
+        _click.echo(f"{'Tool':<15} {'Calls':<8} {'Success':<8} {'Fail':<6} {'Rate':<8} {'Avg ms':<10}")
+        _click.echo("-" * 60)
+
+        total_calls = 0
+        total_success = 0
+        total_duration = 0.0
+
+        # Sort by call count
+        sorted_metrics = sorted(metrics.items(), key=lambda x: x[1].get("call_count", 0), reverse=True)
+
+        for tool_name, m in sorted_metrics:
+            calls = m.get("call_count", 0)
+            success = m.get("success_count", 0)
+            failures = m.get("failure_count", 0)
+            rate = m.get("success_rate", 0.0)
+            avg_ms = m.get("average_duration_ms", 0.0)
+
+            total_calls += calls
+            total_success += success
+            total_duration += m.get("total_duration_ms", 0.0)
+
+            _click.echo(f"{tool_name:<15} {calls:<8} {success:<8} {failures:<6} {rate:>6.1f}% {avg_ms:>8.1f}")
+
+        _click.echo("-" * 60)
+        total_rate = (total_success / total_calls * 100.0) if total_calls else 0.0
+        total_avg = (total_duration / total_calls) if total_calls else 0.0
+        _click.echo(f"{'TOTAL':<15} {total_calls:<8} {total_success:<8} {total_calls - total_success:<6} {total_rate:>6.1f}% {total_avg:>8.1f}")
 
 
 # =============================================================================
