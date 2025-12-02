@@ -45,6 +45,7 @@ from brynhild.plugins.rules import (
     load_global_rules,
     load_rule_file,
 )
+from brynhild.plugins.stubs import ToolBase, ToolResult
 from brynhild.plugins.tools import ToolLoader, ToolLoadError
 
 __all__ = [
@@ -59,8 +60,10 @@ __all__ = [
     "CommandFrontmatter",
     "CommandLoader",
     # Tools
+    "ToolBase",
     "ToolLoadError",
     "ToolLoader",
+    "ToolResult",
     # Providers
     "ProviderLoadError",
     "ProviderLoader",
