@@ -27,6 +27,13 @@ class HookEvent(_enum.Enum):
     relevant context to the hook.
     """
 
+    # Plugin lifecycle
+    PLUGIN_INIT = "plugin_init"
+    """Plugin initialized (loaded and components registered). Cannot block."""
+
+    PLUGIN_SHUTDOWN = "plugin_shutdown"
+    """Plugin shutting down (brynhild exiting). Cannot block."""
+
     # Session lifecycle
     SESSION_START = "session_start"
     """New session begins. Cannot block or modify."""
@@ -111,6 +118,8 @@ class HookContext:
         event: The event that triggered this hook
         session_id: Current session identifier
         cwd: Current working directory
+        plugin_name: Plugin name (for plugin events)
+        plugin_path: Plugin directory path (for plugin events)
         tool: Tool name (for tool events)
         tool_input: Tool input dict (for pre_tool_use)
         tool_result: Tool result (for post_tool_use)
@@ -123,6 +132,10 @@ class HookContext:
     event: HookEvent
     session_id: str
     cwd: _pathlib.Path
+
+    # Plugin events
+    plugin_name: str | None = None
+    plugin_path: _pathlib.Path | None = None
 
     # Tool events
     tool: str | None = None
@@ -148,6 +161,10 @@ class HookContext:
             "cwd": str(self.cwd),
         }
 
+        if self.plugin_name is not None:
+            result["plugin_name"] = self.plugin_name
+        if self.plugin_path is not None:
+            result["plugin_path"] = str(self.plugin_path)
         if self.tool is not None:
             result["tool"] = self.tool
         if self.tool_input is not None:
@@ -183,6 +200,10 @@ class HookContext:
             "BRYNHILD_CWD": str(self.cwd),
         }
 
+        if self.plugin_name is not None:
+            env["BRYNHILD_PLUGIN_NAME"] = self.plugin_name
+        if self.plugin_path is not None:
+            env["BRYNHILD_PLUGIN_PATH"] = str(self.plugin_path)
         if self.tool is not None:
             env["BRYNHILD_TOOL_NAME"] = self.tool
         if self.tool_input is not None:
