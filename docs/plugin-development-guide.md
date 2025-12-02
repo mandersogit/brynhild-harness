@@ -84,8 +84,9 @@ class Tool(ToolBase):
 # Option A: Environment variable
 export BRYNHILD_PLUGIN_PATH="/path/to/my-plugin"
 
-# Option B: Symlink to plugins directory
-ln -s /path/to/my-plugin ~/brynhild/plugins/my-plugin
+# Option B: Symlink to global plugins directory
+mkdir -p ~/.config/brynhild/plugins
+ln -s /path/to/my-plugin ~/.config/brynhild/plugins/my-plugin
 ```
 
 ### 5. Test It
@@ -147,10 +148,10 @@ Brynhild discovers plugins from these locations (in order):
    - Colon-separated list of plugin paths
    - Example: `/path/to/plugin1:/path/to/plugin2`
 
-2. **Project Plugins**: `<project>/plugins/`
+2. **Project Plugins**: `<project>/.brynhild/plugins/`
    - Plugins in the current project's plugins directory
 
-3. **Global Plugins**: `~/.brynhild/plugins/`
+3. **Global Plugins**: `~/.config/brynhild/plugins/`
    - User-wide plugins
 
 ### Checking Plugin Discovery
@@ -307,9 +308,7 @@ hooks:
   pre_tool_use:
     - name: block-dangerous
       type: script
-      script: |
-        if tool_name == "Bash" and "rm -rf" in tool_input.get("command", ""):
-            return {"action": "block", "message": "Dangerous command blocked"}
+      script: "./scripts/block_dangerous.py"  # Must be a file path, not inline code
 
   post_tool_use:
     - name: log-tool-usage
@@ -354,6 +353,62 @@ Environment variables available in plugin hooks:
 - `BRYNHILD_PLUGIN_PATH` - Plugin directory path
 - `BRYNHILD_EVENT` - Event name
 - `BRYNHILD_CWD` - Current working directory
+
+#### Hook Types
+
+**`type: command`** - Run a shell command. Can be inline or call a script:
+
+```yaml
+hooks:
+  plugin_init:
+    - name: simple_command
+      type: command
+      command: "echo 'Hello from $BRYNHILD_PLUGIN_NAME'"
+
+    - name: call_script
+      type: command
+      command: "./scripts/init.sh"
+```
+
+**`type: script`** - Run an external Python script file. **The value must be a file path, not inline code.**
+
+```yaml
+hooks:
+  pre_tool_use:
+    - name: validate_input
+      type: script
+      script: "./scripts/validate.py"  # File path, NOT inline Python
+```
+
+The script receives context as JSON on stdin and outputs result as JSON on stdout:
+
+```python
+# scripts/validate.py
+import json
+import sys
+
+context = json.load(sys.stdin)
+tool_name = context.get("tool")
+tool_input = context.get("tool_input", {})
+
+# Check for dangerous commands
+if tool_name == "Bash" and "rm -rf" in tool_input.get("command", ""):
+    json.dump({"action": "block", "message": "Dangerous command blocked"}, sys.stdout)
+else:
+    json.dump({"action": "continue"}, sys.stdout)
+```
+
+**`type: prompt`** - LLM-based hook (uses an LLM to decide):
+
+```yaml
+hooks:
+  pre_message:
+    - name: classify_intent
+      type: prompt
+      prompt: "Classify the user's intent: {{message}}"
+```
+
+> **Note**: Inline Python code in YAML is NOT supported. For Python logic, create a separate `.py` file and reference it with `type: script`.
 
 ## Testing Plugins
 
@@ -492,8 +547,7 @@ async def execute(self, input: dict) -> ToolResult:
 ## Example Plugins
 
 See `examples/plugins/` for complete working examples:
-- `calculator/` - Simple calculation tool
-- `api-client/` - HTTP API client with auth
+- `calculator/` - Safe math expression evaluator with comprehensive tests
 
 ## See Also
 

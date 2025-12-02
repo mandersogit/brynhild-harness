@@ -108,7 +108,6 @@ pytest tests/ -v
 import pathlib
 import pytest
 import brynhild.plugins.tools as tools
-import brynhild.plugins.manifest as manifest
 
 PLUGIN_PATH = pathlib.Path(__file__).parent.parent
 
@@ -129,36 +128,40 @@ class TestMyToolIntegration:
 
     def test_tool_appears_in_registry(self):
         """Tool is registered when plugin is enabled."""
+        import os
         import brynhild.tools.registry as registry
         import brynhild.config as config
         
-        settings = config.Settings.construct_without_dotenv(
-            plugin_paths=str(PLUGIN_PATH.parent),
-            enabled_plugins="my-plugin",
-        )
-        
-        tool_registry = registry.build_registry_from_settings(settings)
-        tool = tool_registry.get("my_tool")
-        
-        assert tool is not None
-        assert tool.name == "my_tool"
+        # Set plugin path via environment variable
+        os.environ["BRYNHILD_PLUGIN_PATH"] = str(PLUGIN_PATH.parent)
+        try:
+            settings = config.Settings.construct_without_dotenv()
+            tool_registry = registry.build_registry_from_settings(settings)
+            tool = tool_registry.get("my_tool")
+            
+            assert tool is not None
+            assert tool.name == "my_tool"
+        finally:
+            del os.environ["BRYNHILD_PLUGIN_PATH"]
 
     @pytest.mark.asyncio
     async def test_tool_executes_via_registry(self):
         """Tool executes correctly when loaded via registry."""
+        import os
         import brynhild.tools.registry as registry
         import brynhild.config as config
         
-        settings = config.Settings.construct_without_dotenv(
-            plugin_paths=str(PLUGIN_PATH.parent),
-            enabled_plugins="my-plugin",
-        )
-        
-        tool_registry = registry.build_registry_from_settings(settings)
-        tool = tool_registry.get("my_tool")
-        
-        result = await tool.execute({"input": "test"})
-        assert result.success is True
+        # Set plugin path via environment variable
+        os.environ["BRYNHILD_PLUGIN_PATH"] = str(PLUGIN_PATH.parent)
+        try:
+            settings = config.Settings.construct_without_dotenv()
+            tool_registry = registry.build_registry_from_settings(settings)
+            tool = tool_registry.get("my_tool")
+            
+            result = await tool.execute({"input": "test"})
+            assert result.success is True
+        finally:
+            del os.environ["BRYNHILD_PLUGIN_PATH"]
 ```
 
 ### Testing with Mock LLM

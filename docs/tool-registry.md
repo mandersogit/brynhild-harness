@@ -34,8 +34,8 @@ Built-in tools are registered automatically unless disabled via settings.
 Plugin tools are discovered and registered from:
 
 1. **Environment Variable**: `BRYNHILD_PLUGIN_PATH`
-2. **Project Plugins**: `<project>/plugins/`
-3. **Global Plugins**: `~/.brynhild/plugins/`
+2. **Project Plugins**: `<project>/.brynhild/plugins/`
+3. **Global Plugins**: `~/.config/brynhild/plugins/`
 
 Each plugin's `plugin.yaml` declares which tools it provides:
 
@@ -218,23 +218,19 @@ class Tool:  # Preferred: class named "Tool"
         ...
 ```
 
-### Handling Property-Based Names
+### Tool Name Discovery
 
-The loader handles both class attributes and properties:
+The loader handles both class attributes and properties for `name`:
 
 ```python
-# Class attribute (legacy)
-class Tool:
-    name = "my_tool"
-
-# Property (preferred)
+# Property (required - preferred approach)
 class Tool:
     @property
     def name(self) -> str:
         return "my_tool"
 ```
 
-Both work, but properties are instantiated to get the value.
+> **Important**: While `name` can technically be a class attribute, `input_schema` **must** be a `@property`. For consistency, use `@property` for all three: `name`, `description`, and `input_schema`.
 
 ## Error Handling
 
