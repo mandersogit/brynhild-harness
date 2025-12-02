@@ -11,12 +11,16 @@ All injections are logged for debugging and replay.
 
 import dataclasses as _dataclasses
 import pathlib as _pathlib
+import typing as _typing
 
 import brynhild.logging as brynhild_logging
 import brynhild.plugins.rules as rules
 import brynhild.profiles.manager as profiles_manager
 import brynhild.profiles.types as profiles_types
 import brynhild.skills as skills
+
+if _typing.TYPE_CHECKING:
+    import brynhild.plugins.manifest as _manifest
 
 
 @_dataclasses.dataclass
@@ -74,6 +78,7 @@ class ContextBuilder:
         profile_name: str | None = None,
         model: str | None = None,
         provider: str | None = None,
+        plugins: "list[_manifest.Plugin] | None" = None,
     ) -> None:
         """
         Initialize the context builder.
@@ -86,6 +91,7 @@ class ContextBuilder:
             profile_name: Explicit profile name to use.
             model: Model name for profile resolution.
             provider: Provider name for profile resolution.
+            plugins: List of enabled plugins (for skill discovery).
         """
         self._project_root = project_root or _pathlib.Path.cwd()
         self._logger = logger
@@ -94,6 +100,7 @@ class ContextBuilder:
         self._profile_name = profile_name
         self._model = model
         self._provider = provider
+        self._plugins = plugins
 
         # Lazy-loaded components
         self._rules_manager: rules.RulesManager | None = None
@@ -113,6 +120,7 @@ class ContextBuilder:
         if self._skill_registry is None:
             self._skill_registry = skills.SkillRegistry(
                 project_root=self._project_root,
+                plugins=self._plugins,
             )
         return self._skill_registry
 
