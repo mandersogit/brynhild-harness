@@ -60,6 +60,9 @@ class HookEvent(_enum.Enum):
     """User submits input. Can block and modify."""
 
     # Context management
+    CONTEXT_BUILD = "context_build"
+    """During context building (system prompt construction). Can inject content."""
+
     PRE_COMPACT = "pre_compact"
     """Before context window compaction. Can modify strategy."""
 
@@ -85,6 +88,7 @@ class HookEvent(_enum.Enum):
             HookEvent.PRE_MESSAGE,
             HookEvent.POST_MESSAGE,
             HookEvent.USER_PROMPT_SUBMIT,
+            HookEvent.CONTEXT_BUILD,
             HookEvent.PRE_COMPACT,
         }
 
@@ -123,10 +127,15 @@ class HookContext:
         tool: Tool name (for tool events)
         tool_input: Tool input dict (for pre_tool_use)
         tool_result: Tool result (for post_tool_use)
+        tool_metrics: Metrics for this specific tool (for post_tool_use)
+        session_metrics_summary: Summary of all tool metrics (for post_tool_use)
         message: User message (for message events)
         response: LLM response (for post_message)
         error: Exception info (for error event)
         compaction_strategy: Strategy name (for pre_compact)
+        base_system_prompt: Base prompt before injections (for context_build)
+        injections_so_far: List of injections applied (for context_build)
+        logger: Conversation logger for custom events (all events)
     """
 
     event: HookEvent
@@ -141,6 +150,8 @@ class HookContext:
     tool: str | None = None
     tool_input: dict[str, _typing.Any] | None = None
     tool_result: tools_base.ToolResult | None = None
+    tool_metrics: tools_base.ToolMetrics | None = None
+    session_metrics_summary: dict[str, _typing.Any] | None = None
 
     # Message events
     message: str | None = None
@@ -152,6 +163,13 @@ class HookContext:
 
     # Compaction event
     compaction_strategy: str | None = None
+
+    # Context build event
+    base_system_prompt: str | None = None
+    injections_so_far: list[dict[str, _typing.Any]] | None = None
+
+    # Logger access (for custom events)
+    logger: _typing.Any | None = None  # ConversationLogger, avoid circular import
 
     def to_dict(self) -> dict[str, _typing.Any]:
         """Convert to JSON-serializable dict for script hooks."""
@@ -171,6 +189,10 @@ class HookContext:
             result["tool_input"] = self.tool_input
         if self.tool_result is not None:
             result["tool_result"] = self.tool_result.to_dict()
+        if self.tool_metrics is not None:
+            result["tool_metrics"] = self.tool_metrics.to_dict()
+        if self.session_metrics_summary is not None:
+            result["session_metrics_summary"] = self.session_metrics_summary
         if self.message is not None:
             result["message"] = self.message
         if self.response is not None:
@@ -181,6 +203,11 @@ class HookContext:
             result["error_type"] = self.error_type
         if self.compaction_strategy is not None:
             result["compaction_strategy"] = self.compaction_strategy
+        if self.base_system_prompt is not None:
+            result["base_system_prompt"] = self.base_system_prompt
+        if self.injections_so_far is not None:
+            result["injections_so_far"] = self.injections_so_far
+        # Note: logger is not serialized (not JSON-able)
 
         return result
 
@@ -236,6 +263,8 @@ class HookResult:
         modified_message: Modified user message (for pre_message)
         modified_response: Modified LLM response (for post_message)
         inject_system_message: System message to inject into conversation
+        context_injection: Text to inject during context_build
+        context_location: Where to inject (prepend or append)
     """
 
     action: HookAction = HookAction.CONTINUE
@@ -249,6 +278,10 @@ class HookResult:
 
     # System message injection
     inject_system_message: str | None = None
+
+    # Context injection (for context_build event)
+    context_injection: str | None = None
+    context_location: _typing.Literal["prepend", "append"] | None = None
 
     @classmethod
     def construct_continue(cls) -> HookResult:
@@ -278,6 +311,11 @@ class HookResult:
         except ValueError:
             action = HookAction.CONTINUE
 
+        # Validate context_location
+        context_location = data.get("context_location")
+        if context_location not in (None, "prepend", "append"):
+            context_location = None
+
         return cls(
             action=action,
             message=data.get("message"),
@@ -286,6 +324,8 @@ class HookResult:
             modified_message=data.get("modified_message"),
             modified_response=data.get("modified_response"),
             inject_system_message=data.get("inject_system_message"),
+            context_injection=data.get("context_injection"),
+            context_location=context_location,
         )
 
     def to_dict(self) -> dict[str, _typing.Any]:
@@ -304,6 +344,10 @@ class HookResult:
             result["modified_response"] = self.modified_response
         if self.inject_system_message is not None:
             result["inject_system_message"] = self.inject_system_message
+        if self.context_injection is not None:
+            result["context_injection"] = self.context_injection
+        if self.context_location is not None:
+            result["context_location"] = self.context_location
 
         return result
 
