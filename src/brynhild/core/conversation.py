@@ -257,6 +257,14 @@ class ConversationProcessor:
         # Track pending injections from hooks
         self._pending_injections: list[str] = []
 
+        # Tool metrics collector
+        self._metrics = tools_base.MetricsCollector()
+
+    @property
+    def metrics(self) -> tools_base.MetricsCollector:
+        """Get the metrics collector for this processor."""
+        return self._metrics
+
     def _get_tools_for_api(self) -> list[api_types.Tool] | None:
         """Get tool definitions for the API call."""
         if self._tool_registry is None:
@@ -293,6 +301,7 @@ class ConversationProcessor:
                 cwd=self._cwd,
                 tool=tool_use.name,
                 tool_input=tool_input,
+                logger=self._logger,
             )
             hook_result = await self._hook_manager.dispatch(
                 hooks_events.HookEvent.PRE_TOOL_USE,
@@ -365,13 +374,25 @@ class ConversationProcessor:
             elif not await self._callbacks.request_tool_permission(tool_call_display):
                 return self._make_error_result(tool_use, "Permission denied by user")
 
-        # Execute the tool
+        # Execute the tool with timing
+        import time as _time
+
+        start_time = _time.perf_counter()
         try:
             result = await tool.execute(tool_input)
+            duration_ms = (_time.perf_counter() - start_time) * 1000
+
+            # Record metrics
+            self._metrics.record(tool_use.name, result.success, duration_ms)
+
             self._log_result(tool_use, result)
 
-            # Dispatch post_tool_use hook
+            # Dispatch post_tool_use hook with metrics
             if self._hook_manager:
+                # Get metrics for this tool and overall summary
+                tool_metrics = self._metrics.get(tool_use.name)
+                session_summary = self._metrics.summary()
+
                 post_context = hooks_events.HookContext(
                     event=hooks_events.HookEvent.POST_TOOL_USE,
                     session_id=self._session_id,
@@ -379,6 +400,9 @@ class ConversationProcessor:
                     tool=tool_use.name,
                     tool_input=tool_input,
                     tool_result=result,
+                    tool_metrics=tool_metrics,
+                    session_metrics_summary=session_summary,
+                    logger=self._logger,
                 )
                 post_hook_result = await self._hook_manager.dispatch(
                     hooks_events.HookEvent.POST_TOOL_USE,
@@ -415,6 +439,8 @@ class ConversationProcessor:
 
             return result
         except Exception as e:
+            duration_ms = (_time.perf_counter() - start_time) * 1000
+            self._metrics.record(tool_use.name, False, duration_ms)
             return self._make_error_result(tool_use, str(e))
 
     def _make_error_result(
