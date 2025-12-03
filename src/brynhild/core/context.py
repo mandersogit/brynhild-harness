@@ -2,9 +2,10 @@
 Context builder for constructing conversation context with injections.
 
 This module centralizes the logic for building the system prompt with:
-- Rules (AGENTS.md, .cursorrules, etc.)
+- Rules (AGENTS.md, .cursorrules, plugin rules, etc.)
 - Skill metadata
 - Profile customizations
+- Hook injections (via CONTEXT_BUILD event)
 
 All injections are logged for debugging and replay.
 """
@@ -12,7 +13,9 @@ All injections are logged for debugging and replay.
 import dataclasses as _dataclasses
 import pathlib as _pathlib
 import typing as _typing
+import uuid as _uuid
 
+import brynhild.hooks.events as hooks_events
 import brynhild.logging as brynhild_logging
 import brynhild.plugins.rules as rules
 import brynhild.profiles.manager as profiles_manager
@@ -20,6 +23,7 @@ import brynhild.profiles.types as profiles_types
 import brynhild.skills as skills
 
 if _typing.TYPE_CHECKING:
+    import brynhild.hooks.manager as _hooks_manager
     import brynhild.plugins.manifest as _manifest
 
 
@@ -66,6 +70,8 @@ class ContextBuilder:
 
     Handles loading rules, skills, and profiles, and constructs
     the final system prompt with all injections logged.
+
+    Fires CONTEXT_BUILD hook to allow plugins to inject content.
     """
 
     def __init__(
@@ -79,6 +85,8 @@ class ContextBuilder:
         model: str | None = None,
         provider: str | None = None,
         plugins: "list[_manifest.Plugin] | None" = None,
+        hook_manager: "_hooks_manager.HookManager | None" = None,
+        session_id: str | None = None,
     ) -> None:
         """
         Initialize the context builder.
@@ -91,7 +99,9 @@ class ContextBuilder:
             profile_name: Explicit profile name to use.
             model: Model name for profile resolution.
             provider: Provider name for profile resolution.
-            plugins: List of enabled plugins (for skill discovery).
+            plugins: List of enabled plugins (for skill and rules discovery).
+            hook_manager: Hook manager for firing CONTEXT_BUILD event.
+            session_id: Session identifier for hook context.
         """
         self._project_root = project_root or _pathlib.Path.cwd()
         self._logger = logger
@@ -101,6 +111,8 @@ class ContextBuilder:
         self._model = model
         self._provider = provider
         self._plugins = plugins
+        self._hook_manager = hook_manager
+        self._session_id = session_id or _uuid.uuid4().hex[:16]
 
         # Lazy-loaded components
         self._rules_manager: rules.RulesManager | None = None
@@ -112,6 +124,7 @@ class ContextBuilder:
         if self._rules_manager is None:
             self._rules_manager = rules.RulesManager(
                 project_root=self._project_root,
+                plugins=self._plugins,
             )
         return self._rules_manager
 
@@ -146,12 +159,66 @@ class ContextBuilder:
 
         return None
 
-    def build(self, base_system_prompt: str) -> ConversationContext:
+    def _apply_hook_injections(
+        self,
+        hook_injections: list[tuple[str, str]] | None,
+        injections_list: list[ContextInjection],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Apply hook injections to prepend/append lists.
+
+        Args:
+            hook_injections: List of (content, location) tuples from hooks.
+            injections_list: Mutable list to append ContextInjection records to.
+
+        Returns:
+            Tuple of (prepend_parts, append_parts) from hooks.
+        """
+        prepend: list[str] = []
+        append: list[str] = []
+
+        if not hook_injections:
+            return prepend, append
+
+        for content, location in hook_injections:
+            injection = ContextInjection(
+                source="hook",
+                location=f"system_prompt_{location}",
+                content=content,
+                origin="context_build",
+            )
+            injections_list.append(injection)
+
+            if self._logger:
+                self._logger.log_context_injection(
+                    source="hook",
+                    location=f"system_prompt_{location}",
+                    content=content,
+                    origin="context_build",
+                    trigger_type="hook",
+                )
+
+            if location == "prepend":
+                prepend.append(content)
+            else:
+                append.append(content)
+
+        return prepend, append
+
+    def build(
+        self,
+        base_system_prompt: str,
+        *,
+        hook_injections: list[tuple[str, str]] | None = None,
+    ) -> ConversationContext:
         """
         Build the complete conversation context.
 
         Args:
             base_system_prompt: The base system prompt to enhance.
+            hook_injections: Optional list of (content, location) tuples from
+                CONTEXT_BUILD hook results. Use build_async() for automatic
+                hook firing, or call fire_context_build_hook() manually.
 
         Returns:
             ConversationContext with the final system prompt and metadata.
@@ -284,6 +351,15 @@ class ContextBuilder:
                         },
                     )
 
+        # 4. Apply hook injections if provided (from async build)
+        hook_prepend, hook_append = self._apply_hook_injections(
+            hook_injections, injections
+        )
+        if hook_prepend:
+            prepend_parts.extend(hook_prepend)
+        if hook_append:
+            append_parts.extend(hook_append)
+
         # Build final system prompt
         final_parts: list[str] = []
 
@@ -318,6 +394,123 @@ class ContextBuilder:
     def get_skill_registry(self) -> skills.SkillRegistry:
         """Get the skill registry for runtime skill triggering."""
         return self._get_skill_registry()
+
+    async def fire_context_build_hook(
+        self,
+        base_system_prompt: str,
+        injections_so_far: list[ContextInjection],
+    ) -> list[tuple[str, str]]:
+        """
+        Fire the CONTEXT_BUILD hook and collect injections.
+
+        Args:
+            base_system_prompt: The base prompt being built.
+            injections_so_far: List of injections already applied.
+
+        Returns:
+            List of (content, location) tuples from hook results.
+            location is "prepend" or "append".
+        """
+        if not self._hook_manager:
+            return []
+
+        # Convert injections to serializable format
+        injections_dict = [
+            {
+                "source": inj.source,
+                "location": inj.location,
+                "content": inj.content,
+                "origin": inj.origin,
+            }
+            for inj in injections_so_far
+        ]
+
+        context = hooks_events.HookContext(
+            event=hooks_events.HookEvent.CONTEXT_BUILD,
+            session_id=self._session_id,
+            cwd=self._project_root,
+            base_system_prompt=base_system_prompt,
+            injections_so_far=injections_dict,
+            logger=self._logger,
+        )
+
+        result = await self._hook_manager.dispatch(
+            hooks_events.HookEvent.CONTEXT_BUILD,
+            context,
+        )
+
+        # Collect injections from hook result
+        hook_injections: list[tuple[str, str]] = []
+        if result.context_injection:
+            location = result.context_location or "append"
+            hook_injections.append((result.context_injection, location))
+
+        return hook_injections
+
+    async def build_async(self, base_system_prompt: str) -> ConversationContext:
+        """
+        Build the conversation context with async hook firing.
+
+        This method fires the CONTEXT_BUILD hook to allow plugins to inject
+        content into the system prompt.
+
+        Args:
+            base_system_prompt: The base system prompt to enhance.
+
+        Returns:
+            ConversationContext with the final system prompt and metadata.
+        """
+        # First do synchronous build steps to collect initial injections
+        # We need to peek at what injections will be done
+        temp_injections: list[ContextInjection] = []
+
+        # Collect rules injection info
+        if self._include_rules:
+            rules_content = self._get_rules_manager().get_rules_for_prompt()
+            if rules_content:
+                temp_injections.append(ContextInjection(
+                    source="rules",
+                    location="system_prompt_prepend",
+                    content=rules_content,
+                    origin=str(self._project_root),
+                ))
+
+        # Collect profile injection info
+        profile = self._resolve_profile()
+        if profile:
+            if profile.system_prompt_prefix:
+                temp_injections.append(ContextInjection(
+                    source="profile",
+                    location="system_prompt_prepend",
+                    content=profile.system_prompt_prefix,
+                    origin=profile.name,
+                ))
+            if profile.system_prompt_suffix:
+                temp_injections.append(ContextInjection(
+                    source="profile",
+                    location="system_prompt_append",
+                    content=profile.system_prompt_suffix,
+                    origin=profile.name,
+                ))
+
+        # Collect skills injection info
+        if self._include_skills:
+            skill_metadata = self._get_skill_registry().get_metadata_for_prompt()
+            if skill_metadata:
+                temp_injections.append(ContextInjection(
+                    source="skill_metadata",
+                    location="system_prompt_append",
+                    content=skill_metadata,
+                    origin="all_skills",
+                ))
+
+        # Fire the hook with current state
+        hook_injections = await self.fire_context_build_hook(
+            base_system_prompt, temp_injections
+        )
+
+        # Now do the full build with hook injections
+        return self.build(base_system_prompt, hook_injections=hook_injections)
 
 
 def build_context(
