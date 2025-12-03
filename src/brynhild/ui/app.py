@@ -24,6 +24,7 @@ import brynhild.core.conversation as core_conversation
 import brynhild.core.prompts as core_prompts
 import brynhild.core.types as core_types
 import brynhild.logging as brynhild_logging
+import brynhild.session as session
 import brynhild.skills as skills
 import brynhild.tools.registry as tools_registry
 import brynhild.ui.base as ui_base
@@ -407,6 +408,9 @@ class BrynhildApp(_app.App[None]):
         dry_run: bool = False,
         conv_logger: brynhild_logging.ConversationLogger | None = None,
         system_prompt: str | None = None,
+        initial_messages: list[dict[str, _typing.Any]] | None = None,
+        session_id: str | None = None,
+        sessions_dir: _typing.Any | None = None,  # pathlib.Path, avoid import
     ) -> None:
         """
         Initialize the Brynhild TUI.
@@ -420,6 +424,9 @@ class BrynhildApp(_app.App[None]):
             dry_run: Show tool calls without executing.
             conv_logger: Conversation logger instance.
             system_prompt: System prompt (required).
+            initial_messages: Messages to preload (for session resume).
+            session_id: Session ID for saving.
+            sessions_dir: Directory to save sessions to.
         """
         super().__init__()
         self._provider = provider
@@ -433,8 +440,13 @@ class BrynhildApp(_app.App[None]):
             raise ValueError("system_prompt is required")
         self._system_prompt = system_prompt
 
-        # Conversation state
-        self._messages: list[dict[str, _typing.Any]] = []
+        # Session support
+        self._session_id = session_id
+        self._sessions_dir = sessions_dir
+        self._initial_messages = initial_messages or []
+
+        # Conversation state - start with initial messages if provided
+        self._messages: list[dict[str, _typing.Any]] = list(self._initial_messages)
         self._is_processing = False
         self._current_stream: widgets.StreamingMessageWidget | None = None
         self._current_worker: _typing.Any = None  # Worker for current generation
@@ -475,6 +487,37 @@ class BrynhildApp(_app.App[None]):
         # Log system prompt
         if self._conv_logger:
             self._conv_logger.log_system_prompt(self._system_prompt)
+
+        # Display conversation history if resuming a session
+        if self._initial_messages:
+            self.call_after_refresh(self._display_conversation_history)
+
+    async def _display_conversation_history(self) -> None:
+        """Display conversation history when resuming a session."""
+        container = self.query_one("#messages-container", _containers.ScrollableContainer)
+
+        # Remove welcome message
+        try:
+            welcome = self.query_one("#welcome", _widgets.Static)
+            welcome.remove()
+        except _query.NoMatches:
+            pass
+
+        # Display each message
+        for msg in self._initial_messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            if role == "user" and isinstance(content, str):
+                message_widget = widgets.MessageWidget.construct_user_message(content)
+                await container.mount(message_widget)
+            elif role == "assistant" and isinstance(content, str):
+                message_widget = widgets.MessageWidget.construct_assistant_message(content)
+                await container.mount(message_widget)
+            # Skip system, tool_use, tool_result for display (kept in _messages for API)
+
+        # Show notification
+        self.notify(f"Resumed session: {self._session_id or 'unknown'}")
 
     def on_key(self, event: _events.Key) -> None:
         """Handle key events for leader key mode."""
@@ -811,6 +854,65 @@ class BrynhildApp(_app.App[None]):
         """Check if the app is currently processing a message (for testing)."""
         return self._is_processing
 
+    # === Session Management ===
+
+    def on_unmount(self) -> None:
+        """Save session on exit if there were any user messages."""
+        # Count user messages (skip system messages)
+        user_messages = [m for m in self._messages if m.get("role") == "user"]
+        if not user_messages:
+            return  # Nothing to save
+
+        if not self._session_id or not self._sessions_dir:
+            return  # No session tracking configured
+
+        try:
+            sess = session.Session.create(
+                cwd=None,  # Will use cwd
+                model=self._provider.model,
+                provider=self._provider.name,
+            )
+            sess.id = self._session_id
+            sess.messages = _working_messages_to_session(self._messages)
+
+            manager = session.SessionManager(self._sessions_dir)
+            manager.save(sess)
+
+            # Print to stderr so it shows after TUI exits
+            import sys as _sys
+
+            print(f"\nSession saved: {sess.id}", file=_sys.stderr)
+        except Exception as e:
+            # Don't crash on save failure
+            import sys as _sys
+
+            print(f"\nFailed to save session: {e}", file=_sys.stderr)
+
+
+def _working_messages_to_session(
+    messages: list[dict[str, _typing.Any]],
+) -> list[session.Message]:
+    """TEMPORARY: Convert working format to session format.
+
+    Will be replaced by brynhild.messages.converters when
+    the message format refactor lands (Phase 10b).
+    """
+    result: list[session.Message] = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        # Skip if content is not a string (e.g., tool results embedded as list)
+        if not isinstance(content, str):
+            continue
+
+        # Only convert user, assistant, system roles
+        if role in ("user", "assistant", "system"):
+            result.append(session.Message(role=role, content=content))
+        # Skip tool_use, tool_result - lossy but acceptable for now
+
+    return result
+
 
 def create_app(
     provider: api_base.LLMProvider,
@@ -822,6 +924,9 @@ def create_app(
     dry_run: bool = False,
     conv_logger: brynhild_logging.ConversationLogger | None = None,
     system_prompt: str | None = None,
+    initial_messages: list[dict[str, _typing.Any]] | None = None,
+    session_id: str | None = None,
+    sessions_dir: _typing.Any | None = None,
 ) -> BrynhildApp:
     """
     Create a Brynhild TUI app instance.
@@ -838,5 +943,8 @@ def create_app(
         dry_run=dry_run,
         conv_logger=conv_logger,
         system_prompt=system_prompt,
+        initial_messages=initial_messages,
+        session_id=session_id,
+        sessions_dir=sessions_dir,
     )
 

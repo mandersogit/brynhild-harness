@@ -58,29 +58,41 @@ class TestValidateSessionId:
         with _pytest.raises(session.InvalidSessionIdError):
             session.validate_session_id("/etc/passwd")
 
-    def test_rejects_too_short(self) -> None:
-        """Rejects IDs that are too short."""
-        with _pytest.raises(session.InvalidSessionIdError):
-            session.validate_session_id("abc123")
+    def test_accepts_short_names(self) -> None:
+        """Accepts short session names (1+ chars)."""
+        # Named format: 1-100 chars alphanumeric with hyphens/underscores
+        assert session.validate_session_id("abc123") == "abc123"
+        assert session.validate_session_id("a") == "a"
+
+    def test_accepts_long_names(self) -> None:
+        """Accepts longer session names (up to 100 chars)."""
+        assert session.validate_session_id("abcd12345") == "abcd12345"
+        assert session.validate_session_id("session-2024-01-01-my-project") == "session-2024-01-01-my-project"
 
     def test_rejects_too_long(self) -> None:
-        """Rejects IDs that are too long."""
+        """Rejects IDs over 100 chars."""
         with _pytest.raises(session.InvalidSessionIdError):
-            session.validate_session_id("abcd12345")
+            session.validate_session_id("a" * 101)
 
-    def test_rejects_uppercase(self) -> None:
-        """Rejects uppercase characters."""
-        with _pytest.raises(session.InvalidSessionIdError):
-            session.validate_session_id("ABCD1234")
+    def test_accepts_uppercase(self) -> None:
+        """Accepts uppercase characters in named format."""
+        assert session.validate_session_id("MySession") == "MySession"
+        assert session.validate_session_id("ABCD1234") == "ABCD1234"
+
+    def test_accepts_hyphens_underscores(self) -> None:
+        """Accepts hyphens and underscores in named format."""
+        assert session.validate_session_id("abc-1234") == "abc-1234"
+        assert session.validate_session_id("abc_1234") == "abc_1234"
+        assert session.validate_session_id("my-session_name") == "my-session_name"
 
     def test_rejects_special_chars(self) -> None:
-        """Rejects special characters."""
-        with _pytest.raises(session.InvalidSessionIdError):
-            session.validate_session_id("abc-1234")
-        with _pytest.raises(session.InvalidSessionIdError):
-            session.validate_session_id("abc_1234")
+        """Rejects special characters (dots, slashes, etc.)."""
         with _pytest.raises(session.InvalidSessionIdError):
             session.validate_session_id("abc.1234")
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc/1234")
+        with _pytest.raises(session.InvalidSessionIdError):
+            session.validate_session_id("abc:1234")
 
     def test_manager_rejects_invalid_on_load(
         self, tmp_path: _pathlib.Path
@@ -273,3 +285,67 @@ class TestSessionManager:
         retrieved = manager.get_or_create(session_id=original.id)
         assert retrieved.id == original.id
         assert len(retrieved.messages) == 1
+
+    def test_rename(self, manager: session.SessionManager) -> None:
+        """Rename a session."""
+        sess = session.Session.create()
+        sess.add_message("user", "Hello")
+        old_id = sess.id
+        manager.save(sess)
+
+        # Rename to a new name
+        manager.rename(old_id, "my-renamed-session")
+
+        # Old name should not exist
+        assert manager.load(old_id) is None
+
+        # New name should exist with same content
+        renamed = manager.load("my-renamed-session")
+        assert renamed is not None
+        assert renamed.id == "my-renamed-session"
+        assert len(renamed.messages) == 1
+
+    def test_rename_nonexistent(self, manager: session.SessionManager) -> None:
+        """Rename nonexistent session raises error."""
+        with _pytest.raises(FileNotFoundError):
+            manager.rename("nonexistent", "new-name")
+
+    def test_rename_to_existing(self, manager: session.SessionManager) -> None:
+        """Rename to existing name raises error."""
+        s1 = session.Session.create()
+        s1.id = "session-one"
+        manager.save(s1)
+
+        s2 = session.Session.create()
+        s2.id = "session-two"
+        manager.save(s2)
+
+        with _pytest.raises(FileExistsError):
+            manager.rename("session-one", "session-two")
+
+    def test_exists(self, manager: session.SessionManager) -> None:
+        """Check if session exists."""
+        sess = session.Session.create()
+        manager.save(sess)
+
+        assert manager.exists(sess.id) is True
+        assert manager.exists("nonexistent") is False
+
+
+class TestGenerateSessionName:
+    """Tests for generate_session_name function."""
+
+    def test_format(self) -> None:
+        """Session name has correct format."""
+        name = session.generate_session_name()
+        assert name.startswith("session-")
+        # Format: session-YYYYMMDD-HHMMSS
+        parts = name.split("-")
+        assert len(parts) == 3
+        assert len(parts[1]) == 8  # YYYYMMDD
+        assert len(parts[2]) == 6  # HHMMSS
+
+    def test_valid_session_id(self) -> None:
+        """Generated session name passes validation."""
+        name = session.generate_session_name()
+        assert session.validate_session_id(name) == name

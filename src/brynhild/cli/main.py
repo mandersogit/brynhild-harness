@@ -108,6 +108,13 @@ def _validate_sandbox_availability(settings: config.Settings) -> None:
     help="Resume a previous session by ID",
 )
 @_click.option(
+    "--session",
+    "session_name",
+    type=str,
+    default=None,
+    help="Session name (for saving). If not set, auto-generates timestamp name.",
+)
+@_click.option(
     "--profile",
     type=str,
     default=None,
@@ -133,6 +140,7 @@ def cli(
     model: str | None,
     verbose: bool,
     resume: str | None,
+    session_name: str | None,
     profile: str | None,
     dangerously_skip_permissions: bool,
     dangerously_skip_sandbox: bool,
@@ -184,6 +192,7 @@ def cli(
     ctx.obj["print_mode"] = print_mode
     ctx.obj["json_output"] = json_output
     ctx.obj["resume_session"] = resume
+    ctx.obj["session_name"] = session_name
     ctx.obj["profile_name"] = profile
 
     # If a subcommand is invoked, let it handle everything
@@ -195,8 +204,13 @@ def cli(
         _click.echo("Error: Use 'brynhild chat -p \"prompt\"' for print mode", err=True)
         raise SystemExit(1)
     else:
-        # Interactive mode with profile support
-        _handle_interactive_mode(settings, profile_name=profile)
+        # Interactive mode with profile and session support
+        _handle_interactive_mode(
+            settings,
+            profile_name=profile,
+            resume_session_id=resume,
+            session_name=session_name,
+        )
 
 
 def _create_renderer(
@@ -342,12 +356,64 @@ async def _send_message(
     )
 
 
+def _session_messages_to_working(
+    messages: list[session.Message],
+) -> list[dict[str, _typing.Any]]:
+    """TEMPORARY: Convert session format to working format.
+
+    This is a lossy conversion - tool_call_ids are lost.
+    Will be replaced by brynhild.messages.converters when
+    the message format refactor lands (Phase 10b).
+    """
+    result: list[dict[str, _typing.Any]] = []
+    for msg in messages:
+        if msg.role in ("user", "system"):
+            result.append({"role": msg.role, "content": msg.content})
+        elif msg.role == "assistant":
+            result.append({"role": "assistant", "content": msg.content})
+        # Skip tool_use/tool_result - imperfect but functional for resume
+    return result
+
+
 def _handle_interactive_mode(
     settings: config.Settings,
     profile_name: str | None = None,
+    resume_session_id: str | None = None,
+    session_name: str | None = None,
 ) -> None:
     """Handle interactive TUI mode."""
     import brynhild.core as core
+
+    # Handle session resume
+    session_manager = session.SessionManager(settings.sessions_dir)
+    initial_messages: list[dict[str, _typing.Any]] = []
+    resumed_session: session.Session | None = None
+
+    if resume_session_id:
+        try:
+            resumed_session = session_manager.load(resume_session_id)
+        except session.InvalidSessionIdError as e:
+            _click.echo(f"Error: {e}", err=True)
+            raise SystemExit(1) from None
+        if not resumed_session:
+            _click.echo(f"Session not found: {resume_session_id}", err=True)
+            raise SystemExit(1)
+        initial_messages = _session_messages_to_working(resumed_session.messages)
+        _click.echo(f"Resuming session: {resume_session_id}", err=True)
+        # Use resumed session's ID unless explicitly overridden
+        if not session_name:
+            session_name = resumed_session.id
+
+    # Validate session name if provided
+    if session_name:
+        try:
+            session.validate_session_id(session_name)
+        except session.InvalidSessionIdError as e:
+            _click.echo(f"Error: {e}", err=True)
+            raise SystemExit(1) from None
+    else:
+        # Generate session name if not set
+        session_name = session.generate_session_name()
 
     # Create provider
     try:
@@ -401,6 +467,9 @@ def _handle_interactive_mode(
             auto_approve_tools=settings.dangerously_skip_permissions,
             conv_logger=conv_logger,
             system_prompt=context.system_prompt,  # Use enhanced prompt
+            initial_messages=initial_messages,  # Resume support
+            session_id=session_name,  # Session tracking
+            sessions_dir=settings.sessions_dir,  # For auto-save
         )
 
         app.run()
@@ -702,6 +771,46 @@ def session_delete(ctx: _click.Context, session_id: str, json_output: bool, yes:
         _click.echo(_json.dumps({"deleted": deleted, "session_id": session_id}, indent=2))
     else:
         _click.echo(f"Deleted session: {session_id}")
+
+
+@session_cmd.command(name="rename")
+@_click.argument("old_name")
+@_click.argument("new_name")
+@_click.option("--json", "json_output", is_flag=True, help="JSON output")
+@_click.pass_context
+def session_rename(
+    ctx: _click.Context, old_name: str, new_name: str, json_output: bool
+) -> None:
+    """Rename a session."""
+    session_manager: session.SessionManager = ctx.obj["session_manager"]
+
+    try:
+        session_manager.rename(old_name, new_name)
+    except session.InvalidSessionIdError as e:
+        if json_output:
+            _click.echo(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            _click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from None
+    except FileNotFoundError as e:
+        if json_output:
+            _click.echo(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            _click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from None
+    except FileExistsError as e:
+        if json_output:
+            _click.echo(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            _click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from None
+
+    if json_output:
+        _click.echo(
+            _json.dumps({"renamed": True, "old_name": old_name, "new_name": new_name}, indent=2)
+        )
+    else:
+        _click.echo(f"Renamed: {old_name} → {new_name}")
 
 
 # ============================================================================
