@@ -624,8 +624,53 @@ class ConversationProcessor:
                 self._logger.log_thinking(current_thinking)
                 final_thinking = current_thinking
 
-            # Handle response
-            if current_text:
+            # Handle response text and/or tool calls
+            if tool_uses:
+                # Model returned tool calls - add assistant message with tool_calls
+                # This is required for OpenAI-compatible APIs to associate tool
+                # results with the calls that generated them
+                working_messages.append(
+                    core_types.format_assistant_tool_call(tool_uses, current_text)
+                )
+
+                if current_text:
+                    final_response = current_text
+                    await self._callbacks.on_text_complete(current_text, current_thinking)
+
+                    # Log assistant response
+                    if self._logger:
+                        self._logger.log_assistant_message(
+                            current_text,
+                            thinking=current_thinking if current_thinking else None,
+                        )
+
+                # Execute tools and add results as individual messages
+                for tool_use in tool_uses:
+                    # Check cancellation
+                    if self._callbacks.is_cancelled():
+                        return ConversationResult(
+                            response_text=final_response,
+                            thinking=final_thinking,
+                            tool_uses=all_tool_uses,
+                            tool_results=all_tool_results,
+                            input_tokens=total_input,
+                            output_tokens=total_output,
+                            stop_reason="cancelled",
+                            cancelled=True,
+                            messages=working_messages,
+                        )
+
+                    tool_result = await self._execute_tool(tool_use)
+                    all_tool_uses.append(tool_use)
+                    all_tool_results.append(tool_result)
+
+                    # Add tool result as individual message for next round
+                    working_messages.append(
+                        core_types.format_tool_result_message(tool_use.id, tool_result)
+                    )
+
+            elif current_text:
+                # No tool calls, just text response - we're done
                 final_response = current_text
                 working_messages.append({"role": "assistant", "content": current_text})
                 await self._callbacks.on_text_complete(current_text, current_thinking)
@@ -636,40 +681,10 @@ class ConversationProcessor:
                         current_text,
                         thinking=current_thinking if current_thinking else None,
                     )
-
-            # No tool calls - we're done
-            if not tool_uses:
                 break
-
-            # Process tool calls
-            tool_results: list[dict[str, _typing.Any]] = []
-
-            for tool_use in tool_uses:
-                # Check cancellation
-                if self._callbacks.is_cancelled():
-                    return ConversationResult(
-                        response_text=final_response,
-                        thinking=final_thinking,
-                        tool_uses=all_tool_uses,
-                        tool_results=all_tool_results,
-                        input_tokens=total_input,
-                        output_tokens=total_output,
-                        stop_reason="cancelled",
-                        cancelled=True,
-                        messages=working_messages,
-                    )
-
-                tool_result = await self._execute_tool(tool_use)
-                all_tool_uses.append(tool_use)
-                all_tool_results.append(tool_result)
-
-                # Format result for next round
-                tool_results.append(
-                    core_types.format_tool_result_message(tool_use.id, tool_result)
-                )
-
-            # Add tool results to messages for next round
-            working_messages.append({"role": "user", "content": tool_results})
+            else:
+                # No text and no tool calls - unexpected but handle gracefully
+                break
 
         return ConversationResult(
             response_text=final_response,
@@ -753,11 +768,64 @@ class ConversationProcessor:
                 if self._logger:
                     self._logger.log_thinking(response.thinking)
 
-            # Handle response text
-            if response.content:
+            # Handle response text and/or tool calls
+            if response.tool_uses:
+                # Model returned tool calls - add assistant message with tool_calls
+                # This is required for OpenAI-compatible APIs to associate tool
+                # results with the calls that generated them
+                working_messages.append(
+                    core_types.format_assistant_tool_call(
+                        response.tool_uses, response.content or ""
+                    )
+                )
+
+                if response.content:
+                    final_response = response.content
+                    await self._callbacks.on_text_complete(
+                        response.content, response.thinking
+                    )
+
+                    # Log assistant response
+                    if self._logger:
+                        self._logger.log_assistant_message(
+                            response.content,
+                            thinking=response.thinking,
+                        )
+
+                # Execute tools and add results as individual messages
+                for tool_use in response.tool_uses:
+                    # Check cancellation
+                    if self._callbacks.is_cancelled():
+                        return ConversationResult(
+                            response_text=final_response,
+                            thinking=final_thinking,
+                            tool_uses=all_tool_uses,
+                            tool_results=all_tool_results,
+                            input_tokens=total_input,
+                            output_tokens=total_output,
+                            stop_reason="cancelled",
+                            cancelled=True,
+                            messages=working_messages,
+                        )
+
+                    tool_result = await self._execute_tool(tool_use)
+                    all_tool_uses.append(tool_use)
+                    all_tool_results.append(tool_result)
+
+                    # Add tool result as individual message for next round
+                    working_messages.append(
+                        core_types.format_tool_result_message(tool_use.id, tool_result)
+                    )
+
+            elif response.content:
+                # No tool calls, just text response - we're done
                 final_response = response.content
-                working_messages.append({"role": "assistant", "content": response.content})
-                await self._callbacks.on_text_complete(response.content, response.thinking)
+                working_messages.append(
+                    {"role": "assistant", "content": response.content}
+                )
+                await self._callbacks.on_text_complete(
+                    response.content, response.thinking
+                )
 
                 # Log assistant response
                 if self._logger:
@@ -765,40 +833,10 @@ class ConversationProcessor:
                         response.content,
                         thinking=response.thinking,
                     )
-
-            # No tool calls - we're done
-            if not response.tool_uses:
                 break
-
-            # Process tool calls
-            tool_results: list[dict[str, _typing.Any]] = []
-
-            for tool_use in response.tool_uses:
-                # Check cancellation
-                if self._callbacks.is_cancelled():
-                    return ConversationResult(
-                        response_text=final_response,
-                        thinking=final_thinking,
-                        tool_uses=all_tool_uses,
-                        tool_results=all_tool_results,
-                        input_tokens=total_input,
-                        output_tokens=total_output,
-                        stop_reason="cancelled",
-                        cancelled=True,
-                        messages=working_messages,
-                    )
-
-                tool_result = await self._execute_tool(tool_use)
-                all_tool_uses.append(tool_use)
-                all_tool_results.append(tool_result)
-
-                # Format result for next round
-                tool_results.append(
-                    core_types.format_tool_result_message(tool_use.id, tool_result)
-                )
-
-            # Add tool results to messages for next round
-            working_messages.append({"role": "user", "content": tool_results})
+            else:
+                # No text and no tool calls - unexpected but handle gracefully
+                break
 
         return ConversationResult(
             response_text=final_response,
