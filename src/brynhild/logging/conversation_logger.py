@@ -506,6 +506,32 @@ class ConversationLogger:
             "metadata": metadata,
         })
 
+    def log_plugin_event(
+        self,
+        plugin_name: str,
+        event_type: str,
+        data: dict[str, _typing.Any] | None = None,
+        *,
+        metadata: dict[str, _typing.Any] | None = None,
+    ) -> None:
+        """
+        Log a custom plugin event.
+
+        Allows plugins to log arbitrary events for debugging and analysis.
+
+        Args:
+            plugin_name: Name of the plugin logging the event.
+            event_type: Type of event (plugin-defined, e.g., "cache_hit").
+            data: Event-specific data.
+            metadata: Additional metadata.
+        """
+        self._write_event("plugin_event", {
+            "plugin_name": plugin_name,
+            "plugin_event_type": event_type,
+            "plugin_data": data or {},
+            "metadata": metadata,
+        })
+
     @property
     def file_path(self) -> _pathlib.Path | None:
         """Get the log file path."""
