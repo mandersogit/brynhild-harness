@@ -1,0 +1,10 @@
+# Test plugin for Phase 1 plugin extensions
+name: test-phase1
+version: 1.0.0
+description: Test plugin exercising Phase 1 extension features
+
+# Gap #6: Plugin rules contribution
+rules:
+  - coding-standards.md
+  - security-policy.md
+
