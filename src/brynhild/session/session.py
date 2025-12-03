@@ -30,7 +30,10 @@ class InvalidSessionIdError(ValueError):
 def validate_session_id(session_id: str) -> str:
     """Validate session ID format to prevent path traversal attacks.
 
-    Session IDs must be exactly 8 lowercase alphanumeric characters.
+    Session IDs can be either:
+    - Legacy format: exactly 8 lowercase alphanumeric characters
+    - Named format: 1-100 characters of [a-zA-Z0-9_-]
+
     This prevents path traversal attacks like '../../../etc/passwd'.
 
     Args:
@@ -44,12 +47,26 @@ def validate_session_id(session_id: str) -> str:
     """
     import re as _re
 
-    if not _re.match(r"^[a-z0-9]{8}$", session_id):
-        raise InvalidSessionIdError(
-            f"Invalid session ID: '{session_id}'. "
-            "Session IDs must be exactly 8 lowercase alphanumeric characters."
-        )
-    return session_id
+    # Legacy 8-char format OR named format (alphanumeric, hyphens, underscores)
+    if _re.match(r"^[a-z0-9]{8}$", session_id):
+        return session_id
+
+    if _re.match(r"^[a-zA-Z0-9_-]{1,100}$", session_id):
+        return session_id
+
+    raise InvalidSessionIdError(
+        f"Invalid session ID: '{session_id}'. "
+        "Session IDs must be alphanumeric with hyphens/underscores (max 100 chars)."
+    )
+
+
+def generate_session_name() -> str:
+    """Generate a timestamped session name.
+
+    Format: session-YYYYMMDD-HHMMSS
+    """
+    now = _datetime.datetime.now(_datetime.UTC)
+    return f"session-{now.strftime('%Y%m%d-%H%M%S')}"
 
 
 @_dataclasses.dataclass
@@ -225,7 +242,7 @@ class SessionManager:
         """Get path to session file.
 
         Args:
-            session_id: Validated session ID.
+            session_id: Session ID (validated).
 
         Returns:
             Path to the session JSON file.
@@ -235,6 +252,48 @@ class SessionManager:
         """
         validate_session_id(session_id)
         return self.sessions_dir / f"{session_id}.json"
+
+    def exists(self, session_id: str) -> bool:
+        """Check if a session exists."""
+        try:
+            path = self._session_path(session_id)
+            return path.exists()
+        except InvalidSessionIdError:
+            return False
+
+    def rename(self, old_id: str, new_id: str) -> bool:
+        """Rename a session.
+
+        Args:
+            old_id: Current session ID.
+            new_id: New session ID.
+
+        Returns:
+            True if renamed successfully.
+
+        Raises:
+            InvalidSessionIdError: If either ID format is invalid.
+            FileNotFoundError: If old session doesn't exist.
+            FileExistsError: If new session already exists.
+        """
+        old_path = self._session_path(old_id)
+        new_path = self._session_path(new_id)
+
+        if not old_path.exists():
+            raise FileNotFoundError(f"Session not found: {old_id}")
+        if new_path.exists():
+            raise FileExistsError(f"Session already exists: {new_id}")
+
+        # Load, update ID, save with new name, delete old
+        session = self.load(old_id)
+        if session is None:
+            raise FileNotFoundError(f"Failed to load session: {old_id}")
+
+        session.id = new_id
+        session.updated_at = _datetime.datetime.now(_datetime.UTC).isoformat()
+        self.save(session)
+        old_path.unlink()
+        return True
 
     def save(self, session: Session) -> _pathlib.Path:
         """Save session to disk."""
