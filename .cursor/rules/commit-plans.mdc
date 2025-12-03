@@ -1,0 +1,60 @@
+---
+alwaysApply: false
+globs: ["workflow/commits/*.yaml"]
+description: How to create and use commit plans in this project
+---
+
+# Commit Plans
+
+This project uses YAML commit plans instead of direct git commits.
+
+## Key Rules
+
+1. **NEVER run `git commit` directly** - Always use commit plans
+2. **NEVER execute commits autonomously** - Only create/preview plans
+3. **workflow/ is gitignored** - Planning docs don't get committed
+
+## Creating a Commit Plan
+
+Location: `workflow/commits/YYYY-MM-DD-description.yaml`
+
+```yaml
+commits:
+  - message: |
+      type: short description
+
+      Longer explanation if needed.
+    files:
+      - path/to/file1.py
+      - path/to/file2.py
+```
+
+**Each file can only appear in ONE commit** (stages whole files, not hunks).
+
+## Commit Types
+
+`feat:` `fix:` `refactor:` `docs:` `test:` `config:` `security:` `improve:` `chore:`
+
+## Using the Script
+
+```bash
+./scripts/commit-helper plan.yaml           # Preview (safe, always OK)
+./scripts/commit-helper plan.yaml execute   # Execute (needs user approval)
+./scripts/commit-helper plan.yaml sync-public  # Sync to public repo
+```
+
+## What You Can Do Autonomously
+
+| Action                   | Allowed?                          |
+|--------------------------|-----------------------------------|
+| Create commit plan YAML  | ✅ Yes                             |
+| Run preview (no execute) | ✅ Yes                             |
+| Run execute              | ❌ Only with explicit user request |
+
+## Detailed Documentation
+
+See `src/brynhild/builtin_skills/commit-helper/SKILL.md` for comprehensive documentation. This is a "skill" file - markdown documentation that Brynhild (the AI assistant this project builds) can load to learn about commit plans. It describes the **generic single-repo workflow** suitable for any project.
+
+**Brynhild-specific difference**: This project uses a **dual-repo workflow** (source + public). The `./scripts/commit-helper` script extends the generic workflow with:
+- `sync-public` - Copy files and commit to public repo
+- Automatic `workflow/` exclusion (planning docs stay private)
