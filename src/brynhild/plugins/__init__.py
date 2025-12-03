@@ -49,6 +49,7 @@ from brynhild.plugins.rules import (
     discover_rule_files,
     get_global_rules_path,
     load_global_rules,
+    load_plugin_rules,
     load_rule_file,
 )
 from brynhild.plugins.stubs import ToolBase, ToolResult
@@ -92,6 +93,7 @@ __all__ = [
     "discover_rule_files",
     "get_global_rules_path",
     "load_global_rules",
+    "load_plugin_rules",
     "load_rule_file",
     # Path helpers
     "get_global_plugins_path",

@@ -5,16 +5,20 @@ Rules are discovered from multiple sources and concatenated:
 - AGENTS.md - Standard multi-framework rules file
 - rules.md / .brynhild/rules.md - Brynhild-specific rules
 - .cursorrules - Cross-tool compatibility
+- Plugin rules (rules/*.md in plugin directories)
 
 Discovery walks from current directory to root, collecting
 rules at each level. Global rules (~/.config/brynhild/rules/)
-are loaded first, then project rules override.
+are loaded first, then plugin rules, then project rules override.
 """
 
 from __future__ import annotations
 
 import pathlib as _pathlib
 import typing as _typing
+
+if _typing.TYPE_CHECKING:
+    import brynhild.plugins.manifest as _manifest
 
 # Rule file names to search for, in priority order
 RULE_FILES = [
@@ -119,15 +123,58 @@ def load_rule_file(path: _pathlib.Path) -> str | None:
         return None
 
 
+def load_plugin_rules(
+    plugin: _manifest.Plugin,
+) -> list[tuple[_pathlib.Path, str]]:
+    """
+    Load rules from a plugin's rules/ directory.
+
+    Args:
+        plugin: Plugin to load rules from.
+
+    Returns:
+        List of (path, content) tuples for each rule file.
+    """
+    rules: list[tuple[_pathlib.Path, str]] = []
+
+    if not plugin.has_rules():
+        return rules
+
+    rules_dir = plugin.rules_path
+    if not rules_dir.is_dir():
+        return rules
+
+    # Load declared rules in order
+    for rule_name in plugin.manifest.rules:
+        rule_path = rules_dir / rule_name
+        if not rule_path.suffix:
+            rule_path = rule_path.with_suffix(".md")
+
+        if rule_path.is_file():
+            try:
+                content = rule_path.read_text(encoding="utf-8")
+                rules.append((rule_path, content))
+            except OSError:
+                continue
+
+    return rules
+
+
 class RulesManager:
     """
     Manager for discovering and loading rules.
 
     Handles:
     - Global rules from ~/.config/brynhild/rules/
+    - Plugin rules (rules/*.md in plugin directories)
     - Project rules (AGENTS.md, rules.md, .cursorrules)
     - Walk-to-root discovery
     - Rule concatenation
+
+    Priority order (lowest to highest):
+    1. Global rules
+    2. Plugin rules
+    3. Project rules
     """
 
     def __init__(
@@ -135,6 +182,7 @@ class RulesManager:
         project_root: _pathlib.Path | None = None,
         *,
         include_global: bool = True,
+        plugins: list[_manifest.Plugin] | None = None,
     ) -> None:
         """
         Initialize the rules manager.
@@ -142,13 +190,15 @@ class RulesManager:
         Args:
             project_root: Project root directory. If None, uses cwd.
             include_global: Whether to include global rules.
+            plugins: List of enabled plugins to load rules from.
         """
         self._project_root = project_root or _pathlib.Path.cwd()
         self._include_global = include_global
+        self._plugins = plugins or []
 
         # Cache for loaded rules
         self._cached_rules: str | None = None
-        self._cache_key: tuple[_pathlib.Path, bool] | None = None
+        self._cache_key: tuple[_pathlib.Path, bool, int] | None = None
 
     def get_project_root(self) -> _pathlib.Path:
         """Get the configured project root."""
@@ -159,7 +209,7 @@ class RulesManager:
         Discover all rule files in priority order.
 
         Returns:
-            List of rule file paths (global first, then project).
+            List of rule file paths (global first, then plugin, then project).
         """
         paths: list[_pathlib.Path] = []
 
@@ -168,7 +218,13 @@ class RulesManager:
             global_rules = load_global_rules()
             paths.extend(path for path, _ in global_rules)
 
-        # Project rules (walk to root)
+        # Plugin rules (medium priority)
+        for plugin in self._plugins:
+            if plugin.enabled and plugin.has_rules():
+                plugin_rules = load_plugin_rules(plugin)
+                paths.extend(path for path, _ in plugin_rules)
+
+        # Project rules (walk to root) - highest priority
         project_rules = discover_rule_files(
             self._project_root,
             stop_at=None,  # Walk to filesystem root
@@ -183,7 +239,8 @@ class RulesManager:
 
         Rules are concatenated in priority order:
         1. Global rules (lowest priority)
-        2. Project rules from root to current dir (higher priority)
+        2. Plugin rules (medium priority)
+        3. Project rules from root to current dir (highest priority)
 
         Results are cached; use force_reload=True to refresh.
 
@@ -193,7 +250,7 @@ class RulesManager:
         Returns:
             Concatenated rules content.
         """
-        cache_key = (self._project_root, self._include_global)
+        cache_key = (self._project_root, self._include_global, len(self._plugins))
 
         if (
             not force_reload
@@ -204,12 +261,18 @@ class RulesManager:
 
         parts: list[str] = []
 
-        # Global rules first
+        # Global rules first (lowest priority)
         if self._include_global:
             for _, content in load_global_rules():
                 parts.append(content.strip())
 
-        # Project rules
+        # Plugin rules (medium priority)
+        for plugin in self._plugins:
+            if plugin.enabled and plugin.has_rules():
+                for _, content in load_plugin_rules(plugin):
+                    parts.append(content.strip())
+
+        # Project rules (highest priority)
         for rule_path in discover_rule_files(self._project_root):
             rule_content = load_rule_file(rule_path)
             if rule_content:
@@ -244,7 +307,7 @@ class RulesManager:
         List all discovered rule files with metadata.
 
         Returns:
-            List of dicts with path, size, and source info.
+            List of dicts with path, size, source, and plugin info.
         """
         result: list[dict[str, _typing.Any]] = []
 
@@ -256,6 +319,17 @@ class RulesManager:
                     "source": "global",
                     "size": len(content),
                 })
+
+        # Plugin rules
+        for plugin in self._plugins:
+            if plugin.enabled and plugin.has_rules():
+                for path, content in load_plugin_rules(plugin):
+                    result.append({
+                        "path": str(path),
+                        "source": "plugin",
+                        "plugin_name": plugin.name,
+                        "size": len(content),
+                    })
 
         # Project rules
         for path in discover_rule_files(self._project_root):

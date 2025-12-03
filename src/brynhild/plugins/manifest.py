@@ -86,6 +86,11 @@ class PluginManifest(_pydantic.BaseModel):
         description="LLM providers provided (e.g., ['my_provider'])",
     )
 
+    rules: list[str] = _pydantic.Field(
+        default_factory=list,
+        description="Rule files provided (e.g., ['coding-standards.md'])",
+    )
+
     # Dependencies and compatibility
     brynhild_version: str = _pydantic.Field(
         default=">=0.1.0",
@@ -151,6 +156,11 @@ class Plugin:
         """Path to providers/ directory."""
         return self.path / "providers"
 
+    @property
+    def rules_path(self) -> _pathlib.Path:
+        """Path to rules/ directory."""
+        return self.path / "rules"
+
     def has_commands(self) -> bool:
         """Whether plugin declares commands."""
         return bool(self.manifest.commands)
@@ -171,6 +181,10 @@ class Plugin:
         """Whether plugin declares providers."""
         return bool(self.manifest.providers)
 
+    def has_rules(self) -> bool:
+        """Whether plugin declares rules."""
+        return bool(self.manifest.rules)
+
     def to_dict(self) -> dict[str, _typing.Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -184,6 +198,7 @@ class Plugin:
             "hooks": self.manifest.hooks,
             "skills": self.manifest.skills,
             "providers": self.manifest.providers,
+            "rules": self.manifest.rules,
         }
 
 
