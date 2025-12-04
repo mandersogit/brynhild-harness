@@ -169,4 +169,5 @@ class JSONRenderer(base.Renderer):
         self._errors = []
         self._assistant_text = ""
         self._streaming = False
+        self._finish_result = None  # Don't forget to reset this!
 
