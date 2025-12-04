@@ -64,6 +64,7 @@ class JSONRenderer(base.Renderer):
         call_data: dict[str, _typing.Any] = {
             "tool": tool_call.tool_name,
             "input": tool_call.tool_input,
+            "recovered": tool_call.is_recovered,
         }
         if tool_call.tool_id:
             call_data["id"] = tool_call.tool_id

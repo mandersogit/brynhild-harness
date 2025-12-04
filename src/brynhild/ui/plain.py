@@ -65,7 +65,10 @@ class PlainTextRenderer(base.Renderer):
 
     def show_tool_call(self, tool_call: base.ToolCallDisplay) -> None:
         """Display that a tool is being called."""
-        self._output.write(f"[Tool: {tool_call.tool_name}]\n")
+        if tool_call.is_recovered:
+            self._output.write(f"[↺ Tool (recovered): {tool_call.tool_name}]\n")
+        else:
+            self._output.write(f"[Tool: {tool_call.tool_name}]\n")
         # Format input nicely for text output
         for key, value in tool_call.tool_input.items():
             if isinstance(value, str) and len(value) > 80:

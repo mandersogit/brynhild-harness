@@ -115,14 +115,25 @@ class MessageWidget(_widgets.Static):
     @classmethod
     def construct_tool_call(cls, tool_call: ui_base.ToolCallDisplay) -> "MessageWidget":
         """Create a tool call widget."""
-        lines = [f"**Tool:** {tool_call.tool_name}"]
+        if tool_call.is_recovered:
+            lines = [f"**Tool (recovered):** {tool_call.tool_name}"]
+            title = f"↺ {tool_call.tool_name} (recovered)"
+            extra_classes = "recovered"
+        else:
+            lines = [f"**Tool:** {tool_call.tool_name}"]
+            title = f"⚡ {tool_call.tool_name}"
+            extra_classes = ""
+
         for key, value in tool_call.tool_input.items():
             value_str = str(value)
             if len(value_str) > 100:
                 value_str = value_str[:97] + "..."
             lines.append(f"  {key}: {value_str}")
         content = "\n".join(lines)
-        return cls(content, "tool-call", title=f"⚡ {tool_call.tool_name}")
+        widget = cls(content, "tool-call", title=title)
+        if extra_classes:
+            widget.add_class(extra_classes)
+        return widget
 
     @classmethod
     def construct_tool_result(cls, result: ui_base.ToolResultDisplay) -> "MessageWidget":

@@ -59,7 +59,6 @@ class RichConsoleRenderer(base.Renderer):
                 content,
                 title="[bold blue]You[/bold blue]",
                 border_style="blue",
-                expand=False,
             )
         )
 
@@ -99,12 +98,36 @@ class RichConsoleRenderer(base.Renderer):
 
         content = "\n".join(input_lines) if input_lines else "[dim]No parameters[/dim]"
 
+        # Use different styling for recovered vs native tool calls
+        if tool_call.is_recovered:
+            # Prominent warning banner for recovered calls
+            self._console.print(
+                "[bold #ff8c00 on #3d2600]"
+                " ⚠️  RECOVERED FROM MODEL THINKING "
+                "[/bold #ff8c00 on #3d2600]"
+            )
+            self._console.print(
+                "[dim #ff8c00]"
+                "   Model emitted JSON in thinking instead of proper tool call"
+                "[/dim #ff8c00]"
+            )
+
+            # Orange border with warning icon (extra space after ⚠️ to match ⚡ visually)
+            title = f"[bold #ff8c00]⚠️  {tool_call.tool_name}[/bold #ff8c00]"
+            subtitle = "[dim #ff8c00](recovered from model thinking)[/dim #ff8c00]"
+            border_style = "#ff8c00"  # Orange
+        else:
+            # Yellow border and "⚡" for native calls
+            title = f"[bold yellow]⚡ {tool_call.tool_name}[/bold yellow]"
+            subtitle = None
+            border_style = "yellow"
+
         self._console.print(
             _rich_panel.Panel(
                 content,
-                title=f"[bold yellow]⚡ {tool_call.tool_name}[/bold yellow]",
-                border_style="yellow",
-                expand=False,
+                title=title,
+                subtitle=subtitle,
+                border_style=border_style,
             )
         )
 
@@ -126,7 +149,6 @@ class RichConsoleRenderer(base.Renderer):
                     content,
                     title=f"[bold green]✓ {result.tool_name}[/bold green]",
                     border_style="green",
-                    expand=False,
                 )
             )
         else:
@@ -136,7 +158,6 @@ class RichConsoleRenderer(base.Renderer):
                     f"[red]{error_msg}[/red]",
                     title=f"[bold red]✗ {result.tool_name}[/bold red]",
                     border_style="red",
-                    expand=False,
                 )
             )
 
