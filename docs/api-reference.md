@@ -109,6 +109,7 @@ Environment-based configuration. All settings can be overridden via environment 
 | `log_dir`                      | `str`          | `""`                    | `BRYNHILD_LOG_DIR`                    |
 | `disable_builtin_tools`        | `bool`         | `False`                 | `BRYNHILD_DISABLE_BUILTIN_TOOLS`      |
 | `disabled_tools`               | `str`          | `""`                    | `BRYNHILD_DISABLED_TOOLS`             |
+| `reasoning_format`             | `str`          | `"auto"`                | `BRYNHILD_REASONING_FORMAT`           |
 
 **Properties:**
 

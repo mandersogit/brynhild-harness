@@ -109,6 +109,33 @@ def examples(self) -> list[dict[str, Any]]:
             "input": {"user_id": "123"},
         }
     ]
+
+@property
+def risk_level(self) -> str:
+    """Risk classification for recovery decisions. Default: "read_only".
+    
+    Values:
+    - "read_only": Safe, no side effects (default)
+    - "mutating": Modifies state (files, databases)
+    - "high_impact": Irreversible effects (deployments, deletions)
+    """
+    return "read_only"
+
+@property
+def recovery_policy(self) -> str:
+    """How to handle recovered tool calls. Default: based on risk_level.
+    
+    Values:
+    - "allow": Auto-execute recovered calls
+    - "confirm": Require user confirmation
+    - "deny": Never execute recovered calls
+    
+    Defaults by risk_level:
+    - read_only → "allow"
+    - mutating → "confirm"
+    - high_impact → "deny"
+    """
+    return "allow"  # Override based on your tool's risk
 ```
 
 ### Input Schema Format
@@ -268,6 +295,19 @@ class Provider(LLMProvider):
         """Whether this provider/model supports tool calling."""
         ...
 
+    @property
+    def default_reasoning_format(self) -> str:
+        """How reasoning should be formatted. Optional.
+        
+        Values:
+        - "reasoning_field": Use `reasoning` field on message (OpenRouter style)
+        - "thinking_tags": Wrap in <thinking></thinking> tags
+        - "none": Don't include reasoning
+        
+        Default: "none"
+        """
+        return "none"
+
     async def complete(
         self,
         messages: list[dict[str, Any]],
@@ -303,6 +343,13 @@ Messages follow this structure:
 
 # Assistant message (text only)
 {"role": "assistant", "content": "Hi there!"}
+
+# Assistant message with reasoning (chain-of-thought)
+{
+    "role": "assistant",
+    "content": "The answer is 42.",
+    "reasoning": "Let me think step by step..."  # Optional - present if model has CoT
+}
 
 # Assistant message with tool use
 {

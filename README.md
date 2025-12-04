@@ -76,6 +76,9 @@ export BRYNHILD_MODEL="anthropic/claude-sonnet-4"
 # Single query
 ./bin/brynhild chat "explain this code"
 
+# Show model thinking/reasoning (streams in real-time)
+./bin/brynhild --show-thinking chat "solve this problem"
+
 # Show config
 ./bin/brynhild config
 
