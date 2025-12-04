@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 globs: ["workflow/commits/*.yaml"]
-description: How to create and use commit plans in this project
+description: Commit plans - read BEFORE creating any commit plan
 ---
 
 # Commit Plans
@@ -13,6 +13,8 @@ This project uses YAML commit plans instead of direct git commits.
 1. **NEVER run `git commit` directly** - Always use commit plans
 2. **NEVER execute commits autonomously** - Only create/preview plans
 3. **workflow/ is gitignored** - Planning docs don't get committed
+4. **Private and public repos must have matching commit histories** - The same granular commits appear in both repos
+5. **Each file can only appear in ONE commit** - The tool stages whole files, not hunks
 
 ## Creating a Commit Plan
 
@@ -29,18 +31,27 @@ commits:
       - path/to/file2.py
 ```
 
-**Each file can only appear in ONE commit** (stages whole files, not hunks).
+If a file needs changes across multiple logical commits, combine those changes into one commit or structure your work differently.
 
 ## Commit Types
 
 `feat:` `fix:` `refactor:` `docs:` `test:` `config:` `security:` `improve:` `chore:`
 
+## Correct Workflow
+
+1. **Create the plan** - Write `workflow/commits/YYYY-MM-DD-description.yaml`
+2. **Preview** - `./scripts/commit-helper plan.yaml` (validates files exist)
+3. **Execute in private repo** - `./scripts/commit-helper plan.yaml execute`
+4. **Sync to public repo** - `./scripts/commit-helper plan.yaml sync-public`
+
+**NEVER skip step 3** - Both repos must have matching commits.
+
 ## Using the Script
 
 ```bash
 ./scripts/commit-helper plan.yaml           # Preview (safe, always OK)
-./scripts/commit-helper plan.yaml execute   # Execute (needs user approval)
-./scripts/commit-helper plan.yaml sync-public  # Sync to public repo
+./scripts/commit-helper plan.yaml execute   # Execute in PRIVATE repo
+./scripts/commit-helper plan.yaml sync-public  # Mirror to public repo
 ```
 
 ## What You Can Do Autonomously

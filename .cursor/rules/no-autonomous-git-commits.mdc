@@ -85,6 +85,8 @@ If the user wants to make commits, they will either:
 
 Only when the user **explicitly requests** git modifications should the agent propose or execute git write commands.
 
+**⚠️ This project uses commit plans.** Before creating any commit plan, read `.cursor/rules/commit-plans.mdc` for the workflow and constraints (e.g., each file can only appear in ONE commit, private/public repos must match).
+
 ## Proposing vs Executing
 
 Even when the user requests git operations:
