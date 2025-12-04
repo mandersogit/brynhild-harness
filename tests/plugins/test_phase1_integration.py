@@ -10,14 +10,12 @@ This test loads the test-phase1 plugin and exercises:
 
 import pathlib as _pathlib
 import tempfile as _tempfile
-import typing as _typing
 
 import pytest as _pytest
 
 import brynhild.core.context as context
 import brynhild.plugins.manifest as manifest
 import brynhild.plugins.rules as rules
-
 
 # Path to the test plugin fixture
 TEST_PLUGIN_PATH = _pathlib.Path(__file__).parent.parent / "fixtures" / "test-phase1-plugin"

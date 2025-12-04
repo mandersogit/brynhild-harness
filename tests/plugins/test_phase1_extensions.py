@@ -10,9 +10,6 @@ Tests:
 
 import pathlib as _pathlib
 import tempfile as _tempfile
-import typing as _typing
-
-import pytest as _pytest
 
 import brynhild.hooks.events as events
 import brynhild.logging as brynhild_logging
