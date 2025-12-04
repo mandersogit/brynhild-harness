@@ -19,6 +19,7 @@ import brynhild.core.types as core_types
 import brynhild.hooks.events as hooks_events
 import brynhild.hooks.manager as hooks_manager
 import brynhild.logging as brynhild_logging
+import brynhild.profiles.types as profiles_types
 import brynhild.tools.base as tools_base
 import brynhild.tools.registry as tools_registry
 
@@ -42,6 +43,42 @@ def _is_valid_tool_use(tool_use: api_types.ToolUse) -> bool:
     if not tool_use.id or not isinstance(tool_use.id, str):
         return False
     return tool_use.input is not None and isinstance(tool_use.input, dict)
+
+
+@_dataclasses.dataclass
+class RecoveryConfig:
+    """Configuration for tool call recovery from thinking text."""
+
+    enabled: bool = False
+    """Whether to attempt recovery of tool calls from thinking text."""
+
+    feedback_enabled: bool = True
+    """Whether to inject feedback after recovering a tool call."""
+
+    requires_intent_phrase: bool = False
+    """Whether to require intent phrases near JSON for recovery."""
+
+    max_recoveries_per_session: int = 20
+    """Maximum number of recoveries allowed per session."""
+
+    max_recoveries_per_turn: int = 3
+    """Maximum number of recoveries allowed per turn."""
+
+    @classmethod
+    def from_profile(cls, profile: profiles_types.ModelProfile) -> "RecoveryConfig":
+        """Create RecoveryConfig from a model profile.
+
+        Args:
+            profile: Model profile with recovery settings.
+
+        Returns:
+            RecoveryConfig populated from profile flags.
+        """
+        return cls(
+            enabled=profile.enable_tool_recovery,
+            feedback_enabled=profile.recovery_feedback_enabled,
+            requires_intent_phrase=profile.recovery_requires_intent_phrase,
+        )
 
 
 @_dataclasses.dataclass
@@ -226,6 +263,7 @@ class ConversationProcessor:
         hook_manager: hooks_manager.HookManager | None = None,
         session_id: str = "",
         cwd: _pathlib.Path | None = None,
+        recovery_config: RecoveryConfig | None = None,
     ) -> None:
         """
         Initialize the conversation processor.
@@ -242,6 +280,7 @@ class ConversationProcessor:
             hook_manager: Optional hook manager for lifecycle events.
             session_id: Session ID for hook context.
             cwd: Working directory for hook context.
+            recovery_config: Configuration for tool call recovery from thinking.
         """
         self._provider = provider
         self._callbacks = callbacks
@@ -254,6 +293,7 @@ class ConversationProcessor:
         self._hook_manager = hook_manager
         self._session_id = session_id
         self._cwd = cwd or _pathlib.Path.cwd()
+        self._recovery_config = recovery_config or RecoveryConfig()
 
         # Track pending injections from hooks
         self._pending_injections: list[str] = []
@@ -261,10 +301,59 @@ class ConversationProcessor:
         # Tool metrics collector
         self._metrics = tools_base.MetricsCollector()
 
+        # Recovery tracking state
+        self._recovery_count_session: int = 0
+        self._recovery_count_turn: int = 0
+        self._recent_recovered_hashes: set[str] = set()
+        self._last_turn_had_recovery: bool = False
+
     @property
     def metrics(self) -> tools_base.MetricsCollector:
         """Get the metrics collector for this processor."""
         return self._metrics
+
+    def _can_recover_tool_call(self) -> bool:
+        """Check if recovery is allowed given current budgets."""
+        if not self._recovery_config.enabled:
+            return False
+        if self._recovery_count_session >= self._recovery_config.max_recoveries_per_session:
+            return False
+        return self._recovery_count_turn < self._recovery_config.max_recoveries_per_turn
+
+    def _hash_tool_call(self, tool_use: api_types.ToolUse) -> str:
+        """Create a hash for loop detection."""
+        # Sort dict items for consistent hashing
+        try:
+            args_str = str(sorted(tool_use.input.items()))
+        except (AttributeError, TypeError):
+            args_str = str(tool_use.input)
+        return f"{tool_use.name}:{args_str}"
+
+    def _is_recovery_loop(self, tool_use: api_types.ToolUse) -> bool:
+        """Check if this would be a repeated recovery (loop detection)."""
+        h = self._hash_tool_call(tool_use)
+        return h in self._recent_recovered_hashes
+
+    def _record_recovery(self, tool_use: api_types.ToolUse) -> None:
+        """Record a successful recovery for tracking."""
+        self._recovery_count_session += 1
+        self._recovery_count_turn += 1
+        self._recent_recovered_hashes.add(self._hash_tool_call(tool_use))
+        self._last_turn_had_recovery = True
+
+    def _clear_recovery_hashes_on_native(self) -> None:
+        """Clear recovery hashes when a native tool call occurs."""
+        # Native tool call indicates state change - clear loop detection
+        self._recent_recovered_hashes.clear()
+
+    @property
+    def recovery_count(self) -> int:
+        """Return the number of tool calls recovered this session."""
+        return self._recovery_count_session
+
+    def _reset_turn_recovery_count(self) -> None:
+        """Reset per-turn recovery count at start of new turn."""
+        self._recovery_count_turn = 0
 
     def _get_tools_for_api(self) -> list[api_types.Tool] | None:
         """Get tool definitions for the API call."""
@@ -337,12 +426,14 @@ class ConversationProcessor:
                         trigger_type="auto",
                     )
 
-        # Log tool call
+        # Log tool call - detect if this was a recovered call by ID prefix
         if self._logger:
+            call_type = "recovered" if tool_use.id.startswith("recovered-") else "native"
             self._logger.log_tool_call(
                 tool_name=tool_use.name,
                 tool_input=tool_input,
                 tool_id=tool_use.id,
+                call_type=call_type,
             )
 
         # Check registry exists
@@ -355,10 +446,13 @@ class ConversationProcessor:
             return self._make_error_result(tool_use, f"Unknown tool: {tool_use.name}")
 
         # Create display object (with potentially modified input)
+        # Detect if this is a recovered call by checking ID prefix
+        is_recovered = tool_use.id.startswith("recovered-")
         tool_call_display = core_types.ToolCallDisplay(
             tool_name=tool_use.name,
             tool_input=tool_input,
             tool_id=tool_use.id,
+            is_recovered=is_recovered,
         )
 
         # Show the tool call
@@ -506,6 +600,48 @@ class ConversationProcessor:
         # Clear pending injections
         self._pending_injections.clear()
 
+    def _apply_recovery_feedback(
+        self,
+        working_messages: list[dict[str, _typing.Any]],
+    ) -> None:
+        """
+        Apply recovery feedback if last turn had a recovered tool call.
+
+        This helps the model learn to emit tool calls via the proper channel
+        instead of placing them in thinking text.
+        """
+        if not self._last_turn_had_recovery:
+            return
+
+        if not self._recovery_config.feedback_enabled:
+            self._last_turn_had_recovery = False
+            return
+
+        # Inject feedback message
+        feedback_message = {
+            "role": "user",
+            "content": (
+                "[System Note]\n"
+                "In your previous response, you placed tool call arguments in your thinking/analysis "
+                "instead of emitting a proper tool call. Brynhild recovered and executed the tool for you. "
+                "In future responses, please emit tool calls using the tool call mechanism (via the "
+                "tool_calls channel) rather than including tool JSON in your analysis.\n"
+                "[/System Note]\n\n"
+                "Please continue with the task."
+            ),
+        }
+        working_messages.append(feedback_message)
+
+        # Log the feedback injection
+        if self._logger:
+            self._logger.log_event(
+                "recovery_feedback_injected",
+                session_recovery_count=self._recovery_count_session,
+            )
+
+        # Clear the flag
+        self._last_turn_had_recovery = False
+
     async def process_streaming(
         self,
         messages: list[dict[str, _typing.Any]],
@@ -538,6 +674,9 @@ class ConversationProcessor:
             tool_round += 1
             await self._callbacks.on_round_start(tool_round)
 
+            # Reset per-turn recovery count at start of each round
+            self._reset_turn_recovery_count()
+
             # Check cancellation
             if self._callbacks.is_cancelled():
                 return ConversationResult(
@@ -554,6 +693,7 @@ class ConversationProcessor:
 
             # Apply any pending injections before LLM call
             self._apply_pending_injections(working_messages)
+            self._apply_recovery_feedback(working_messages)
 
             # Start streaming
             await self._callbacks.on_stream_start()
@@ -628,23 +768,57 @@ class ConversationProcessor:
             # Try to recover tool calls from thinking if none were emitted
             # Some models put tool call JSON in thinking instead of emitting properly
             if not tool_uses and current_thinking and self._tool_registry:
-                recovery = tool_recovery.try_recover_tool_call_from_thinking(
-                    current_thinking, self._tool_registry
-                )
-                if recovery:
-                    tool_uses.append(recovery.tool_use)
-                    await self._callbacks.on_info(
-                        f"Recovered tool call from thinking: {recovery.tool_use.name} "
-                        f"(type: {recovery.recovery_type}, candidates tried: {recovery.candidates_tried})"
+                if self._can_recover_tool_call():
+                    recovery = tool_recovery.try_recover_tool_call_from_thinking(
+                        current_thinking,
+                        self._tool_registry,
+                        model_recovery_enabled=True,  # Already checked in _can_recover
                     )
+                    if recovery:
+                        # Check for recovery loop (same tool+args repeated)
+                        if self._is_recovery_loop(recovery.tool_use):
+                            await self._callbacks.on_info(
+                                f"Recovery loop detected: {recovery.tool_use.name} - stopping recovery"
+                            )
+                            if self._logger:
+                                self._logger.log_event(
+                                    "recovery_loop_detected",
+                                    tool_name=recovery.tool_use.name,
+                                )
+                        # Check if confirmation is required
+                        elif recovery.requires_confirmation:
+                            await self._callbacks.on_info(
+                                f"Recovered tool call requires confirmation: {recovery.tool_use.name} "
+                                f"(risk: {recovery.tool_risk_level})"
+                            )
+                            # For now, skip tools requiring confirmation
+                            # TODO: Add confirmation flow
+                        else:
+                            tool_uses.append(recovery.tool_use)
+                            self._record_recovery(recovery.tool_use)
+                            await self._callbacks.on_info(
+                                f"Recovered tool call from thinking: {recovery.tool_use.name} "
+                                f"(type: {recovery.recovery_type}, risk: {recovery.tool_risk_level})"
+                            )
+                        if self._logger:
+                            self._logger.log_event(
+                                "tool_call_recovered",
+                                **recovery.to_log_dict(),
+                            )
+                elif self._recovery_config.enabled:
+                    # Budget exceeded
                     if self._logger:
                         self._logger.log_event(
-                            "tool_call_recovered",
-                            **recovery.to_log_dict(),
+                            "recovery_budget_exceeded",
+                            session_count=self._recovery_count_session,
+                            turn_count=self._recovery_count_turn,
                         )
 
             # Handle response text and/or tool calls
             if tool_uses:
+                # Clear loop detection hashes when native tool calls occur
+                if not self._last_turn_had_recovery:
+                    self._clear_recovery_hashes_on_native()
                 # Model returned tool calls - add assistant message with tool_calls
                 # This is required for OpenAI-compatible APIs to associate tool
                 # results with the calls that generated them
@@ -748,6 +922,9 @@ class ConversationProcessor:
             tool_round += 1
             await self._callbacks.on_round_start(tool_round)
 
+            # Reset per-turn recovery count at start of each round
+            self._reset_turn_recovery_count()
+
             # Check cancellation
             if self._callbacks.is_cancelled():
                 return ConversationResult(
@@ -764,6 +941,7 @@ class ConversationProcessor:
 
             # Apply any pending injections before LLM call
             self._apply_pending_injections(working_messages)
+            self._apply_recovery_feedback(working_messages)
 
             # Make completion request
             response = await self._provider.complete(
@@ -793,23 +971,57 @@ class ConversationProcessor:
             # Try to recover tool calls from thinking if none were emitted
             # Some models put tool call JSON in thinking instead of emitting properly
             if not tool_uses and response.thinking and self._tool_registry:
-                recovery = tool_recovery.try_recover_tool_call_from_thinking(
-                    response.thinking, self._tool_registry
-                )
-                if recovery:
-                    tool_uses.append(recovery.tool_use)
-                    await self._callbacks.on_info(
-                        f"Recovered tool call from thinking: {recovery.tool_use.name} "
-                        f"(type: {recovery.recovery_type}, candidates tried: {recovery.candidates_tried})"
+                if self._can_recover_tool_call():
+                    recovery = tool_recovery.try_recover_tool_call_from_thinking(
+                        response.thinking,
+                        self._tool_registry,
+                        model_recovery_enabled=True,  # Already checked in _can_recover
                     )
+                    if recovery:
+                        # Check for recovery loop (same tool+args repeated)
+                        if self._is_recovery_loop(recovery.tool_use):
+                            await self._callbacks.on_info(
+                                f"Recovery loop detected: {recovery.tool_use.name} - stopping recovery"
+                            )
+                            if self._logger:
+                                self._logger.log_event(
+                                    "recovery_loop_detected",
+                                    tool_name=recovery.tool_use.name,
+                                )
+                        # Check if confirmation is required
+                        elif recovery.requires_confirmation:
+                            await self._callbacks.on_info(
+                                f"Recovered tool call requires confirmation: {recovery.tool_use.name} "
+                                f"(risk: {recovery.tool_risk_level})"
+                            )
+                            # For now, skip tools requiring confirmation
+                            # TODO: Add confirmation flow
+                        else:
+                            tool_uses.append(recovery.tool_use)
+                            self._record_recovery(recovery.tool_use)
+                            await self._callbacks.on_info(
+                                f"Recovered tool call from thinking: {recovery.tool_use.name} "
+                                f"(type: {recovery.recovery_type}, risk: {recovery.tool_risk_level})"
+                            )
+                        if self._logger:
+                            self._logger.log_event(
+                                "tool_call_recovered",
+                                **recovery.to_log_dict(),
+                            )
+                elif self._recovery_config.enabled:
+                    # Budget exceeded
                     if self._logger:
                         self._logger.log_event(
-                            "tool_call_recovered",
-                            **recovery.to_log_dict(),
+                            "recovery_budget_exceeded",
+                            session_count=self._recovery_count_session,
+                            turn_count=self._recovery_count_turn,
                         )
 
             # Handle response text and/or tool calls
             if tool_uses:
+                # Clear loop detection hashes when native tool calls occur
+                if not self._last_turn_had_recovery:
+                    self._clear_recovery_hashes_on_native()
                 # Model returned tool calls - add assistant message with tool_calls
                 # This is required for OpenAI-compatible APIs to associate tool
                 # results with the calls that generated them
