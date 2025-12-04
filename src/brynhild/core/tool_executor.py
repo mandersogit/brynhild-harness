@@ -168,12 +168,30 @@ class ToolExecutor:
                 "Permission denied by user",
             )
 
+        # Validate input against schema
+        validation = tool.validate_input(tool_use.input)
+        if not validation.is_valid:
+            return self._make_error_result(
+                tool_use,
+                f"Invalid input: {'; '.join(validation.errors)}",
+            )
+
         # Execute the tool with metrics
         start_time = _time.perf_counter()
         try:
             result = await tool.execute(tool_use.input)
             duration_ms = (_time.perf_counter() - start_time) * 1000
             self._metrics.record(tool_use.name, result.success, duration_ms)
+
+            # Prepend warnings to output so LLM gets feedback about unknown params
+            if validation.has_warnings:
+                warning_text = "⚠️ " + "; ".join(validation.warnings) + "\n\n"
+                result = tools_base.ToolResult(
+                    success=result.success,
+                    output=warning_text + result.output,
+                    error=result.error,
+                )
+
             self._log_result(tool_use, result, duration_ms)
             return result
         except Exception as e:

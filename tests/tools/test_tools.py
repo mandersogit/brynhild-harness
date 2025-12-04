@@ -370,6 +370,51 @@ class TestGrepTool:
         assert result.success is True
         assert "Hello" in result.output
 
+    def test_grep_limit_parameter_exists(self, tmp_path: _pathlib.Path) -> None:
+        """Grep tool should use 'limit' parameter (not 'head_limit') for consistency."""
+        tool = tools.GrepTool(base_dir=tmp_path)
+        schema = tool.input_schema
+        properties = schema.get("properties", {})
+
+        # Should have 'limit', not 'head_limit'
+        assert "limit" in properties, "Grep should have 'limit' parameter"
+        assert "head_limit" not in properties, "Grep should not use 'head_limit'"
+
+
+class TestInputValidation:
+    """Tests for tool input validation."""
+
+    def test_validate_unknown_params(self, tmp_path: _pathlib.Path) -> None:
+        """Unknown parameters should generate warnings."""
+        tool = tools.GrepTool(base_dir=tmp_path)
+
+        # 'head_limit' is not a valid param (should be 'limit')
+        validation = tool.validate_input({"pattern": "test", "head_limit": 10})
+
+        assert validation.is_valid  # Unknown params are warnings, not errors
+        assert validation.has_warnings
+        assert "head_limit" in validation.warnings[0]
+        assert "Unknown parameters" in validation.warnings[0]
+
+    def test_validate_missing_required(self, tmp_path: _pathlib.Path) -> None:
+        """Missing required parameters should generate errors."""
+        tool = tools.GrepTool(base_dir=tmp_path)
+
+        # 'pattern' is required
+        validation = tool.validate_input({})
+
+        assert not validation.is_valid
+        assert "pattern" in validation.errors[0]
+
+    def test_validate_valid_input(self, tmp_path: _pathlib.Path) -> None:
+        """Valid input should pass validation."""
+        tool = tools.GrepTool(base_dir=tmp_path)
+
+        validation = tool.validate_input({"pattern": "test", "limit": 10})
+
+        assert validation.is_valid
+        assert not validation.has_warnings
+
 
 # =============================================================================
 # Glob Tool Tests

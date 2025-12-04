@@ -63,6 +63,32 @@ class ToolResult:
 
 
 @_dataclasses.dataclass
+class InputValidation:
+    """
+    Result of validating tool input against schema.
+
+    Used to provide feedback to LLMs when they use unknown parameters
+    (which would otherwise be silently ignored).
+    """
+
+    errors: list[str]
+    """Critical validation failures (e.g., missing required params)."""
+
+    warnings: list[str]
+    """Non-critical issues (e.g., unknown params that will be ignored)."""
+
+    @property
+    def is_valid(self) -> bool:
+        """True if no errors (warnings are OK)."""
+        return len(self.errors) == 0
+
+    @property
+    def has_warnings(self) -> bool:
+        """True if there are warnings."""
+        return len(self.warnings) > 0
+
+
+@_dataclasses.dataclass
 class ToolMetrics:
     """
     Metrics for a single tool's usage.
@@ -266,6 +292,48 @@ class Tool(_abc.ABC):
             ToolResult with success status, output, and optional error
         """
         ...
+
+    def validate_input(self, input: dict[str, _typing.Any]) -> InputValidation:
+        """
+        Validate input against the tool's schema.
+
+        Checks for:
+        - Missing required parameters (error)
+        - Unknown parameters not in schema (warning)
+
+        This enables the LLM to get feedback when it uses parameters
+        that don't exist in the schema (which would otherwise be silently ignored).
+
+        Args:
+            input: The input dictionary to validate
+
+        Returns:
+            InputValidation with any errors and warnings
+        """
+        schema = self.input_schema
+        if not schema:
+            return InputValidation(errors=[], warnings=[])
+
+        properties = set(schema.get("properties", {}).keys())
+        required = set(schema.get("required", []))
+        provided = set(input.keys())
+
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # Check for missing required parameters
+        missing = required - provided
+        if missing:
+            errors.append(f"Missing required parameters: {', '.join(sorted(missing))}")
+
+        # Check for unknown parameters
+        unknown = provided - properties
+        if unknown:
+            warnings.append(
+                f"Unknown parameters (will be ignored): {', '.join(sorted(unknown))}"
+            )
+
+        return InputValidation(errors=errors, warnings=warnings)
 
     # Optional metadata properties with null-ish defaults
 
