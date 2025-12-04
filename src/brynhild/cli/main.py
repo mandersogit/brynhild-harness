@@ -252,6 +252,7 @@ async def _run_conversation(
     log_file: str | None = None,
     profile_name: str | None = None,
     show_thinking: bool = False,
+    require_finish: bool = False,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -341,6 +342,7 @@ async def _run_conversation(
         system_prompt=context.system_prompt,  # Use enhanced prompt
         recovery_config=recovery_config,
         show_thinking=show_thinking,
+        require_finish=require_finish,
     )
 
     try:
@@ -522,6 +524,11 @@ def _handle_interactive_mode(
 @_click.option("--tools/--no-tools", "tools_enabled", default=True, help="Enable/disable tool use")
 @_click.option("--no-log", is_flag=True, help="Disable conversation logging")
 @_click.option("--log-file", type=str, default=None, help="Explicit log file path")
+@_click.option(
+    "--require-finish",
+    is_flag=True,
+    help="Require agent to call Finish tool to complete",
+)
 @_click.argument("prompt", required=False, nargs=-1)
 @_click.pass_context
 def chat(
@@ -535,6 +542,7 @@ def chat(
     tools_enabled: bool,
     no_log: bool,
     log_file: str | None,
+    require_finish: bool,
     prompt: tuple[str, ...],
 ) -> None:
     """Send a prompt to the AI (single query mode)."""
@@ -580,6 +588,7 @@ def chat(
             log_file=log_file,
             profile_name=profile_name,
             show_thinking=show_thinking,
+            require_finish=require_finish,
         )
     )
 

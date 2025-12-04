@@ -47,6 +47,7 @@ class ConversationRunner:
         logger: logging.ConversationLogger | None = None,
         recovery_config: core_conversation.RecoveryConfig | None = None,
         show_thinking: bool = False,
+        require_finish: bool = False,
     ) -> None:
         """
         Initialize the conversation runner.
@@ -65,6 +66,7 @@ class ConversationRunner:
             logger: Conversation logger for JSONL output.
             recovery_config: Configuration for tool call recovery from thinking.
             show_thinking: If True, display full thinking/reasoning content.
+            require_finish: Require agent to call Finish tool to complete.
         """
         self._provider = provider
         self._renderer = renderer
@@ -94,6 +96,7 @@ class ConversationRunner:
             dry_run=dry_run,
             logger=logger,
             recovery_config=recovery_config,
+            require_finish=require_finish,
         )
 
         # Conversation state
@@ -191,8 +194,16 @@ class ConversationRunner:
         self._total_input_tokens += result.input_tokens
         self._total_output_tokens += result.output_tokens
 
+        # Display finish result if available
+        if result.finish_result:
+            self._renderer.show_finish(
+                status=result.finish_result.status,
+                summary=result.finish_result.summary,
+                next_steps=result.finish_result.next_steps,
+            )
+
         # Build result dict for compatibility
-        return {
+        result_dict: dict[str, _typing.Any] = {
             "response": result.response_text,
             "provider": self._provider.name,
             "model": self._provider.model,
@@ -204,6 +215,15 @@ class ConversationRunner:
                 "total_tokens": self._total_input_tokens + self._total_output_tokens,
             },
         }
+
+        if result.finish_result:
+            result_dict["finish"] = {
+                "status": result.finish_result.status,
+                "summary": result.finish_result.summary,
+                "next_steps": result.finish_result.next_steps,
+            }
+
+        return result_dict
 
     async def run_complete(
         self,
@@ -242,8 +262,16 @@ class ConversationRunner:
         self._total_input_tokens += result.input_tokens
         self._total_output_tokens += result.output_tokens
 
+        # Display finish result if available
+        if result.finish_result:
+            self._renderer.show_finish(
+                status=result.finish_result.status,
+                summary=result.finish_result.summary,
+                next_steps=result.finish_result.next_steps,
+            )
+
         # Build result dict for compatibility
-        return {
+        result_dict: dict[str, _typing.Any] = {
             "response": result.response_text,
             "provider": self._provider.name,
             "model": self._provider.model,
@@ -254,6 +282,15 @@ class ConversationRunner:
                 "total_tokens": self._total_input_tokens + self._total_output_tokens,
             },
         }
+
+        if result.finish_result:
+            result_dict["finish"] = {
+                "status": result.finish_result.status,
+                "summary": result.finish_result.summary,
+                "next_steps": result.finish_result.next_steps,
+            }
+
+        return result_dict
 
     def reset(self) -> None:
         """Reset conversation state for a new conversation."""

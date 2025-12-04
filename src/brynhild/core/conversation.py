@@ -112,6 +112,23 @@ class ConversationResult:
     messages: list[dict[str, _typing.Any]] = _dataclasses.field(default_factory=list)
     """Updated message history after this turn (for caller synchronization)."""
 
+    finish_result: "FinishResult | None" = None
+    """Explicit finish signal if Finish tool was called."""
+
+
+@_dataclasses.dataclass
+class FinishResult:
+    """Result from an explicit Finish tool call."""
+
+    status: str
+    """Completion status: success, partial, failed, blocked."""
+
+    summary: str
+    """Summary of what was accomplished or why incomplete."""
+
+    next_steps: str | None = None
+    """Optional suggestions for the user's next actions."""
+
 
 class ConversationCallbacks(_abc.ABC):
     """
@@ -278,6 +295,7 @@ class ConversationProcessor:
         session_id: str = "",
         cwd: _pathlib.Path | None = None,
         recovery_config: RecoveryConfig | None = None,
+        require_finish: bool = False,
     ) -> None:
         """
         Initialize the conversation processor.
@@ -295,6 +313,7 @@ class ConversationProcessor:
             session_id: Session ID for hook context.
             cwd: Working directory for hook context.
             recovery_config: Configuration for tool call recovery from thinking.
+            require_finish: Require agent to call Finish tool to complete.
         """
         self._provider = provider
         self._callbacks = callbacks
@@ -308,6 +327,7 @@ class ConversationProcessor:
         self._session_id = session_id
         self._cwd = cwd or _pathlib.Path.cwd()
         self._recovery_config = recovery_config or RecoveryConfig()
+        self._require_finish = require_finish
 
         # Track pending injections from hooks
         self._pending_injections: list[str] = []
@@ -320,6 +340,12 @@ class ConversationProcessor:
         self._recovery_count_turn: int = 0
         self._recent_recovered_hashes: set[str] = set()
         self._last_turn_had_recovery: bool = False
+
+        # Finish tool tracking
+        self._finish_called: bool = False
+        self._finish_result: FinishResult | None = None
+        self._finish_reminder_count: int = 0
+        self._max_finish_reminders: int = 3
 
     @property
     def metrics(self) -> tools_base.MetricsCollector:
@@ -730,6 +756,57 @@ class ConversationProcessor:
         """Reset the thinking-only retry counter."""
         self._thinking_only_retries = 0
 
+    def _check_for_finish(self, tool_use: api_types.ToolUse) -> bool:
+        """Check if the tool use is a Finish call and record it.
+
+        Args:
+            tool_use: The tool use to check.
+
+        Returns:
+            True if this is a Finish call.
+        """
+        if tool_use.name == "Finish":
+            self._finish_called = True
+            self._finish_result = FinishResult(
+                status=tool_use.input.get("status", "success"),
+                summary=tool_use.input.get("summary", "Task completed."),
+                next_steps=tool_use.input.get("next_steps"),
+            )
+            return True
+        return False
+
+    def _inject_finish_reminder(
+        self, working_messages: list[dict[str, _typing.Any]]
+    ) -> bool:
+        """Inject a reminder to use the Finish tool.
+
+        Args:
+            working_messages: Message history to append to.
+
+        Returns:
+            True if reminder was injected, False if max reminders reached.
+        """
+        if self._finish_reminder_count >= self._max_finish_reminders:
+            return False
+
+        self._finish_reminder_count += 1
+        working_messages.append({
+            "role": "user",
+            "content": (
+                "You produced a text response but did not call the Finish tool. "
+                "In require-finish mode, you must explicitly call "
+                "Finish(status=..., summary=...) to signal task completion. "
+                "Please call Finish now with an appropriate status and summary."
+            ),
+        })
+        return True
+
+    def _reset_finish_state(self) -> None:
+        """Reset finish tracking state for a new turn."""
+        self._finish_called = False
+        self._finish_result = None
+        self._finish_reminder_count = 0
+
     async def process_streaming(
         self,
         messages: list[dict[str, _typing.Any]],
@@ -777,6 +854,7 @@ class ConversationProcessor:
                     stop_reason="cancelled",
                     cancelled=True,
                     messages=working_messages,
+                    finish_result=self._finish_result,
                 )
 
             # Apply any pending injections before LLM call
@@ -810,6 +888,7 @@ class ConversationProcessor:
                             stop_reason="cancelled",
                             cancelled=True,
                             messages=working_messages,
+                            finish_result=self._finish_result,
                         )
 
                     if event.type == "thinking_delta" and event.thinking:
@@ -979,6 +1058,7 @@ class ConversationProcessor:
                         )
 
                 # Execute tools and add results as individual messages
+                finish_detected = False
                 for tool_use in tool_uses:
                     # Check cancellation
                     if self._callbacks.is_cancelled():
@@ -992,7 +1072,12 @@ class ConversationProcessor:
                             stop_reason="cancelled",
                             cancelled=True,
                             messages=working_messages,
+                            finish_result=self._finish_result,
                         )
+
+                    # Check if this is a Finish tool call
+                    if self._check_for_finish(tool_use):
+                        finish_detected = True
 
                     tool_result = await self._execute_tool(tool_use)
                     all_tool_uses.append(tool_use)
@@ -1003,8 +1088,29 @@ class ConversationProcessor:
                         core_types.format_tool_result_message(tool_use.id, tool_result)
                     )
 
+                    # If Finish was called, break out of tool loop
+                    if finish_detected:
+                        break
+
+                # If Finish was called, break out of main loop
+                if finish_detected:
+                    final_response = current_text or self._finish_result.summary if self._finish_result else ""
+                    break
+
             elif current_text:
-                # No tool calls, just text response - we're done
+                # No tool calls, just text response
+                # In require_finish mode, we need the agent to call Finish
+                if self._require_finish and not self._finish_called:
+                    # Inject reminder to use Finish tool
+                    if self._inject_finish_reminder(working_messages):
+                        # Add assistant text to history for context
+                        working_messages.append({"role": "assistant", "content": current_text})
+                        continue  # Try again
+                    else:
+                        # Max reminders reached, accept implicit completion
+                        pass
+
+                # Normal completion - we're done
                 final_response = current_text
                 working_messages.append({"role": "assistant", "content": current_text})
                 await self._callbacks.on_text_complete(current_text, current_thinking)
@@ -1035,8 +1141,9 @@ class ConversationProcessor:
             tool_results=all_tool_results,
             input_tokens=total_input,
             output_tokens=total_output,
-            stop_reason=stop_reason,
+            stop_reason=stop_reason if not self._finish_result else "finish",
             messages=working_messages,
+            finish_result=self._finish_result,
         )
 
     async def process_complete(
@@ -1086,6 +1193,7 @@ class ConversationProcessor:
                     stop_reason="cancelled",
                     cancelled=True,
                     messages=working_messages,
+                    finish_result=self._finish_result,
                 )
 
             # Apply any pending injections before LLM call
@@ -1238,6 +1346,7 @@ class ConversationProcessor:
                         )
 
                 # Execute tools and add results as individual messages
+                finish_detected = False
                 for tool_use in tool_uses:
                     # Check cancellation
                     if self._callbacks.is_cancelled():
@@ -1251,7 +1360,12 @@ class ConversationProcessor:
                             stop_reason="cancelled",
                             cancelled=True,
                             messages=working_messages,
+                            finish_result=self._finish_result,
                         )
+
+                    # Check if this is a Finish tool call
+                    if self._check_for_finish(tool_use):
+                        finish_detected = True
 
                     tool_result = await self._execute_tool(tool_use)
                     all_tool_uses.append(tool_use)
@@ -1262,8 +1376,31 @@ class ConversationProcessor:
                         core_types.format_tool_result_message(tool_use.id, tool_result)
                     )
 
+                    # If Finish was called, break out of tool loop
+                    if finish_detected:
+                        break
+
+                # If Finish was called, break out of main loop
+                if finish_detected:
+                    final_response = response.content or self._finish_result.summary if self._finish_result else ""
+                    break
+
             elif response.content:
-                # No tool calls, just text response - we're done
+                # No tool calls, just text response
+                # In require_finish mode, we need the agent to call Finish
+                if self._require_finish and not self._finish_called:
+                    # Inject reminder to use Finish tool
+                    if self._inject_finish_reminder(working_messages):
+                        # Add assistant text to history for context
+                        working_messages.append(
+                            {"role": "assistant", "content": response.content}
+                        )
+                        continue  # Try again
+                    else:
+                        # Max reminders reached, accept implicit completion
+                        pass
+
+                # Normal completion - we're done
                 final_response = response.content
                 working_messages.append(
                     {"role": "assistant", "content": response.content}
@@ -1298,7 +1435,8 @@ class ConversationProcessor:
             tool_results=all_tool_results,
             input_tokens=total_input,
             output_tokens=total_output,
-            stop_reason=stop_reason,
+            stop_reason=stop_reason if not self._finish_result else "finish",
             messages=working_messages,
+            finish_result=self._finish_result,
         )
 
