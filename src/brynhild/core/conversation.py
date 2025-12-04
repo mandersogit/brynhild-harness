@@ -500,14 +500,30 @@ class ConversationProcessor:
 
         # Handle dry run
         if self._dry_run:
-            return self._make_success_result(tool_use, "[dry run - tool not executed]")
+            result = self._make_success_result(tool_use, "[dry run - tool not executed]")
+            # Still show the result to the UI
+            result_display = core_types.ToolResultDisplay(
+                tool_name=tool_use.name,
+                result=result,
+                tool_id=tool_use.id,
+            )
+            await self._callbacks.on_tool_result(result_display)
+            return result
 
         # Check permission (skip for tools that don't require it)
         if tool.requires_permission:
             if self._auto_approve:
                 pass  # Auto-approved
             elif not await self._callbacks.request_tool_permission(tool_call_display):
-                return self._make_error_result(tool_use, "Permission denied by user")
+                result = self._make_error_result(tool_use, "Permission denied by user")
+                # Still show the result to the UI
+                result_display = core_types.ToolResultDisplay(
+                    tool_name=tool_use.name,
+                    result=result,
+                    tool_id=tool_use.id,
+                )
+                await self._callbacks.on_tool_result(result_display)
+                return result
 
         # Execute the tool with timing
         import time as _time
@@ -732,9 +748,10 @@ class ConversationProcessor:
                     },
                 }],
             })
+            # Use "tool_result" role (our internal format) - providers convert to "tool"
             working_messages.append({
-                "role": "tool",
-                "tool_call_id": fake_tool_id,
+                "role": "tool_result",
+                "tool_use_id": fake_tool_id,
                 "content": (
                     "ERROR: Your response contained only thinking/reasoning but you "
                     "did not actually emit a tool call. Your thinking mentioned wanting "
@@ -742,6 +759,7 @@ class ConversationProcessor:
                     "You MUST explicitly call a tool using the proper tool_calls format, "
                     "or provide a text response to the user. Try again."
                 ),
+                "is_error": True,
             })
             return True  # Continue loop
 
