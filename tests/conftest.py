@@ -576,6 +576,155 @@ def cli_runner() -> _click_testing.CliRunner:
 
 
 # =============================================================================
+# Realistic Token Tracking Fixtures
+# =============================================================================
+
+
+class RealisticUsageMockProvider(api_base.LLMProvider):
+    """
+    Mock provider that returns realistic GROWING context sizes.
+
+    This reveals accumulation bugs that constant-value mocks hide.
+
+    LLM providers return ABSOLUTE context size per call:
+    - Call 1: 1000 tokens (system + user message)
+    - Call 2: 2500 tokens (+ assistant + tool result)
+    - Call 3: 4000 tokens (+ more messages)
+
+    NOT incremental deltas.
+    """
+
+    def __init__(
+        self,
+        usage_sequence: list[tuple[int, int]],
+        tool_calls_on: list[int] | None = None,
+    ) -> None:
+        """
+        Initialize with a sequence of (input_tokens, output_tokens) per call.
+
+        Args:
+            usage_sequence: List of (input_tokens, output_tokens) tuples.
+                           input_tokens should be GROWING (realistic context).
+            tool_calls_on: List of call indices (0-based) that should return tool calls.
+        """
+        self._usage_sequence = usage_sequence
+        self._tool_calls_on = set(tool_calls_on or [])
+        self._call_index = 0
+
+    @property
+    def name(self) -> str:
+        return "realistic-mock"
+
+    @property
+    def model(self) -> str:
+        return "realistic-mock-model"
+
+    def supports_tools(self) -> bool:
+        return True
+
+    def supports_reasoning(self) -> bool:
+        return False
+
+    async def complete(
+        self,
+        messages: list[dict[str, _typing.Any]],
+        *,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        tools: list[api_types.Tool] | None = None,
+    ) -> api_types.CompletionResponse:
+        text_parts = []
+        tool_uses = []
+        usage = None
+
+        async for event in self.stream(
+            messages, system=system, max_tokens=max_tokens, tools=tools
+        ):
+            if event.type == "text_delta" and event.text:
+                text_parts.append(event.text)
+            elif event.type == "tool_use_start" and event.tool_use:
+                tool_uses.append(event.tool_use)
+            elif event.type == "message_delta" and event.usage:
+                usage = event.usage
+
+        return api_types.CompletionResponse(
+            id=f"call-{self._call_index}",
+            content="".join(text_parts),
+            stop_reason="tool_use" if tool_uses else "stop",
+            usage=usage or api_types.Usage(input_tokens=0, output_tokens=0),
+            tool_uses=tool_uses if tool_uses else None,
+        )
+
+    async def stream(
+        self,
+        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        *,
+        system: str | None = None,  # noqa: ARG002
+        max_tokens: int = 4096,  # noqa: ARG002
+        tools: list[api_types.Tool] | None = None,  # noqa: ARG002
+    ) -> _typing.AsyncIterator[api_types.StreamEvent]:
+        current_call = self._call_index
+
+        if current_call < len(self._usage_sequence):
+            input_tokens, output_tokens = self._usage_sequence[current_call]
+        else:
+            input_tokens, output_tokens = 1000, 50
+
+        if current_call in self._tool_calls_on:
+            yield api_types.StreamEvent(type="text_delta", text="Using tool...")
+            yield api_types.StreamEvent(
+                type="tool_use_start",
+                tool_use=api_types.ToolUse(
+                    id=f"tool-{current_call}",
+                    name="MockTool",
+                    input={"value": f"call-{current_call}"},
+                ),
+            )
+            stop_reason = "tool_use"
+        else:
+            yield api_types.StreamEvent(
+                type="text_delta", text=f"Response for call {current_call}"
+            )
+            stop_reason = "stop"
+
+        yield api_types.StreamEvent(
+            type="message_delta",
+            stop_reason=stop_reason,
+            usage=api_types.Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            ),
+        )
+
+        self._call_index += 1
+
+
+@_pytest.fixture
+def realistic_usage_provider_factory() -> _typing.Callable[..., RealisticUsageMockProvider]:
+    """
+    Factory for creating mock providers with realistic token tracking.
+
+    Usage:
+        def test_something(realistic_usage_provider_factory):
+            provider = realistic_usage_provider_factory(
+                usage_sequence=[(1000, 50), (2500, 100), (4000, 150)],
+                tool_calls_on=[0, 1],  # First two calls return tool uses
+            )
+    """
+
+    def _create(
+        usage_sequence: list[tuple[int, int]],
+        tool_calls_on: list[int] | None = None,
+    ) -> RealisticUsageMockProvider:
+        return RealisticUsageMockProvider(
+            usage_sequence=usage_sequence,
+            tool_calls_on=tool_calls_on,
+        )
+
+    return _create
+
+
+# =============================================================================
 # Test Utilities
 # =============================================================================
 
