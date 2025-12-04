@@ -14,6 +14,7 @@ import typing as _typing
 import brynhild.api.base as api_base
 import brynhild.api.types as api_types
 import brynhild.constants as _constants
+import brynhild.core.tool_recovery as tool_recovery
 import brynhild.core.types as core_types
 import brynhild.hooks.events as hooks_events
 import brynhild.hooks.manager as hooks_manager
@@ -624,6 +625,24 @@ class ConversationProcessor:
                 self._logger.log_thinking(current_thinking)
                 final_thinking = current_thinking
 
+            # Try to recover tool calls from thinking if none were emitted
+            # Some models put tool call JSON in thinking instead of emitting properly
+            if not tool_uses and current_thinking and self._tool_registry:
+                recovery = tool_recovery.try_recover_tool_call_from_thinking(
+                    current_thinking, self._tool_registry
+                )
+                if recovery:
+                    tool_uses.append(recovery.tool_use)
+                    await self._callbacks.on_info(
+                        f"Recovered tool call from thinking: {recovery.tool_use.name} "
+                        f"(type: {recovery.recovery_type}, candidates tried: {recovery.candidates_tried})"
+                    )
+                    if self._logger:
+                        self._logger.log_event(
+                            "tool_call_recovered",
+                            **recovery.to_log_dict(),
+                        )
+
             # Handle response text and/or tool calls
             if tool_uses:
                 # Model returned tool calls - add assistant message with tool_calls
@@ -768,14 +787,35 @@ class ConversationProcessor:
                 if self._logger:
                     self._logger.log_thinking(response.thinking)
 
+            # Get tool uses, with recovery from thinking if needed
+            tool_uses = list(response.tool_uses) if response.tool_uses else []
+
+            # Try to recover tool calls from thinking if none were emitted
+            # Some models put tool call JSON in thinking instead of emitting properly
+            if not tool_uses and response.thinking and self._tool_registry:
+                recovery = tool_recovery.try_recover_tool_call_from_thinking(
+                    response.thinking, self._tool_registry
+                )
+                if recovery:
+                    tool_uses.append(recovery.tool_use)
+                    await self._callbacks.on_info(
+                        f"Recovered tool call from thinking: {recovery.tool_use.name} "
+                        f"(type: {recovery.recovery_type}, candidates tried: {recovery.candidates_tried})"
+                    )
+                    if self._logger:
+                        self._logger.log_event(
+                            "tool_call_recovered",
+                            **recovery.to_log_dict(),
+                        )
+
             # Handle response text and/or tool calls
-            if response.tool_uses:
+            if tool_uses:
                 # Model returned tool calls - add assistant message with tool_calls
                 # This is required for OpenAI-compatible APIs to associate tool
                 # results with the calls that generated them
                 working_messages.append(
                     core_types.format_assistant_tool_call(
-                        response.tool_uses, response.content or ""
+                        tool_uses, response.content or ""
                     )
                 )
 
@@ -793,7 +833,7 @@ class ConversationProcessor:
                         )
 
                 # Execute tools and add results as individual messages
-                for tool_use in response.tool_uses:
+                for tool_use in tool_uses:
                     # Check cancellation
                     if self._callbacks.is_cancelled():
                         return ConversationResult(

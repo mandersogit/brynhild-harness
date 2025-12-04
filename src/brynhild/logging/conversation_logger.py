@@ -216,6 +216,18 @@ class ConversationLogger:
             },
         )
 
+    def log_event(self, event_type: str, **kwargs: _typing.Any) -> None:
+        """Log a generic event with arbitrary data.
+
+        Use this for events that don't have a dedicated logging method.
+        All kwargs are included in the event data.
+
+        Args:
+            event_type: The event type string (e.g., "tool_call_recovered").
+            **kwargs: Arbitrary key-value pairs to include in the event.
+        """
+        self._write_event(event_type, dict(kwargs))
+
     def log_usage(
         self,
         input_tokens: int,

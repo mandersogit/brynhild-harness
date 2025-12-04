@@ -44,11 +44,18 @@ Depth:
 
 TOOL_POLICY_PATTERN = """<tool_use_policy>
 - ALWAYS check the conversation history first. If the user told you something earlier in the conversation, use that information directly - do not search for it.
-- Select one tool or none; prefer answering from context when possible.
-- Cap tool calls at 3 per user request unless new information makes more strictly necessary.
-- Give each tool a single job - don't call the same tool repeatedly for similar queries.
+- Prefer answering from context when possible, but use tools when needed.
+- If the user explicitly requests multiple tool calls (e.g., "run 10 searches"), honor that request.
+- Give each tool call a distinct purpose - vary queries/parameters to get different information.
 - Only use search/browse tools for information NOT already provided in the conversation.
 - If you reference a document/file you don't have in context, search to find it, then fetch the relevant section before answering.
+
+CRITICAL - Emitting vs. thinking about tool calls:
+- When you decide to call a tool, you must EMIT the tool call in your response.
+- Do NOT put tool call JSON in your thinking/analysis - that will NOT execute.
+- If you think "I should call X next", immediately emit that tool call.
+- After receiving tool results, if more information is needed, emit another tool call.
+- Only provide your final answer AFTER all necessary tool calls are complete.
 </tool_use_policy>"""
 
 PARALLELIZATION_PATTERN = """<parallelization_spec>
