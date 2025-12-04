@@ -19,6 +19,8 @@ class ToolCallDisplay:
     tool_name: str
     tool_input: dict[str, _typing.Any]
     tool_id: str | None = None
+    is_recovered: bool = False
+    """Whether this tool call was recovered from thinking text (not native)."""
 
 
 @_dataclasses.dataclass
