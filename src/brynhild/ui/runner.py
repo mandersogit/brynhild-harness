@@ -45,6 +45,7 @@ class ConversationRunner:
         system_prompt: str | None = None,
         verbose: bool = False,
         logger: logging.ConversationLogger | None = None,
+        recovery_config: core_conversation.RecoveryConfig | None = None,
     ) -> None:
         """
         Initialize the conversation runner.
@@ -61,6 +62,7 @@ class ConversationRunner:
             system_prompt: System prompt (required).
             verbose: Log full API requests/responses for debugging.
             logger: Conversation logger for JSONL output.
+            recovery_config: Configuration for tool call recovery from thinking.
         """
         self._provider = provider
         self._renderer = renderer
@@ -88,6 +90,7 @@ class ConversationRunner:
             auto_approve_tools=auto_approve_tools,
             dry_run=dry_run,
             logger=logger,
+            recovery_config=recovery_config,
         )
 
         # Conversation state

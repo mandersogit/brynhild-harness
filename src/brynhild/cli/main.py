@@ -17,6 +17,7 @@ import click as _click
 import brynhild
 import brynhild.api as api
 import brynhild.config as config
+import brynhild.core.conversation as core_conversation
 import brynhild.logging as logging
 import brynhild.session as session
 import brynhild.tools as tools
@@ -302,6 +303,11 @@ async def _run_conversation(
         if context.profile:
             renderer.show_info(f"Using profile: {context.profile.name}")
 
+    # Create recovery config from profile if available
+    recovery_config: core_conversation.RecoveryConfig | None = None
+    if context.profile:
+        recovery_config = core_conversation.RecoveryConfig.from_profile(context.profile)
+
     # Create conversation runner with enhanced system prompt
     runner = ui.ConversationRunner(
         provider=provider_instance,
@@ -314,6 +320,7 @@ async def _run_conversation(
         verbose=verbose,
         logger=conv_logger,
         system_prompt=context.system_prompt,  # Use enhanced prompt
+        recovery_config=recovery_config,
     )
 
     try:
@@ -457,6 +464,11 @@ def _handle_interactive_mode(
         provider=settings.provider,
     )
 
+    # Create recovery config from profile if available
+    recovery_config: core_conversation.RecoveryConfig | None = None
+    if context.profile:
+        recovery_config = core_conversation.RecoveryConfig.from_profile(context.profile)
+
     try:
         # Create and run the TUI app with enhanced system prompt
         app = ui.create_app(
@@ -470,6 +482,7 @@ def _handle_interactive_mode(
             initial_messages=initial_messages,  # Resume support
             session_id=session_name,  # Session tracking
             sessions_dir=settings.sessions_dir,  # For auto-save
+            recovery_config=recovery_config,
         )
 
         app.run()
@@ -2445,6 +2458,16 @@ def profile_resolve(
         _click.echo(f"  Temperature: {profile.default_temperature}")
         _click.echo(f"  Max tokens: {profile.default_max_tokens}")
         _click.echo(f"  Supports tools: {'✓' if profile.supports_tools else '✗'}")
+
+
+# =============================================================================
+# Developer Commands (Hidden)
+# =============================================================================
+
+# Import dev commands from separate module
+import brynhild.cli.dev as _dev
+
+cli.add_command(_dev.dev_group)
 
 
 def main() -> None:

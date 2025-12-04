@@ -411,6 +411,7 @@ class BrynhildApp(_app.App[None]):
         initial_messages: list[dict[str, _typing.Any]] | None = None,
         session_id: str | None = None,
         sessions_dir: _typing.Any | None = None,  # pathlib.Path, avoid import
+        recovery_config: core_conversation.RecoveryConfig | None = None,
     ) -> None:
         """
         Initialize the Brynhild TUI.
@@ -427,6 +428,7 @@ class BrynhildApp(_app.App[None]):
             initial_messages: Messages to preload (for session resume).
             session_id: Session ID for saving.
             sessions_dir: Directory to save sessions to.
+            recovery_config: Configuration for tool call recovery from thinking.
         """
         super().__init__()
         self._provider = provider
@@ -436,6 +438,7 @@ class BrynhildApp(_app.App[None]):
         self._auto_approve = auto_approve_tools
         self._dry_run = dry_run
         self._conv_logger = conv_logger
+        self._recovery_config = recovery_config
         if system_prompt is None:
             raise ValueError("system_prompt is required")
         self._system_prompt = system_prompt
@@ -738,6 +741,7 @@ class BrynhildApp(_app.App[None]):
                 auto_approve_tools=self._auto_approve,
                 dry_run=self._dry_run,
                 logger=self._conv_logger,
+                recovery_config=self._recovery_config,
             )
 
             # Process the conversation turn
@@ -927,6 +931,7 @@ def create_app(
     initial_messages: list[dict[str, _typing.Any]] | None = None,
     session_id: str | None = None,
     sessions_dir: _typing.Any | None = None,
+    recovery_config: core_conversation.RecoveryConfig | None = None,
 ) -> BrynhildApp:
     """
     Create a Brynhild TUI app instance.
@@ -946,5 +951,6 @@ def create_app(
         initial_messages=initial_messages,
         session_id=session_id,
         sessions_dir=sessions_dir,
+        recovery_config=recovery_config,
     )
 
