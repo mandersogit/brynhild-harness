@@ -2,6 +2,10 @@
 
 An AI coding assistant for the terminal.
 
+> **Born**: November 28, 2025 in a three-day sprint  
+> **First public release**: November 30, 2025  
+> **Named after**: The Norse valkyrie and shieldmaiden
+
 ## Requirements
 
 ### All Platforms
