@@ -61,6 +61,24 @@ def _validate_files(
     return missing
 
 
+def _find_duplicate_files(
+    commits: list[dict[str, _typing.Any]],
+) -> dict[str, list[int]]:
+    """Find files that appear in multiple commits.
+
+    Returns dict mapping filename to list of commit indices (1-based).
+    """
+    file_commits: dict[str, list[int]] = {}
+    for i, commit in enumerate(commits, 1):
+        for f in commit.get("files", []):
+            if f not in file_commits:
+                file_commits[f] = []
+            file_commits[f].append(i)
+
+    # Return only duplicates
+    return {f: commits for f, commits in file_commits.items() if len(commits) > 1}
+
+
 def _load_plan(plan_path: _pathlib.Path) -> dict[str, _typing.Any]:
     """Load commit plan from YAML file."""
     with plan_path.open() as f:
@@ -83,12 +101,22 @@ def _preview_plan(plan_path: _pathlib.Path) -> None:
 
     _click.echo(f"=== Commit Plan: {plan_path.name} ===")
     _click.echo(f"Repository: {repo_path}")
-    _click.echo(f"Commits: {len(plan.get('commits', []))}")
+    commits = plan.get("commits", [])
+    _click.echo(f"Commits: {len(commits)}")
     _click.echo()
+
+    # Check for duplicate files (same file in multiple commits)
+    duplicates = _find_duplicate_files(commits)
+    if duplicates:
+        _click.echo("ERROR: Files appear in multiple commits:", err=True)
+        _click.echo("(Each file can only be in ONE commit - hunking not supported)", err=True)
+        for f, commit_nums in sorted(duplicates.items()):
+            _click.echo(f"  - {f} → commits {commit_nums}", err=True)
+        _sys.exit(1)
 
     # Validate all files exist
     all_files: set[str] = set()
-    for commit in plan.get("commits", []):
+    for commit in commits:
         all_files.update(commit.get("files", []))
 
     missing = _validate_files(list(all_files), repo_path)
@@ -102,7 +130,7 @@ def _preview_plan(plan_path: _pathlib.Path) -> None:
     _click.echo()
 
     # Show each commit
-    for i, commit in enumerate(plan.get("commits", []), 1):
+    for i, commit in enumerate(commits, 1):
         msg_lines = commit["message"].strip().split("\n")
         title = msg_lines[0]
         files = commit.get("files", [])
@@ -120,15 +148,25 @@ def _execute_plan(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
     """Execute commits from the plan."""
     plan = _load_plan(plan_path)
     repo_path = _get_repo_path(plan, plan_path)
+    commits = plan.get("commits", [])
 
     _click.echo(f"=== Executing commits in {repo_path} ===")
     if dry_run:
         _click.echo("(DRY RUN - no changes will be made)")
     _click.echo()
 
+    # Check for duplicate files (same file in multiple commits)
+    duplicates = _find_duplicate_files(commits)
+    if duplicates:
+        _click.echo("ERROR: Files appear in multiple commits:", err=True)
+        _click.echo("(Each file can only be in ONE commit - hunking not supported)", err=True)
+        for f, commit_nums in sorted(duplicates.items()):
+            _click.echo(f"  - {f} → commits {commit_nums}", err=True)
+        _sys.exit(1)
+
     # Validate all files exist
     all_files: set[str] = set()
-    for commit in plan.get("commits", []):
+    for commit in commits:
         all_files.update(commit.get("files", []))
 
     missing = _validate_files(list(all_files), repo_path)
@@ -139,7 +177,7 @@ def _execute_plan(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
         _sys.exit(1)
 
     # Execute each commit
-    for i, commit in enumerate(plan.get("commits", []), 1):
+    for i, commit in enumerate(commits, 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
         title = msg.split("\n")[0]
@@ -166,7 +204,7 @@ def _execute_plan(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
 
     _click.echo("=== Done ===")
     if not dry_run:
-        commit_count = len(plan.get("commits", []))
+        commit_count = len(commits)
         _run_git(["log", "--oneline", f"-{commit_count}"], repo_path, dry_run)
 
 
