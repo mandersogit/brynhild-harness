@@ -231,6 +231,10 @@ class FileWriteTool(base.Tool, base.SandboxMixin):
     def categories(self) -> list[str]:
         return ["filesystem", "write"]
 
+    @property
+    def risk_level(self) -> base.RiskLevel:
+        return "mutating"
+
     async def execute(self, input: dict[str, _typing.Any]) -> base.ToolResult:
         """Write content to a file."""
         file_path = input.get("file_path", "")
@@ -365,6 +369,10 @@ class FileEditTool(base.Tool, base.SandboxMixin):
     @property
     def categories(self) -> list[str]:
         return ["filesystem", "write"]
+
+    @property
+    def risk_level(self) -> base.RiskLevel:
+        return "mutating"
 
     async def execute(self, input: dict[str, _typing.Any]) -> base.ToolResult:
         """Edit a file by replacing text."""

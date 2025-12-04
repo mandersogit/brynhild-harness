@@ -80,6 +80,10 @@ class BashTool(base.Tool):
         }
 
     @property
+    def risk_level(self) -> base.RiskLevel:
+        return "high_impact"
+
+    @property
     def version(self) -> str:
         return "1.0.0"
 

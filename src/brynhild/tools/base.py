@@ -16,6 +16,31 @@ if _typing.TYPE_CHECKING:
     import brynhild.tools.sandbox as _sandbox
 
 
+# Type aliases for tool risk classification
+RiskLevel = _typing.Literal["read_only", "mutating", "high_impact"]
+"""Risk level of a tool.
+
+- read_only: Tool only reads data, no side effects (e.g., read_file, grep)
+- mutating: Tool modifies data with limited scope (e.g., write_file, edit_file)
+- high_impact: Tool can execute arbitrary code or make significant system changes (e.g., bash)
+"""
+
+RecoveryPolicy = _typing.Literal["allow", "deny", "confirm"]
+"""Policy for executing recovered (non-native) tool calls.
+
+- allow: Auto-recover and execute (default for read_only tools)
+- deny: Never execute recovered calls for this tool (default for high_impact tools)
+- confirm: Require user confirmation before executing recovered call
+"""
+
+# Default recovery policy based on risk level
+_DEFAULT_RECOVERY_POLICY: dict[RiskLevel, RecoveryPolicy] = {
+    "read_only": "allow",
+    "mutating": "allow",  # With warning in logs
+    "high_impact": "deny",
+}
+
+
 @_dataclasses.dataclass
 class ToolResult:
     """
@@ -298,6 +323,41 @@ class Tool(_abc.ABC):
             True if user permission is required, False for safe read-only tools
         """
         return True
+
+    @property
+    def risk_level(self) -> RiskLevel:
+        """
+        Risk level of this tool for recovery policy decisions.
+
+        Override in subclasses to indicate the tool's risk profile:
+        - "read_only": Tool only reads data, no side effects
+        - "mutating": Tool modifies data with limited scope
+        - "high_impact": Tool can execute arbitrary code or system changes
+
+        This affects whether recovered tool calls (extracted from model
+        thinking text) will be automatically executed.
+
+        Returns:
+            Risk level string
+        """
+        return "read_only"
+
+    @property
+    def recovery_policy(self) -> RecoveryPolicy:
+        """
+        Policy for recovered (non-native) tool calls.
+
+        By default, this is computed from risk_level:
+        - read_only -> "allow" (auto-recover and execute)
+        - mutating -> "allow" (with warning in logs)
+        - high_impact -> "deny" (never execute recovered calls)
+
+        Override in subclasses to set a specific policy regardless of risk_level.
+
+        Returns:
+            Recovery policy string
+        """
+        return _DEFAULT_RECOVERY_POLICY[self.risk_level]
 
     def to_api_format(self) -> dict[str, _typing.Any]:
         """
