@@ -193,6 +193,18 @@ class Settings(_pydantic_settings.BaseSettings):
         description="Enable verbose output",
     )
 
+    # Reasoning format for conversation history
+    reasoning_format: _typing.Literal["reasoning_field", "thinking_tags", "none", "auto"] = _pydantic.Field(
+        default="auto",
+        description=(
+            "How to include model reasoning in conversation history. "
+            "'reasoning_field': separate field (OpenRouter convention), "
+            "'thinking_tags': wrap in <thinking> tags in content, "
+            "'none': don't include reasoning, "
+            "'auto': use provider's default"
+        ),
+    )
+
     # Permission settings
     dangerously_skip_permissions: bool = _pydantic.Field(
         default=False,

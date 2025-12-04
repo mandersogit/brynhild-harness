@@ -259,6 +259,25 @@ class OpenRouterProvider(base.LLMProvider):
         }
         return self._model not in NO_TOOLS_MODELS
 
+    @property
+    def default_reasoning_format(self) -> base.ReasoningFormat:
+        """OpenRouter's recommended format for reasoning is a separate field."""
+        return "reasoning_field"
+
+    def _get_reasoning_format(self) -> base.ReasoningFormat:
+        """Get the reasoning format to use, checking user override first."""
+        import brynhild.config as config
+
+        try:
+            settings = config.Settings()
+            if settings.reasoning_format != "auto":
+                # User has explicitly set a format
+                return settings.reasoning_format
+        except Exception:
+            pass  # Fall back to provider default if settings unavailable
+
+        return self.default_reasoning_format
+
     async def complete(
         self,
         messages: list[dict[str, _typing.Any]],
@@ -454,6 +473,7 @@ class OpenRouterProvider(base.LLMProvider):
 
         if tools:
             payload["tools"] = [t.to_openai_format() for t in tools]
+            payload["tool_choice"] = "auto"
 
         # Enable reasoning traces for supported models
         if self.supports_reasoning():
@@ -483,6 +503,15 @@ class OpenRouterProvider(base.LLMProvider):
         if system:
             formatted.append({"role": "system", "content": system})
 
+        # Determine if we should include reasoning in this request.
+        # Standard practice: include reasoning during tool loops (so model
+        # remembers why it made tool calls), but strip it on subsequent turns
+        # (after a final response) to save tokens.
+        #
+        # Heuristic: if the last message is a tool_result, we're in a tool loop
+        # and should keep reasoning. Otherwise, strip it.
+        in_tool_loop = messages and messages[-1].get("role") == "tool_result"
+
         for msg in messages:
             role = msg["role"]
             content = msg.get("content", "")
@@ -500,6 +529,24 @@ class OpenRouterProvider(base.LLMProvider):
                         assistant_msg["content"] = str(content)
                 else:
                     assistant_msg["content"] = str(content)
+
+                # Handle reasoning based on configured format AND whether we're
+                # in a tool loop. We preserve reasoning for logging and potential
+                # tool access, but only SEND it to the API during tool loops.
+                if in_tool_loop and "reasoning" in msg and msg["reasoning"]:
+                    reasoning_format = self._get_reasoning_format()
+                    if reasoning_format == "reasoning_field":
+                        # OpenRouter convention - separate field
+                        assistant_msg["reasoning"] = msg["reasoning"]
+                    elif reasoning_format == "thinking_tags":
+                        # Wrap in tags in content
+                        existing_content = assistant_msg.get("content", "")
+                        thinking_wrapped = f"<thinking>{msg['reasoning']}</thinking>"
+                        if existing_content:
+                            assistant_msg["content"] = f"{thinking_wrapped}\n\n{existing_content}"
+                        else:
+                            assistant_msg["content"] = thinking_wrapped
+                    # else: "none" - don't include reasoning
 
                 formatted.append(assistant_msg)
 

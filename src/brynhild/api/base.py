@@ -16,6 +16,24 @@ if _typing.TYPE_CHECKING:
     import brynhild.profiles.types as profile_types
 
 
+# How to format reasoning/thinking when sending messages back to the model
+ReasoningFormat = _typing.Literal["reasoning_field", "thinking_tags", "none"]
+"""
+Options for how reasoning is included in conversation history:
+
+- "reasoning_field": Send as a separate `reasoning` field on the message.
+  This is the OpenRouter convention and allows providers to properly
+  translate it to Harmony's analysis channel.
+
+- "thinking_tags": Wrap reasoning in <thinking>...</thinking> tags in the
+  content field. More universal but the model sees it as content, not in
+  the proper reasoning channel.
+
+- "none": Don't include reasoning in history at all. Simplest but the model
+  loses context about its reasoning between tool calls.
+"""
+
+
 class LLMProvider(_abc.ABC):
     """
     Abstract base for LLM providers.
@@ -101,6 +119,19 @@ class LLMProvider(_abc.ABC):
     def supports_reasoning(self) -> bool:
         """Whether this provider/model supports extended thinking/reasoning."""
         return False
+
+    @property
+    def default_reasoning_format(self) -> ReasoningFormat:
+        """
+        Default format for including reasoning in conversation history.
+
+        Providers can override this to specify their preferred format.
+        Users can also override via BRYNHILD_REASONING_FORMAT setting.
+
+        Returns:
+            The provider's default reasoning format.
+        """
+        return "none"  # Safe default - providers that support it should override
 
     @_abc.abstractmethod
     async def complete(

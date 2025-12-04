@@ -108,6 +108,24 @@ class OllamaProvider(base.LLMProvider):
         # the API error if not supported.
         return True
 
+    @property
+    def default_reasoning_format(self) -> base.ReasoningFormat:
+        """Ollama's default - thinking tags is safest for local models."""
+        return "thinking_tags"
+
+    def _get_reasoning_format(self) -> base.ReasoningFormat:
+        """Get the reasoning format to use, checking user override first."""
+        import brynhild.config as config
+
+        try:
+            settings = config.Settings()
+            if settings.reasoning_format != "auto":
+                return settings.reasoning_format
+        except Exception:
+            pass
+
+        return self.default_reasoning_format
+
     async def complete(
         self,
         messages: list[dict[str, _typing.Any]],
@@ -295,6 +313,15 @@ class OllamaProvider(base.LLMProvider):
         if system:
             formatted.append({"role": "system", "content": system})
 
+        # Determine if we should include reasoning in this request.
+        # Standard practice: include reasoning during tool loops (so model
+        # remembers why it made tool calls), but strip it on subsequent turns
+        # (after a final response) to save tokens.
+        #
+        # Heuristic: if the last message is a tool_result, we're in a tool loop
+        # and should keep reasoning. Otherwise, strip it.
+        in_tool_loop = messages and messages[-1].get("role") == "tool_result"
+
         for msg in messages:
             role = msg["role"]
             content = msg.get("content", "")
@@ -312,6 +339,22 @@ class OllamaProvider(base.LLMProvider):
                         assistant_msg["content"] = str(content)
                 else:
                     assistant_msg["content"] = str(content)
+
+                # Handle reasoning based on configured format AND whether we're
+                # in a tool loop. We preserve reasoning for logging and potential
+                # tool access, but only SEND it to the API during tool loops.
+                if in_tool_loop and "reasoning" in msg and msg["reasoning"]:
+                    reasoning_format = self._get_reasoning_format()
+                    if reasoning_format == "reasoning_field":
+                        assistant_msg["reasoning"] = msg["reasoning"]
+                    elif reasoning_format == "thinking_tags":
+                        existing_content = assistant_msg.get("content", "")
+                        thinking_wrapped = f"<thinking>{msg['reasoning']}</thinking>"
+                        if existing_content:
+                            assistant_msg["content"] = f"{thinking_wrapped}\n\n{existing_content}"
+                        else:
+                            assistant_msg["content"] = thinking_wrapped
+                    # else: "none" - don't include reasoning
 
                 formatted.append(assistant_msg)
 
