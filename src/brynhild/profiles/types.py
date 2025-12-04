@@ -89,6 +89,32 @@ class ModelProfile:
     max_tools_per_turn: int | None = None
     """Maximum tool calls per turn (None = unlimited)."""
 
+    # Tool call recovery settings
+    enable_tool_recovery: bool = False
+    """Whether to attempt recovery of tool calls from thinking text.
+
+    Some models place tool call JSON in their thinking/reasoning output instead
+    of emitting it via the proper tool_calls API channel. When enabled, Brynhild
+    will scan thinking text for JSON matching tool schemas and execute recovered
+    calls. Default is False to avoid masking issues with reliable models.
+    """
+
+    recovery_feedback_enabled: bool = True
+    """Whether to inject feedback after recovering a tool call.
+
+    When True, after a successful recovery, Brynhild injects a message to the
+    model explaining that it placed tool arguments in thinking instead of the
+    tool call channel. This can help the model self-correct in subsequent turns.
+    """
+
+    recovery_requires_intent_phrase: bool = False
+    """Whether to require intent phrases near JSON for recovery.
+
+    When True, tool call recovery requires evidence of intent (e.g., "I will call X",
+    "Let me use the Y tool") within 200 characters before the JSON. This reduces
+    false positives but may miss some legitimate tool calls.
+    """
+
     # Behavioral settings
     eagerness: _typing.Literal["minimal", "low", "medium", "high"] = "medium"
     """How proactive vs. waiting for guidance."""

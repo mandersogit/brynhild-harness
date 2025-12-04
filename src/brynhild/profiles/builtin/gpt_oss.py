@@ -217,6 +217,9 @@ GPT_OSS_120B = types.ModelProfile(
     tool_format="openai",
     tool_parallelization=True,
     max_tools_per_turn=5,
+    # Tool call recovery - this model exhibits channel confusion
+    enable_tool_recovery=True,
+    recovery_feedback_enabled=True,
     # Behavioral settings
     eagerness="medium",
     verbosity="low",
@@ -266,6 +269,9 @@ GPT_OSS_120B_FAST = types.ModelProfile(
     tool_format="openai",
     tool_parallelization=True,
     max_tools_per_turn=3,
+    # Tool call recovery - this model exhibits channel confusion
+    enable_tool_recovery=True,
+    recovery_feedback_enabled=True,
     # Behavioral settings - speed focused
     eagerness="low",
     verbosity="low",
