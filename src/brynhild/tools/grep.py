@@ -112,7 +112,7 @@ class GrepTool(base.Tool, base.SandboxMixin):
                     "enum": ["content", "files_with_matches", "count"],
                     "description": "Output mode: content (default), files_with_matches, or count",
                 },
-                "head_limit": {
+                "limit": {
                     "type": "integer",
                     "description": "Limit output to first N lines/entries",
                 },
@@ -192,13 +192,13 @@ class GrepTool(base.Tool, base.SandboxMixin):
             output = stdout.decode("utf-8", errors="replace")
             error = stderr.decode("utf-8", errors="replace")
 
-            # Apply head limit
-            head_limit = input.get("head_limit")
-            if head_limit and output:
+            # Apply limit
+            limit = input.get("limit")
+            if limit and output:
                 lines = output.splitlines()
-                if len(lines) > head_limit:
-                    lines = lines[:head_limit]
-                    lines.append(f"... (truncated, showing first {head_limit} lines)")
+                if len(lines) > limit:
+                    lines = lines[:limit]
+                    lines.append(f"... (truncated, showing first {limit} lines)")
                 output = "\n".join(lines)
 
             # ripgrep returns 1 for no matches (not an error)

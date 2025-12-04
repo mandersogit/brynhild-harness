@@ -30,3 +30,12 @@ DEFAULT_OUTPUT_TRUNCATE_LENGTH = 2000
 DEFAULT_INPUT_TRUNCATE_LENGTH = 200
 """Default length to truncate tool input values for display."""
 
+# Truncation limits for LLM context
+DEFAULT_TOOL_RESULT_MAX_CHARS = 50_000
+"""Maximum characters for tool result in LLM context (~12,500 tokens).
+
+Tool output exceeding this limit is truncated before being added to
+the conversation history. This prevents runaway tool output (e.g.,
+grep without limit) from exceeding the model's context window.
+"""
+

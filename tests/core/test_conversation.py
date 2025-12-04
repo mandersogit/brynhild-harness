@@ -419,3 +419,57 @@ class TestRendererCallbacks:
         assert "💭" in output_text
         assert "5 words" in output_text
 
+
+class TestToolResultTruncation:
+    """Tests for tool result truncation to prevent context overflow."""
+
+    def test_format_tool_result_truncates_long_output(self) -> None:
+        """Long tool output should be truncated with message."""
+        import brynhild.core.types as core_types
+
+        # Create a result with 100k characters
+        long_output = "x" * 100_000
+        result = tools_base.ToolResult(success=True, output=long_output, error=None)
+
+        message = core_types.format_tool_result_message(
+            "test-id",
+            result,
+            max_chars=1000,  # Force small limit for test
+        )
+
+        content = message["content"]
+        assert len(content) < 1100  # Allow for truncation message
+        assert "TRUNCATED" in content
+        assert "1,000 characters" in content
+
+    def test_format_tool_result_preserves_short_output(self) -> None:
+        """Short tool output should not be truncated."""
+        import brynhild.core.types as core_types
+
+        short_output = "Hello, world!"
+        result = tools_base.ToolResult(success=True, output=short_output, error=None)
+
+        message = core_types.format_tool_result_message("test-id", result)
+
+        assert message["content"] == short_output
+        assert "TRUNCATED" not in message["content"]
+
+    def test_format_tool_result_uses_default_limit(self) -> None:
+        """Default truncation limit should be DEFAULT_TOOL_RESULT_MAX_CHARS."""
+        import brynhild.constants as constants
+        import brynhild.core.types as core_types
+
+        # Create output just under the limit - should not truncate
+        under_limit = "x" * (constants.DEFAULT_TOOL_RESULT_MAX_CHARS - 100)
+        result = tools_base.ToolResult(success=True, output=under_limit, error=None)
+
+        message = core_types.format_tool_result_message("test-id", result)
+        assert "TRUNCATED" not in message["content"]
+
+        # Create output over the limit - should truncate
+        over_limit = "x" * (constants.DEFAULT_TOOL_RESULT_MAX_CHARS + 1000)
+        result = tools_base.ToolResult(success=True, output=over_limit, error=None)
+
+        message = core_types.format_tool_result_message("test-id", result)
+        assert "TRUNCATED" in message["content"]
+
