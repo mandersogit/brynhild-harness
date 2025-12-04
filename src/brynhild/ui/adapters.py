@@ -34,12 +34,14 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         self._verbose = verbose
         self._show_thinking = show_thinking
         self._thinking_shown = False
+        self._thinking_stream_started = False  # Track if thinking Live is active
         self._content_started = False  # Track if real content has started
         self._accumulated_thinking = ""  # Accumulate thinking for full display
 
     async def on_stream_start(self) -> None:
         self._renderer.start_streaming()
         self._thinking_shown = False
+        self._thinking_stream_started = False
         self._content_started = False
         self._accumulated_thinking = ""
 
@@ -47,21 +49,35 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         self._renderer.end_streaming()
 
     async def on_thinking_delta(self, text: str) -> None:
-        # Accumulate thinking for potential full display
+        # Accumulate thinking
         self._accumulated_thinking += text
 
+        # Start/update thinking stream (always show activity)
+        if hasattr(self._renderer, "start_thinking_stream"):
+            if not self._thinking_stream_started:
+                self._renderer.start_thinking_stream()
+                self._thinking_stream_started = True
+            if hasattr(self._renderer, "update_thinking_stream"):
+                self._renderer.update_thinking_stream(text)
+
     async def on_thinking_complete(self, full_text: str) -> None:
-        if self._show_thinking:
-            # Show full thinking content in a distinct panel
+        # End the thinking stream
+        if self._thinking_stream_started and hasattr(self._renderer, "end_thinking_stream"):
+            # Persist the panel if --show-thinking is enabled
+            self._renderer.end_thinking_stream(persist=self._show_thinking)
+            self._thinking_stream_started = False
+        elif self._show_thinking:
+            # Fallback for renderers without streaming - show full panel
             if hasattr(self._renderer, "show_thinking"):
                 self._renderer.show_thinking(full_text)
             else:
-                # Fallback for renderers without show_thinking method
                 self._renderer.show_info(f"💭 Thinking:\n{full_text}")
-        else:
-            # Just show summary
+
+        # Always show summary if not persisting
+        if not self._show_thinking:
             word_count = len(full_text.split())
             self._renderer.show_info(f"💭 [Thinking: {word_count} words]")
+
         self._thinking_shown = True
 
     async def on_text_delta(self, text: str) -> None:

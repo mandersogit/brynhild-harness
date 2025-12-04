@@ -56,6 +56,10 @@ class RichConsoleRenderer(base.Renderer):
         self._live: _rich_live.Live | None = None
         self._show_thinking = show_thinking
 
+        # Thinking streaming state
+        self._thinking_live: _rich_live.Live | None = None
+        self._thinking_content = ""
+
         # Token tracking for panel footers
         self._cumulative_input_tokens = 0
         self._cumulative_output_tokens = 0
@@ -87,7 +91,7 @@ class RichConsoleRenderer(base.Renderer):
         """
         Display thinking/reasoning content in a visually distinct panel.
 
-        Only called when show_thinking=True.
+        Only called when show_thinking=True to print the final persistent panel.
 
         Args:
             thinking: The thinking content to display.
@@ -110,6 +114,62 @@ class RichConsoleRenderer(base.Renderer):
             )
         )
 
+    def start_thinking_stream(self) -> None:
+        """Start live streaming display for thinking content."""
+        self._thinking_content = ""
+        self._thinking_live = _rich_live.Live(
+            _rich_panel.Panel(
+                _rich_text.Text("...", style="italic dim"),
+                title="[bold magenta]💭 Thinking[/bold magenta]",
+                border_style="magenta",
+                style="dim",
+            ),
+            console=self._console,
+            refresh_per_second=10,
+            transient=True,  # Vanishes when stopped
+        )
+        self._thinking_live.start()
+
+    def update_thinking_stream(self, text: str) -> None:
+        """
+        Update the thinking stream with new content.
+
+        Args:
+            text: New thinking text to append.
+        """
+        self._thinking_content += text
+        if self._thinking_live:
+            # Truncate for display if very long
+            display = self._thinking_content
+            if len(display) > 5000:
+                display = display[:4997] + "..."
+            self._thinking_live.update(
+                _rich_panel.Panel(
+                    _rich_text.Text(display, style="italic dim"),
+                    title="[bold magenta]💭 Thinking[/bold magenta]",
+                    border_style="magenta",
+                    style="dim",
+                )
+            )
+
+    def end_thinking_stream(self, *, persist: bool = False) -> None:
+        """
+        End thinking stream display.
+
+        Args:
+            persist: If True, print the final panel permanently.
+                     If False, just let it vanish (transient).
+        """
+        if self._thinking_live:
+            self._thinking_live.stop()
+            self._thinking_live = None
+
+            if persist and self._thinking_content.strip():
+                # Print permanent panel
+                self.show_thinking(self._thinking_content)
+
+        self._thinking_content = ""
+
     def show_user_message(self, content: str) -> None:
         """Display a user message with formatting."""
         self._console.print(
@@ -125,8 +185,21 @@ class RichConsoleRenderer(base.Renderer):
         """Display assistant text response."""
         if streaming:
             self._stream_content += text
-            # Update display (whitespace filtering is done in RendererCallbacks)
-            if self._live:
+            # Lazily create Live display on first text
+            if not self._live:
+                self._live = _rich_live.Live(
+                    _rich_panel.Panel(
+                        _rich_markdown.Markdown(self._stream_content),
+                        title="[bold green]Assistant[/bold green]",
+                        border_style="green",
+                    ),
+                    console=self._console,
+                    refresh_per_second=10,
+                    transient=True,
+                )
+                self._live.start()
+            else:
+                # Update existing Live display
                 self._live.update(
                     _rich_panel.Panel(
                         _rich_markdown.Markdown(self._stream_content),
@@ -244,22 +317,11 @@ class RichConsoleRenderer(base.Renderer):
         self._console.print(f"[dim]{message}[/dim]")
 
     def start_streaming(self) -> None:
-        """Start live streaming display."""
+        """Start streaming mode - actual Live displays are created lazily."""
         self._streaming = True
         self._stream_content = ""
-        # Use transient=True so live display is cleared when stopped
-        # We'll print the final panel separately if there's content
-        self._live = _rich_live.Live(
-            _rich_panel.Panel(
-                "[dim]Thinking...[/dim]",
-                title="[bold green]Assistant[/bold green]",
-                border_style="green",
-            ),
-            console=self._console,
-            refresh_per_second=10,
-            transient=True,
-        )
-        self._live.start()
+        # Don't create Live display yet - it will be created lazily
+        # when content actually arrives (thinking or text)
 
     def end_streaming(self) -> None:
         """End live streaming display."""
