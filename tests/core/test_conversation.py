@@ -473,3 +473,1079 @@ class TestToolResultTruncation:
         message = core_types.format_tool_result_message("test-id", result)
         assert "TRUNCATED" in message["content"]
 
+
+# =============================================================================
+# Finish Tool Integration Tests
+# =============================================================================
+
+
+class FinishToolMockProvider(api_base.LLMProvider):
+    """Mock provider that returns Finish tool calls."""
+
+    def __init__(
+        self,
+        responses: list[dict[str, _typing.Any]],
+    ) -> None:
+        self._responses = responses
+        self._call_index = 0
+
+    @property
+    def name(self) -> str:
+        return "finish-mock"
+
+    @property
+    def model(self) -> str:
+        return "finish-mock-model"
+
+    def supports_tools(self) -> bool:
+        return True
+
+    def supports_reasoning(self) -> bool:
+        return False
+
+    async def complete(
+        self,
+        messages: list[dict[str, _typing.Any]],
+        *,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        tools: list[api_types.Tool] | None = None,
+    ) -> api_types.CompletionResponse:
+        text_parts = []
+        tool_uses = []
+        usage = None
+
+        async for event in self.stream(
+            messages, system=system, max_tokens=max_tokens, tools=tools
+        ):
+            if event.type == "text_delta" and event.text:
+                text_parts.append(event.text)
+            elif event.type == "tool_use_start" and event.tool_use:
+                tool_uses.append(event.tool_use)
+            elif event.type == "message_delta" and event.usage:
+                usage = event.usage
+
+        return api_types.CompletionResponse(
+            id=f"call-{self._call_index}",
+            content="".join(text_parts),
+            stop_reason="tool_use" if tool_uses else "stop",
+            usage=usage or api_types.Usage(input_tokens=100, output_tokens=50),
+            tool_uses=tool_uses if tool_uses else None,
+        )
+
+    async def stream(
+        self,
+        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        *,
+        system: str | None = None,  # noqa: ARG002
+        max_tokens: int = 4096,  # noqa: ARG002
+        tools: list[api_types.Tool] | None = None,  # noqa: ARG002
+    ) -> _typing.AsyncIterator[api_types.StreamEvent]:
+        if self._call_index < len(self._responses):
+            resp = self._responses[self._call_index]
+        else:
+            resp = {"text": "Default response"}
+
+        if resp.get("text"):
+            yield api_types.StreamEvent(type="text_delta", text=resp["text"])
+
+        if resp.get("finish"):
+            yield api_types.StreamEvent(
+                type="tool_use_start",
+                tool_use=api_types.ToolUse(
+                    id=f"finish-{self._call_index}",
+                    name="Finish",
+                    input=resp["finish"],
+                ),
+            )
+            stop_reason = "tool_use"
+        else:
+            stop_reason = "stop"
+
+        yield api_types.StreamEvent(
+            type="message_delta",
+            stop_reason=stop_reason,
+            usage=api_types.Usage(input_tokens=100, output_tokens=50),
+        )
+
+        self._call_index += 1
+
+
+class TestFinishToolIntegration:
+    """Tests for Finish tool handling in ConversationProcessor."""
+
+    @_pytest.mark.asyncio
+    async def test_finish_tool_sets_result(self) -> None:
+        """
+        When model calls Finish tool, ConversationResult includes finish_result.
+        """
+        provider = FinishToolMockProvider(responses=[
+            {
+                "text": "All done!",
+                "finish": {"status": "success", "summary": "Task completed successfully"},
+            },
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "do something"}],
+            system_prompt="You are helpful.",
+        )
+
+        assert result.finish_result is not None
+        assert result.finish_result.status == "success"
+        assert result.finish_result.summary == "Task completed successfully"
+
+    @_pytest.mark.asyncio
+    async def test_finish_tool_stops_processing(self) -> None:
+        """
+        Finish tool should end the processing loop.
+        """
+        provider = FinishToolMockProvider(responses=[
+            {
+                "text": "Done",
+                "finish": {"status": "success", "summary": "Done"},
+            },
+            # This response should NOT be reached
+            {
+                "text": "This should not happen",
+            },
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "do something"}],
+            system_prompt="You are helpful.",
+        )
+
+        assert result.stop_reason == "finish"
+        assert result.finish_result is not None
+        # Only one call should have been made
+        assert provider._call_index == 1
+
+    @_pytest.mark.asyncio
+    async def test_finish_tool_with_next_steps(self) -> None:
+        """
+        Finish tool can include next_steps field.
+        """
+        provider = FinishToolMockProvider(responses=[
+            {
+                "finish": {
+                    "status": "partial",
+                    "summary": "Did some work",
+                    "next_steps": "Please review and continue",
+                },
+            },
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "do something"}],
+            system_prompt="You are helpful.",
+        )
+
+        assert result.finish_result is not None
+        assert result.finish_result.status == "partial"
+        assert result.finish_result.next_steps == "Please review and continue"
+
+    @_pytest.mark.asyncio
+    async def test_require_finish_without_finish_injects_reminder(self) -> None:
+        """
+        With require_finish=True, text-only response triggers reminder.
+        """
+        provider = FinishToolMockProvider(responses=[
+            # First response: text only (should trigger reminder)
+            {"text": "Here's the answer"},
+            # Second response: with Finish
+            {"finish": {"status": "success", "summary": "Done"}},
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            require_finish=True,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "do something"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should eventually finish
+        assert result.finish_result is not None
+        # More than one call should have been made due to reminder
+        assert provider._call_index > 1
+
+
+# =============================================================================
+# Thinking-Only Recovery Tests
+# =============================================================================
+
+
+class ThinkingOnlyMockProvider(api_base.LLMProvider):
+    """Mock provider that returns only thinking content."""
+
+    def __init__(
+        self,
+        responses: list[dict[str, _typing.Any]],
+    ) -> None:
+        self._responses = responses
+        self._call_index = 0
+
+    @property
+    def name(self) -> str:
+        return "thinking-mock"
+
+    @property
+    def model(self) -> str:
+        return "thinking-mock-model"
+
+    def supports_tools(self) -> bool:
+        return True
+
+    def supports_reasoning(self) -> bool:
+        return True
+
+    async def complete(
+        self,
+        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        *,
+        system: str | None = None,  # noqa: ARG002
+        max_tokens: int = 4096,  # noqa: ARG002
+        tools: list[api_types.Tool] | None = None,  # noqa: ARG002
+    ) -> api_types.CompletionResponse:
+        if self._call_index < len(self._responses):
+            resp = self._responses[self._call_index]
+        else:
+            resp = {"text": "Default response"}
+
+        self._call_index += 1
+
+        return api_types.CompletionResponse(
+            id=f"call-{self._call_index}",
+            content=resp.get("text", ""),
+            thinking=resp.get("thinking"),
+            stop_reason="stop",
+            usage=api_types.Usage(input_tokens=100, output_tokens=50),
+        )
+
+    async def stream(
+        self,
+        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        *,
+        system: str | None = None,  # noqa: ARG002
+        max_tokens: int = 4096,  # noqa: ARG002
+        tools: list[api_types.Tool] | None = None,  # noqa: ARG002
+    ) -> _typing.AsyncIterator[api_types.StreamEvent]:
+        if self._call_index < len(self._responses):
+            resp = self._responses[self._call_index]
+        else:
+            resp = {"text": "Default response"}
+
+        if resp.get("thinking"):
+            yield api_types.StreamEvent(
+                type="thinking_delta",
+                thinking=resp["thinking"],
+            )
+
+        if resp.get("text"):
+            yield api_types.StreamEvent(type="text_delta", text=resp["text"])
+
+        yield api_types.StreamEvent(
+            type="message_delta",
+            stop_reason="stop",
+            usage=api_types.Usage(input_tokens=100, output_tokens=50),
+        )
+
+        self._call_index += 1
+
+
+class TestThinkingOnlyRecovery:
+    """Tests for handling models that produce only thinking."""
+
+    @_pytest.mark.asyncio
+    async def test_thinking_only_retries(self) -> None:
+        """
+        When model produces only thinking, processor should retry.
+        """
+        provider = ThinkingOnlyMockProvider(responses=[
+            # First response: thinking only
+            {"thinking": "Let me think about this..."},
+            # Second response: thinking only
+            {"thinking": "Still thinking..."},
+            # Third response: actual text
+            {"text": "Here's the answer", "thinking": "Figured it out"},
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "hello"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should eventually get a response
+        assert result.response_text == "Here's the answer"
+        # Multiple calls should have been made
+        assert provider._call_index > 1
+
+    @_pytest.mark.asyncio
+    async def test_thinking_only_max_retries(self) -> None:
+        """
+        After max retries, conversation ends even with thinking only.
+        """
+        # Provider that always returns only thinking
+        provider = ThinkingOnlyMockProvider(responses=[
+            {"thinking": "Thinking 1..."},
+            {"thinking": "Thinking 2..."},
+            {"thinking": "Thinking 3..."},
+            {"thinking": "Thinking 4..."},
+            {"thinking": "Thinking 5..."},
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "hello"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should eventually give up (max 3 retries + 1 initial = 4 calls max)
+        assert provider._call_index <= 4
+
+    @_pytest.mark.asyncio
+    async def test_normal_response_works(self) -> None:
+        """
+        Normal text response (with or without thinking) works fine.
+        """
+        provider = ThinkingOnlyMockProvider(responses=[
+            {"text": "Hello!", "thinking": "I should be friendly"},
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "hello"}],
+            system_prompt="You are helpful.",
+        )
+
+        assert result.response_text == "Hello!"
+        # Only one call needed
+        assert provider._call_index == 1
+
+
+# =============================================================================
+# Multi-round Tool Mock Provider
+# =============================================================================
+
+
+class ToolLoopMockProvider(api_base.LLMProvider):
+    """
+    Mock provider that requests tools for N rounds then completes.
+
+    Used to test max_tool_rounds enforcement.
+    """
+
+    def __init__(
+        self,
+        tool_rounds: int = 10,
+        tool_name: str = "MockTool",
+    ) -> None:
+        self._tool_rounds = tool_rounds
+        self._tool_name = tool_name
+        self._call_index = 0
+
+    @property
+    def name(self) -> str:
+        return "tool-loop-mock"
+
+    @property
+    def model(self) -> str:
+        return "tool-loop-model"
+
+    def supports_tools(self) -> bool:
+        return True
+
+    def supports_reasoning(self) -> bool:
+        return False
+
+    async def complete(
+        self,
+        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        *,
+        system: str | None = None,  # noqa: ARG002
+        max_tokens: int = 4096,  # noqa: ARG002
+        tools: list[api_types.Tool] | None = None,  # noqa: ARG002
+    ) -> api_types.CompletionResponse:
+        self._call_index += 1
+
+        # Request tool for first N rounds
+        if self._call_index <= self._tool_rounds:
+            return api_types.CompletionResponse(
+                id=f"call-{self._call_index}",
+                content="",
+                stop_reason="tool_calls",
+                usage=api_types.Usage(
+                    input_tokens=100 * self._call_index,
+                    output_tokens=20,
+                ),
+                tool_uses=[
+                    api_types.ToolUse(
+                        id=f"tool-{self._call_index}",
+                        name=self._tool_name,
+                        input={"round": self._call_index},
+                    )
+                ],
+            )
+        else:
+            # Final response
+            return api_types.CompletionResponse(
+                id=f"call-{self._call_index}",
+                content=f"Done after {self._call_index - 1} tool calls",
+                stop_reason="stop",
+                usage=api_types.Usage(
+                    input_tokens=100 * self._call_index,
+                    output_tokens=30,
+                ),
+            )
+
+    async def stream(
+        self,
+        messages: list[dict[str, _typing.Any]],
+        *,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        tools: list[api_types.Tool] | None = None,
+    ) -> _typing.AsyncIterator[api_types.StreamEvent]:
+        # Delegate to complete for simplicity
+        response = await self.complete(
+            messages, system=system, max_tokens=max_tokens, tools=tools
+        )
+        if response.tool_uses:
+            for tu in response.tool_uses:
+                yield api_types.StreamEvent(type="tool_use_start", tool_use=tu)
+        else:
+            yield api_types.StreamEvent(type="text_delta", text=response.content)
+        yield api_types.StreamEvent(
+            type="message_delta",
+            stop_reason=response.stop_reason,
+            usage=response.usage,
+        )
+
+
+class CancellableMockCallbacks(conversation.ConversationCallbacks):
+    """
+    Mock callbacks that can be cancelled mid-conversation.
+    """
+
+    def __init__(self, cancel_after_rounds: int = 1) -> None:
+        self._cancel_after_rounds = cancel_after_rounds
+        self._current_round = 0
+        self._cancelled = False
+        self.rounds_seen: list[int] = []
+        self.tool_calls_seen: list[str] = []
+
+    async def on_stream_start(self) -> None:
+        pass
+
+    async def on_stream_end(self) -> None:
+        pass
+
+    async def on_thinking_delta(self, text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_thinking_complete(self, full_text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_text_delta(self, text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_text_complete(
+        self, full_text: str, thinking: str | None  # noqa: ARG002
+    ) -> None:
+        pass
+
+    async def on_tool_call(
+        self, tool_call: _typing.Any
+    ) -> None:
+        self.tool_calls_seen.append(tool_call.tool_name)
+
+    async def request_tool_permission(
+        self, tool_call: _typing.Any  # noqa: ARG002
+    ) -> bool:
+        return True
+
+    async def on_tool_result(self, result: _typing.Any) -> None:  # noqa: ARG002
+        pass
+
+    async def on_round_start(self, round_num: int) -> None:
+        self._current_round = round_num
+        self.rounds_seen.append(round_num)
+        # Cancel after specified number of rounds
+        if round_num > self._cancel_after_rounds:
+            self._cancelled = True
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled
+
+    async def on_info(self, message: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_usage_update(
+        self, input_tokens: int, output_tokens: int  # noqa: ARG002
+    ) -> None:
+        pass
+
+
+class PermissionDenyingCallbacks(conversation.ConversationCallbacks):
+    """
+    Mock callbacks that deny tool permissions.
+    """
+
+    def __init__(self, deny_tools: set[str] | None = None) -> None:
+        self._deny_tools = deny_tools or set()
+        self.permission_requests: list[str] = []
+        self.tool_results: list[tuple[str, bool]] = []
+        self.tool_calls_seen: list[str] = []
+
+    async def on_stream_start(self) -> None:
+        pass
+
+    async def on_stream_end(self) -> None:
+        pass
+
+    async def on_thinking_delta(self, text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_thinking_complete(self, full_text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_text_delta(self, text: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_text_complete(
+        self, full_text: str, thinking: str | None  # noqa: ARG002
+    ) -> None:
+        pass
+
+    async def on_tool_call(self, tool_call: _typing.Any) -> None:
+        self.tool_calls_seen.append(tool_call.tool_name)
+
+    async def request_tool_permission(
+        self, tool_call: _typing.Any
+    ) -> bool:
+        self.permission_requests.append(tool_call.tool_name)
+        # Deny if tool name is in deny set
+        return tool_call.tool_name not in self._deny_tools
+
+    async def on_tool_result(self, result: _typing.Any) -> None:
+        self.tool_results.append((result.tool_name, result.result.success))
+
+    async def on_round_start(self, round_num: int) -> None:  # noqa: ARG002
+        pass
+
+    def is_cancelled(self) -> bool:
+        return False
+
+    async def on_info(self, message: str) -> None:  # noqa: ARG002
+        pass
+
+    async def on_usage_update(
+        self, input_tokens: int, output_tokens: int  # noqa: ARG002
+    ) -> None:
+        pass
+
+
+# =============================================================================
+# Max Tool Rounds Tests
+# =============================================================================
+
+
+class TestMaxToolRounds:
+    """Tests for max_tool_rounds enforcement."""
+
+    @_pytest.mark.asyncio
+    async def test_max_rounds_stops_loop(self) -> None:
+        """
+        After max_tool_rounds, tool loop ends even if model wants more.
+
+        This is critical for preventing runaway tool loops from
+        consuming infinite resources.
+        """
+        # Provider wants 10 tool rounds
+        provider = ToolLoopMockProvider(tool_rounds=10, tool_name="MockTool")
+
+        # But we limit to 2
+        max_rounds = 2
+
+        # Set up tool registry
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="MockTool"))
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            max_tool_rounds=max_rounds,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Use tools please"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should have stopped after max_rounds
+        # The provider's call_index shows how many API calls were made
+        # With max_tool_rounds=2, we get: round 1 (tool), round 2 (tool), then exit
+        # So we should see exactly 2 rounds, not 10
+        assert provider._call_index == max_rounds, (
+            f"Expected {max_rounds} rounds, got {provider._call_index}"
+        )
+
+        # Result should indicate we hit the limit (not a normal stop)
+        # The response text will be empty because we never got to the final response
+        assert result.response_text == ""
+
+    @_pytest.mark.asyncio
+    async def test_completes_if_under_max_rounds(self) -> None:
+        """
+        If model finishes before max_rounds, conversation completes normally.
+        """
+        # Provider only needs 2 tool rounds
+        provider = ToolLoopMockProvider(tool_rounds=2, tool_name="MockTool")
+
+        # Set limit higher
+        max_rounds = 10
+
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="MockTool"))
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            max_tool_rounds=max_rounds,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Use tools please"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should complete with final response after 2 tool calls + 1 final
+        assert provider._call_index == 3  # 2 tool calls + 1 final response
+        assert "Done after" in result.response_text
+
+
+# =============================================================================
+# Cancellation Tests
+# =============================================================================
+
+
+class TestCancellation:
+    """Tests for cancellation during conversation."""
+
+    @_pytest.mark.asyncio
+    async def test_cancellation_stops_tool_loop(self) -> None:
+        """
+        is_cancelled() returning True stops the tool loop.
+        """
+        # Provider wants 10 rounds
+        provider = ToolLoopMockProvider(tool_rounds=10, tool_name="MockTool")
+
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="MockTool"))
+
+        # Cancel after 2 rounds
+        callbacks = CancellableMockCallbacks(cancel_after_rounds=2)
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            max_tool_rounds=100,  # High limit
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Use tools"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should have cancelled flag set
+        assert result.cancelled is True
+        # Should have stopped after 2 rounds (round 3 triggers cancellation check)
+        assert len(callbacks.rounds_seen) <= 3
+        # Stop reason should indicate cancellation
+        assert result.stop_reason == "cancelled"
+
+    @_pytest.mark.asyncio
+    async def test_cancellation_preserves_partial_response(self) -> None:
+        """
+        Cancelled conversation should preserve any partial response.
+        """
+        # Provider that returns text first, then tools
+        provider = MockProvider(
+            responses=[
+                api_types.CompletionResponse(
+                    id="resp-1",
+                    content="Starting to work on this...",
+                    stop_reason="tool_calls",
+                    usage=api_types.Usage(input_tokens=100, output_tokens=50),
+                    tool_uses=[
+                        api_types.ToolUse(
+                            id="tool-1",
+                            name="MockTool",
+                            input={},
+                        )
+                    ],
+                ),
+            ]
+        )
+
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="MockTool"))
+
+        # Cancel immediately on first round
+        callbacks = CancellableMockCallbacks(cancel_after_rounds=0)
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "hello"}],
+            system_prompt="You are helpful.",
+        )
+
+        assert result.cancelled is True
+
+
+# =============================================================================
+# Dry Run Tests
+# =============================================================================
+
+
+class TestDryRun:
+    """Tests for dry_run mode."""
+
+    @_pytest.mark.asyncio
+    async def test_dry_run_shows_tool_call_but_doesnt_execute(self) -> None:
+        """
+        In dry_run, tool calls are shown but not actually executed.
+
+        This is useful for previewing what the model wants to do
+        without side effects.
+        """
+        provider = MockProvider(
+            stream_events=[
+                # First call: model requests tool
+                [
+                    api_types.StreamEvent(
+                        type="tool_use_start",
+                        tool_use=api_types.ToolUse(
+                            id="tool-1",
+                            name="MockTool",
+                            input={"action": "do_something"},
+                        ),
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="tool_calls",
+                        usage=api_types.Usage(input_tokens=100, output_tokens=20),
+                    ),
+                ],
+                # Second call: model responds after tool "ran"
+                [
+                    api_types.StreamEvent(
+                        type="text_delta",
+                        text="Done with dry run",
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="stop",
+                        usage=api_types.Usage(input_tokens=200, output_tokens=30),
+                    ),
+                ],
+            ]
+        )
+
+        registry = tools_registry.ToolRegistry()
+        tool = MockTool(name="MockTool")
+        registry.register(tool)
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            dry_run=True,  # KEY: dry run enabled
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Do something"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Extract tool call events from callbacks
+        tool_call_events = [e for e in callbacks.events if e[0] == "tool_call"]
+        tool_result_events = [e for e in callbacks.events if e[0] == "tool_result"]
+
+        # Tool call should have been displayed
+        assert len(tool_call_events) == 1
+        assert tool_call_events[0][1].tool_name == "MockTool"
+
+        # Tool result should show dry run message
+        assert len(tool_result_events) == 1
+        assert "dry run" in tool_result_events[0][1].result.output.lower()
+
+        # Final response should be present
+        assert result.response_text == "Done with dry run"
+
+
+# =============================================================================
+# Permission Tests
+# =============================================================================
+
+
+class TestPermissionDenied:
+    """Tests for permission handling."""
+
+    @_pytest.mark.asyncio
+    async def test_permission_denied_returns_error_to_model(self) -> None:
+        """
+        If user denies permission, tool returns error result to model.
+
+        The model should receive feedback that the tool wasn't run.
+        """
+        # Use stream_events format which MockProvider.stream() understands
+        provider = MockProvider(
+            stream_events=[
+                # First call: model requests tool
+                [
+                    api_types.StreamEvent(
+                        type="tool_use_start",
+                        tool_use=api_types.ToolUse(
+                            id="tool-1",
+                            name="DangerousTool",
+                            input={},
+                        ),
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="tool_calls",
+                        usage=api_types.Usage(input_tokens=100, output_tokens=20),
+                    ),
+                ],
+                # Second call: model responds to denial
+                [
+                    api_types.StreamEvent(
+                        type="text_delta",
+                        text="I understand, I won't do that.",
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="stop",
+                        usage=api_types.Usage(input_tokens=200, output_tokens=30),
+                    ),
+                ],
+            ]
+        )
+
+        # Tool that requires permission
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="DangerousTool", requires_permission=True))
+
+        # Callbacks that deny this tool
+        callbacks = PermissionDenyingCallbacks(deny_tools={"DangerousTool"})
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            auto_approve_tools=False,  # Must ask for permission
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Do dangerous thing"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Permission should have been requested
+        assert "DangerousTool" in callbacks.permission_requests
+
+        # Tool result should show failure (permission denied)
+        assert len(callbacks.tool_results) == 1
+        assert callbacks.tool_results[0][1] is False  # success=False
+
+        # Model should have responded to the denial
+        assert "won't" in result.response_text.lower()
+
+    @_pytest.mark.asyncio
+    async def test_auto_approve_skips_permission_dialog(self) -> None:
+        """
+        With auto_approve_tools=True, permission dialog is not shown.
+        """
+        provider = MockProvider(
+            stream_events=[
+                # First call: model requests tool
+                [
+                    api_types.StreamEvent(
+                        type="tool_use_start",
+                        tool_use=api_types.ToolUse(
+                            id="tool-1",
+                            name="DangerousTool",
+                            input={},
+                        ),
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="tool_calls",
+                        usage=api_types.Usage(input_tokens=100, output_tokens=20),
+                    ),
+                ],
+                # Second call: model responds after tool executes
+                [
+                    api_types.StreamEvent(type="text_delta", text="Done!"),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="stop",
+                        usage=api_types.Usage(input_tokens=200, output_tokens=10),
+                    ),
+                ],
+            ]
+        )
+
+        registry = tools_registry.ToolRegistry()
+        registry.register(MockTool(name="DangerousTool", requires_permission=True))
+
+        # These callbacks would deny, but auto_approve should bypass them
+        callbacks = PermissionDenyingCallbacks(deny_tools={"DangerousTool"})
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            auto_approve_tools=True,  # KEY: auto approve
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Do dangerous thing"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Permission should NOT have been requested (auto-approved)
+        assert "DangerousTool" not in callbacks.permission_requests
+
+        # Tool should have succeeded
+        assert len(callbacks.tool_results) == 1
+        assert callbacks.tool_results[0][1] is True  # success=True
+
+        assert result.response_text == "Done!"
+
+    @_pytest.mark.asyncio
+    async def test_tool_without_requires_permission_executes_without_asking(
+        self,
+    ) -> None:
+        """
+        Tools with requires_permission=False run without asking.
+        """
+        provider = MockProvider(
+            stream_events=[
+                # First call: model requests tool
+                [
+                    api_types.StreamEvent(
+                        type="tool_use_start",
+                        tool_use=api_types.ToolUse(
+                            id="tool-1",
+                            name="SafeTool",
+                            input={},
+                        ),
+                    ),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="tool_calls",
+                        usage=api_types.Usage(input_tokens=100, output_tokens=20),
+                    ),
+                ],
+                # Second call: model responds
+                [
+                    api_types.StreamEvent(type="text_delta", text="Done!"),
+                    api_types.StreamEvent(
+                        type="message_delta",
+                        stop_reason="stop",
+                        usage=api_types.Usage(input_tokens=200, output_tokens=10),
+                    ),
+                ],
+            ]
+        )
+
+        registry = tools_registry.ToolRegistry()
+        # Tool does NOT require permission
+        registry.register(MockTool(name="SafeTool", requires_permission=False))
+
+        # These callbacks would deny if asked, but tool doesn't require permission
+        callbacks = PermissionDenyingCallbacks(deny_tools={"SafeTool"})
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+            tool_registry=registry,
+            auto_approve_tools=False,  # Must ask for permission... but tool doesn't need it
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Do safe thing"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Permission should NOT have been requested (tool doesn't need it)
+        assert len(callbacks.permission_requests) == 0
+
+        # Tool should have executed successfully
+        assert len(callbacks.tool_results) == 1
+        assert callbacks.tool_results[0][1] is True
+
+        assert result.response_text == "Done!"
+
