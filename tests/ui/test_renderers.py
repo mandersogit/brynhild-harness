@@ -373,3 +373,153 @@ class TestRendererInterface:
         renderer.prompt_permission(tool_call, auto_approve=True)
         renderer.finalize()
 
+
+# =============================================================================
+# Token Display Tests
+# =============================================================================
+
+
+class TestPlainTextRendererTokens:
+    """Tests for token display in PlainTextRenderer."""
+
+    def test_finalize_shows_tokens(self) -> None:
+        """finalize() should output token counts."""
+        output = _io.StringIO()
+        renderer = ui.PlainTextRenderer(output=output, error=_io.StringIO())
+
+        result = {"usage": {"input_tokens": 1000, "output_tokens": 200, "total_tokens": 1200}}
+        renderer.finalize(result)
+
+        text = output.getvalue()
+        assert "1000" in text or "1,000" in text  # Allow formatted or unformatted
+        assert "200" in text
+
+    def test_finalize_with_zero_tokens(self) -> None:
+        """finalize() handles zero tokens."""
+        output = _io.StringIO()
+        renderer = ui.PlainTextRenderer(output=output, error=_io.StringIO())
+
+        result = {"usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}
+        renderer.finalize(result)
+
+        # Should not crash
+        text = output.getvalue()
+        assert "0" in text or text == ""  # Either shows zeros or is silent
+
+
+class TestJSONRendererTokens:
+    """Tests for token display in JSONRenderer."""
+
+    def test_finalize_includes_tokens_in_output(self) -> None:
+        """finalize() should include usage in JSON output."""
+        output = _io.StringIO()
+        renderer = ui.JSONRenderer(output=output)
+
+        # Add some content first
+        renderer.show_assistant_text("Hello")
+        result = {"usage": {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}}
+        renderer.finalize(result)
+
+        # Parse the JSON output
+        output.seek(0)
+        data = _json.loads(output.read())
+
+        assert "usage" in data
+        assert data["usage"]["input_tokens"] == 5000
+        assert data["usage"]["output_tokens"] == 500
+
+    def test_finalize_includes_total_tokens(self) -> None:
+        """finalize() should include total_tokens."""
+        output = _io.StringIO()
+        renderer = ui.JSONRenderer(output=output)
+
+        result = {"usage": {"input_tokens": 1000, "output_tokens": 200, "total_tokens": 1200}}
+        renderer.finalize(result)
+
+        output.seek(0)
+        data = _json.loads(output.read())
+
+        assert data["usage"]["total_tokens"] == 1200
+
+
+class TestRichRendererTokens:
+    """Tests for token display in RichConsoleRenderer."""
+
+    def test_update_token_counts_stores_values(self) -> None:
+        """update_token_counts() should store values for panel footers."""
+        renderer = ui.RichConsoleRenderer(force_terminal=False, no_color=True)
+
+        renderer.update_token_counts(3000, 150)
+
+        # Internal state should be updated
+        assert renderer._current_context_tokens == 3000
+        assert renderer._total_output_tokens == 150
+
+    def test_update_token_counts_sets_not_accumulates(self) -> None:
+        """
+        update_token_counts() should SET input tokens, not accumulate.
+
+        This is the critical behavior - input tokens are absolute context size.
+        """
+        renderer = ui.RichConsoleRenderer(force_terminal=False, no_color=True)
+
+        # First update
+        renderer.update_token_counts(1000, 50)
+        assert renderer._current_context_tokens == 1000
+        assert renderer._total_output_tokens == 50
+
+        # Second update - input should be SET, not accumulated
+        renderer.update_token_counts(2500, 100)
+        assert renderer._current_context_tokens == 2500  # NOT 3500
+        assert renderer._total_output_tokens == 100  # Output continues accumulating from callback
+
+    def test_finalize_outputs_without_error(self) -> None:
+        """finalize() should complete without error."""
+        renderer = ui.RichConsoleRenderer(force_terminal=False, no_color=True)
+
+        renderer.update_token_counts(10000, 500)
+        # Should not raise
+        result = {"usage": {"input_tokens": 10000, "output_tokens": 500, "total_tokens": 10500}}
+        renderer.finalize(result)
+
+
+class TestRecoveredToolCallDisplay:
+    """Tests for recovered tool call display in renderers."""
+
+    def test_plain_renderer_shows_recovered_indicator(self) -> None:
+        """PlainTextRenderer should indicate recovered tool calls."""
+        output = _io.StringIO()
+        renderer = ui.PlainTextRenderer(output=output, error=_io.StringIO())
+
+        tool_call = ui.ToolCallDisplay(
+            tool_name="Bash",
+            tool_input={"command": "pwd"},
+            is_recovered=True,
+        )
+        renderer.show_tool_call(tool_call)
+
+        text = output.getvalue()
+        # Should have some indication that it was recovered
+        assert "recovered" in text.lower() or "warning" in text.lower() or "⚠" in text
+
+    def test_json_renderer_includes_recovered_field(self) -> None:
+        """JSONRenderer should include is_recovered in output."""
+        output = _io.StringIO()
+        renderer = ui.JSONRenderer(output=output)
+
+        tool_call = ui.ToolCallDisplay(
+            tool_name="Bash",
+            tool_input={"command": "pwd"},
+            is_recovered=True,
+        )
+        renderer.show_tool_call(tool_call)
+        renderer.finalize()
+
+        output.seek(0)
+        data = _json.loads(output.read())
+
+        # Should include recovered indicator
+        assert "tool_calls" in data
+        if data["tool_calls"]:
+            assert data["tool_calls"][0].get("recovered") is True
+
