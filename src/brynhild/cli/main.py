@@ -133,6 +133,11 @@ def _validate_sandbox_availability(settings: config.Settings) -> None:
     is_flag=True,
     help="Skip OS-level sandbox (DANGEROUS - for testing only)",
 )
+@_click.option(
+    "--show-thinking",
+    is_flag=True,
+    help="Display full thinking/reasoning content (for debugging)",
+)
 @_click.pass_context
 def cli(
     ctx: _click.Context,
@@ -146,6 +151,7 @@ def cli(
     profile: str | None,
     dangerously_skip_permissions: bool,
     dangerously_skip_sandbox: bool,
+    show_thinking: bool,
 ) -> None:
     """
     Brynhild - AI coding assistant.
@@ -196,6 +202,7 @@ def cli(
     ctx.obj["resume_session"] = resume
     ctx.obj["session_name"] = session_name
     ctx.obj["profile_name"] = profile
+    ctx.obj["show_thinking"] = show_thinking
 
     # If a subcommand is invoked, let it handle everything
     if ctx.invoked_subcommand is not None:
@@ -218,6 +225,8 @@ def cli(
 def _create_renderer(
     json_output: bool,
     no_color: bool,
+    *,
+    show_thinking: bool = False,
 ) -> ui.Renderer:
     """Create the appropriate renderer based on output mode."""
     if json_output:
@@ -225,7 +234,7 @@ def _create_renderer(
     elif no_color or not _sys.stdout.isatty():
         return ui.PlainTextRenderer()
     else:
-        return ui.RichConsoleRenderer()
+        return ui.RichConsoleRenderer(show_thinking=show_thinking)
 
 
 async def _run_conversation(
@@ -242,12 +251,13 @@ async def _run_conversation(
     log_enabled: bool | None = None,
     log_file: str | None = None,
     profile_name: str | None = None,
+    show_thinking: bool = False,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
 
     # Create renderer
-    renderer = _create_renderer(json_output, no_color)
+    renderer = _create_renderer(json_output, no_color, show_thinking=show_thinking)
 
     # Create provider
     try:
@@ -322,6 +332,7 @@ async def _run_conversation(
         logger=conv_logger,
         system_prompt=context.system_prompt,  # Use enhanced prompt
         recovery_config=recovery_config,
+        show_thinking=show_thinking,
     )
 
     try:
@@ -541,8 +552,9 @@ def chat(
             )
         raise SystemExit(1)
 
-    # Get profile from parent context
+    # Get profile and show_thinking from parent context
     profile_name: str | None = ctx.obj.get("profile_name")
+    show_thinking: bool = ctx.obj.get("show_thinking", False)
 
     # Send the message using new conversation runner
     _run_async(
@@ -559,6 +571,7 @@ def chat(
             log_enabled=not no_log if no_log else None,
             log_file=log_file,
             profile_name=profile_name,
+            show_thinking=show_thinking,
         )
     )
 

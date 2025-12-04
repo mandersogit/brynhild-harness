@@ -46,6 +46,7 @@ class ConversationRunner:
         verbose: bool = False,
         logger: logging.ConversationLogger | None = None,
         recovery_config: core_conversation.RecoveryConfig | None = None,
+        show_thinking: bool = False,
     ) -> None:
         """
         Initialize the conversation runner.
@@ -63,6 +64,7 @@ class ConversationRunner:
             verbose: Log full API requests/responses for debugging.
             logger: Conversation logger for JSONL output.
             recovery_config: Configuration for tool call recovery from thinking.
+            show_thinking: If True, display full thinking/reasoning content.
         """
         self._provider = provider
         self._renderer = renderer
@@ -78,6 +80,7 @@ class ConversationRunner:
             renderer,
             auto_approve=auto_approve_tools,
             verbose=verbose,
+            show_thinking=show_thinking,
         )
 
         # Create conversation processor
@@ -184,7 +187,7 @@ class ConversationRunner:
         if result.response_text:
             self._messages.append({"role": "assistant", "content": result.response_text})
 
-        # Track usage
+        # Track usage (callback already notified renderer during conversation)
         self._total_input_tokens += result.input_tokens
         self._total_output_tokens += result.output_tokens
 
@@ -235,7 +238,7 @@ class ConversationRunner:
         if result.response_text:
             self._messages.append({"role": "assistant", "content": result.response_text})
 
-        # Track usage
+        # Track usage (callback already notified renderer during conversation)
         self._total_input_tokens += result.input_tokens
         self._total_output_tokens += result.output_tokens
 

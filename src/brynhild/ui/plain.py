@@ -144,6 +144,16 @@ class PlainTextRenderer(base.Renderer):
         self._output.flush()
         return False
 
+    def finalize(self, result: dict[str, _typing.Any] | None = None) -> None:
+        """Finalize output - show usage stats if available."""
+        if result and "usage" in result:
+            usage = result["usage"]
+            self._output.write(
+                f"\nTokens: {usage.get('input_tokens', 0)} in / "
+                f"{usage.get('output_tokens', 0)} out\n"
+            )
+            self._output.flush()
+
 
 class CaptureRenderer(PlainTextRenderer):
     """

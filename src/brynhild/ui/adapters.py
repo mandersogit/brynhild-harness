@@ -27,28 +27,41 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         *,
         auto_approve: bool = False,
         verbose: bool = False,
+        show_thinking: bool = False,
     ) -> None:
         self._renderer = renderer
         self._auto_approve = auto_approve
         self._verbose = verbose
+        self._show_thinking = show_thinking
         self._thinking_shown = False
         self._content_started = False  # Track if real content has started
+        self._accumulated_thinking = ""  # Accumulate thinking for full display
 
     async def on_stream_start(self) -> None:
         self._renderer.start_streaming()
         self._thinking_shown = False
         self._content_started = False
+        self._accumulated_thinking = ""
 
     async def on_stream_end(self) -> None:
         self._renderer.end_streaming()
 
-    async def on_thinking_delta(self, text: str) -> None:  # noqa: ARG002
-        # Accumulate silently - will show summary on completion
-        pass
+    async def on_thinking_delta(self, text: str) -> None:
+        # Accumulate thinking for potential full display
+        self._accumulated_thinking += text
 
     async def on_thinking_complete(self, full_text: str) -> None:
-        word_count = len(full_text.split())
-        self._renderer.show_info(f"💭 [Thinking: {word_count} words]")
+        if self._show_thinking:
+            # Show full thinking content in a distinct panel
+            if hasattr(self._renderer, "show_thinking"):
+                self._renderer.show_thinking(full_text)
+            else:
+                # Fallback for renderers without show_thinking method
+                self._renderer.show_info(f"💭 Thinking:\n{full_text}")
+        else:
+            # Just show summary
+            word_count = len(full_text.split())
+            self._renderer.show_info(f"💭 [Thinking: {word_count} words]")
         self._thinking_shown = True
 
     async def on_text_delta(self, text: str) -> None:
@@ -91,6 +104,11 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
 
     async def on_info(self, message: str) -> None:
         self._renderer.show_info(message)
+
+    async def on_usage_update(self, input_tokens: int, output_tokens: int) -> None:
+        """Update renderer's token counts for panel footers."""
+        if hasattr(self._renderer, "update_token_counts"):
+            self._renderer.update_token_counts(input_tokens, output_tokens)
 
 
 class SyncCallbackAdapter:
