@@ -43,6 +43,7 @@ class JSONRenderer(base.Renderer):
         self._errors: list[str] = []
         self._assistant_text = ""
         self._streaming = False
+        self._finish_result: dict[str, _typing.Any] | None = None
 
     def show_user_message(self, content: str) -> None:
         """Record a user message."""
@@ -111,6 +112,20 @@ class JSONRenderer(base.Renderer):
         # Auto-approve if flag is set, otherwise deny
         return auto_approve
 
+    def show_finish(
+        self,
+        status: str,
+        summary: str,
+        next_steps: str | None = None,
+    ) -> None:
+        """Record finish result for JSON output."""
+        self._finish_result = {
+            "status": status,
+            "summary": summary,
+        }
+        if next_steps:
+            self._finish_result["next_steps"] = next_steps
+
     def finalize(self, result: dict[str, _typing.Any] | None = None) -> None:
         """Output the accumulated JSON result."""
         output_data: dict[str, _typing.Any] = {}
@@ -131,6 +146,9 @@ class JSONRenderer(base.Renderer):
 
         if self._tool_results:
             output_data["tool_results"] = self._tool_results
+
+        if self._finish_result:
+            output_data["finish"] = self._finish_result
 
         if self._errors:
             if len(self._errors) == 1:

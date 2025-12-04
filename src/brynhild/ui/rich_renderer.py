@@ -411,3 +411,38 @@ class RichConsoleRenderer(base.Renderer):
                 f"{usage.get('output_tokens', 0)} out[/dim]"
             )
 
+    def show_finish(
+        self,
+        status: str,
+        summary: str,
+        next_steps: str | None = None,
+    ) -> None:
+        """Display finish status when agent calls the Finish tool."""
+        # Choose icon and color based on status
+        status_styles = {
+            "success": ("✅", "green", "bold green"),
+            "partial": ("⚠️", "yellow", "bold yellow"),
+            "failed": ("❌", "red", "bold red"),
+            "blocked": ("🚧", "blue", "bold blue"),
+        }
+        icon, border_color, title_color = status_styles.get(
+            status, ("ℹ️", "white", "bold white")
+        )
+
+        # Build content
+        content_lines = [f"[{title_color}]Status: {status}[/{title_color}]", ""]
+        content_lines.append(f"[white]{summary}[/white]")
+
+        if next_steps:
+            content_lines.append("")
+            content_lines.append(f"[dim]Next steps: {next_steps}[/dim]")
+
+        self._console.print(
+            _rich_panel.Panel(
+                "\n".join(content_lines),
+                title=f"{icon} Task Finished",
+                border_style=border_color,
+                expand=True,
+            )
+        )
+

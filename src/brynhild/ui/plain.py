@@ -170,6 +170,27 @@ class PlainTextRenderer(base.Renderer):
             )
             self._output.flush()
 
+    def show_finish(
+        self,
+        status: str,
+        summary: str,
+        next_steps: str | None = None,
+    ) -> None:
+        """Display finish status when agent calls the Finish tool."""
+        status_icons = {
+            "success": "✅",
+            "partial": "⚠️",
+            "failed": "❌",
+            "blocked": "🚧",
+        }
+        icon = status_icons.get(status, "ℹ️")
+
+        self._output.write(f"\n{icon} Task Finished ({status})\n")
+        self._output.write(f"Summary: {summary}\n")
+        if next_steps:
+            self._output.write(f"Next steps: {next_steps}\n")
+        self._output.flush()
+
 
 class CaptureRenderer(PlainTextRenderer):
     """

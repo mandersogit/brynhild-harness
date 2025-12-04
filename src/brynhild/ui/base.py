@@ -128,6 +128,23 @@ class Renderer(_abc.ABC):
             session: Session name if resuming, or None/new for new session.
         """
 
+    def show_finish(  # noqa: B027
+        self,
+        status: str,  # noqa: ARG002
+        summary: str,  # noqa: ARG002
+        next_steps: str | None = None,  # noqa: ARG002
+    ) -> None:
+        """
+        Display finish status when agent calls the Finish tool.
+
+        Optional - renderers may override to show completion status.
+
+        Args:
+            status: Completion status (success, partial, failed, blocked).
+            summary: Summary of what was accomplished.
+            next_steps: Optional suggestions for next actions.
+        """
+
 
 class ConversationResult(_typing.TypedDict, total=False):
     """Result of a conversation turn for JSON output."""
