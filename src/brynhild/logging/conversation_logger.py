@@ -174,14 +174,24 @@ class ConversationLogger:
         tool_name: str,
         tool_input: dict[str, _typing.Any],
         tool_id: str | None = None,
+        call_type: str = "native",
     ) -> None:
-        """Log a tool call request."""
+        """Log a tool call request.
+
+        Args:
+            tool_name: Name of the tool being called.
+            tool_input: Input arguments for the tool.
+            tool_id: Unique ID for this tool call.
+            call_type: Type of call - "native" (from model's tool_calls) or
+                       "recovered" (extracted from thinking text).
+        """
         self._write_event(
             "tool_call",
             {
                 "tool_name": tool_name,
                 "tool_input": tool_input,
                 "tool_id": tool_id,
+                "call_type": call_type,
             },
         )
 
