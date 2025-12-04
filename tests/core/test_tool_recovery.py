@@ -452,3 +452,223 @@ Also valid: {"b": 2}'''
         assert {"a": 1} in results
         assert {"b": 2} in results
 
+
+class TestModelRecoveryGating:
+    """Tests for model-level recovery gating."""
+
+    def test_disabled_when_model_recovery_false(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Returns None when model recovery is disabled."""
+        thinking = '{"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking,
+            registry_with_search_tool,
+            model_recovery_enabled=False,
+        )
+
+        assert result is None
+
+    def test_enabled_when_model_recovery_true(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Returns result when model recovery is enabled."""
+        thinking = '{"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking,
+            registry_with_search_tool,
+            model_recovery_enabled=True,
+        )
+
+        assert result is not None
+        assert result.tool_use.name == "semantic_search"
+
+
+class TestToolRecoveryPolicy:
+    """Tests for tool-level recovery policy."""
+
+    def test_skips_tool_with_deny_policy(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Skips tools that have recovery_policy='deny'."""
+        # Get the tool and override its recovery_policy
+        tool = registry_with_search_tool.get("semantic_search")
+        assert tool is not None
+
+        # Create a new registry with a tool that denies recovery
+        class DenyRecoveryTool(MockTool):
+            @property
+            def recovery_policy(self) -> str:
+                return "deny"
+
+        deny_registry = tools_registry.ToolRegistry()
+        deny_registry.register(
+            DenyRecoveryTool(
+                name="semantic_search",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "corpus_key": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["corpus_key", "query"],
+                },
+            )
+        )
+
+        thinking = '{"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking, deny_registry
+        )
+
+        # Should not recover because tool denies it
+        assert result is None
+
+
+class TestIntentDetection:
+    """Tests for intent phrase detection."""
+
+    def test_has_intent_signal_positive(self) -> None:
+        """Detects intent phrases before JSON."""
+        assert tool_recovery._has_intent_signal("I will call the search tool")
+        assert tool_recovery._has_intent_signal("Let me use semantic_search")
+        assert tool_recovery._has_intent_signal("Now I should call the API")
+        assert tool_recovery._has_intent_signal("I'll search for more info")
+
+    def test_has_intent_signal_negative(self) -> None:
+        """Returns False when no intent phrases."""
+        assert not tool_recovery._has_intent_signal("Here is some text")
+        assert not tool_recovery._has_intent_signal("The results show")
+        assert not tool_recovery._has_intent_signal("")
+
+
+class TestAntiPatternDetection:
+    """Tests for anti-pattern (example context) detection."""
+
+    def test_has_anti_pattern_positive(self) -> None:
+        """Detects example/descriptive patterns."""
+        assert tool_recovery._has_anti_pattern("Example:")
+        assert tool_recovery._has_anti_pattern("For instance, the format is:")
+        assert tool_recovery._has_anti_pattern("The format is:")
+        assert tool_recovery._has_anti_pattern("might look like:")
+
+    def test_has_anti_pattern_negative(self) -> None:
+        """Returns False when no anti-patterns."""
+        assert not tool_recovery._has_anti_pattern("Let me call the tool")
+        assert not tool_recovery._has_anti_pattern("I will search now")
+        assert not tool_recovery._has_anti_pattern("")
+
+    def test_skips_json_in_example_context(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Skips JSON that appears in example/descriptive context."""
+        # The anti-pattern detection uses a 100-char window before the JSON
+        # So we need enough padding between the example text and the "real" JSON
+        padding = "x" * 150  # Enough to push anti-pattern out of window
+
+        thinking = f'''The format is:
+{{"corpus_key": "example", "query": "example"}}
+{padding}
+Now let me actually search:
+{{"corpus_key": "real", "query": "real query"}}'''
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking, registry_with_search_tool
+        )
+
+        # Should skip the "format is" example and find the real one
+        assert result is not None
+        assert result.tool_use.input["query"] == "real query"
+
+
+class TestSearchWindowing:
+    """Tests for search window functionality."""
+
+    def test_respects_search_window(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Only searches within the specified window."""
+        # Put JSON at start, outside a small window
+        early_json = '{"corpus_key": "early", "query": "early"}'
+        padding = "x" * 200  # Padding to push early JSON outside window
+        late_json = '{"corpus_key": "late", "query": "late"}'
+
+        thinking = early_json + padding + late_json
+
+        # With small window, should find late JSON
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking,
+            registry_with_search_tool,
+            search_window=250,  # Only includes late JSON
+        )
+
+        assert result is not None
+        assert result.tool_use.input["query"] == "late"
+
+    def test_full_text_when_window_zero(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Searches full text when window is 0 or negative."""
+        early_json = '{"corpus_key": "early", "query": "early"}'
+        padding = "x" * 100
+        late_json = '{"corpus_key": "late", "query": "late"}'
+
+        thinking = early_json + padding + late_json
+
+        # With window=0, searches full text, finds late JSON first (end to start)
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking,
+            registry_with_search_tool,
+            search_window=0,
+        )
+
+        assert result is not None
+        # Should still find from end (late JSON first)
+        assert result.tool_use.input["query"] == "late"
+
+
+class TestRecoveryResultFields:
+    """Tests for new RecoveryResult fields."""
+
+    def test_has_intent_signal_field(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """RecoveryResult includes has_intent_signal field."""
+        thinking = 'I will call search: {"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking, registry_with_search_tool
+        )
+
+        assert result is not None
+        assert result.has_intent_signal is True
+
+    def test_no_intent_signal_field(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """has_intent_signal is False when no intent phrases."""
+        thinking = '{"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking, registry_with_search_tool
+        )
+
+        assert result is not None
+        assert result.has_intent_signal is False
+
+    def test_tool_risk_level_field(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """RecoveryResult includes tool_risk_level field."""
+        thinking = '{"corpus_key": "test", "query": "test"}'
+
+        result = tool_recovery.try_recover_tool_call_from_thinking(
+            thinking, registry_with_search_tool
+        )
+
+        assert result is not None
+        assert result.tool_risk_level == "read_only"  # Default for MockTool
+
