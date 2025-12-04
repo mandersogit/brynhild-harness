@@ -101,7 +101,10 @@ class ConversationRunner:
 
         # Conversation state
         self._messages: list[dict[str, _typing.Any]] = []
-        self._total_input_tokens = 0
+        # Token tracking:
+        # - context tokens: absolute size (last API call), not accumulated
+        # - output tokens: cumulative total generated across session
+        self._current_context_tokens = 0
         self._total_output_tokens = 0
 
         # Log system prompt at initialization
@@ -191,7 +194,9 @@ class ConversationRunner:
             self._messages.append({"role": "assistant", "content": result.response_text})
 
         # Track usage (callback already notified renderer during conversation)
-        self._total_input_tokens += result.input_tokens
+        # input_tokens is absolute context size (not accumulated)
+        # output_tokens is cumulative across session
+        self._current_context_tokens = result.input_tokens
         self._total_output_tokens += result.output_tokens
 
         # Display finish result if available
@@ -210,9 +215,9 @@ class ConversationRunner:
             "stop_reason": result.stop_reason,
             "triggered_skill": triggered_skill,
             "usage": {
-                "input_tokens": self._total_input_tokens,
+                "input_tokens": self._current_context_tokens,
                 "output_tokens": self._total_output_tokens,
-                "total_tokens": self._total_input_tokens + self._total_output_tokens,
+                "total_tokens": self._current_context_tokens + self._total_output_tokens,
             },
         }
 
@@ -259,7 +264,9 @@ class ConversationRunner:
             self._messages.append({"role": "assistant", "content": result.response_text})
 
         # Track usage (callback already notified renderer during conversation)
-        self._total_input_tokens += result.input_tokens
+        # input_tokens is absolute context size (not accumulated)
+        # output_tokens is cumulative across session
+        self._current_context_tokens = result.input_tokens
         self._total_output_tokens += result.output_tokens
 
         # Display finish result if available
@@ -277,9 +284,9 @@ class ConversationRunner:
             "model": self._provider.model,
             "stop_reason": result.stop_reason,
             "usage": {
-                "input_tokens": self._total_input_tokens,
+                "input_tokens": self._current_context_tokens,
                 "output_tokens": self._total_output_tokens,
-                "total_tokens": self._total_input_tokens + self._total_output_tokens,
+                "total_tokens": self._current_context_tokens + self._total_output_tokens,
             },
         }
 
@@ -295,5 +302,5 @@ class ConversationRunner:
     def reset(self) -> None:
         """Reset conversation state for a new conversation."""
         self._messages = []
-        self._total_input_tokens = 0
+        self._current_context_tokens = 0
         self._total_output_tokens = 0
