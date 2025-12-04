@@ -438,6 +438,254 @@ class ToolUse:
     input: dict[str, Any]     # Tool arguments
 ```
 
+---
+
+## Message Format Transformation
+
+Providers receive messages in Brynhild's internal format and must transform them to their API's expected format. This typically happens in a `_format_messages()` method.
+
+### Brynhild Internal Format → OpenAI Format
+
+Most providers target OpenAI-compatible APIs. Here are the required transformations:
+
+#### Tool Results
+
+**Brynhild format:**
+```python
+{
+    "role": "tool_result",
+    "tool_use_id": "call_abc123",
+    "content": "File contents here..."
+}
+```
+
+**OpenAI format:**
+```python
+{
+    "role": "tool",
+    "tool_call_id": "call_abc123",
+    "content": "File contents here..."
+}
+```
+
+#### Reasoning Field (CRITICAL)
+
+Brynhild includes a `reasoning` field on assistant messages when the model produces chain-of-thought:
+
+**Brynhild format:**
+```python
+{
+    "role": "assistant",
+    "content": "The answer is 42.",
+    "reasoning": "Let me think step by step...",  # ← Handle this!
+    "tool_calls": [...]
+}
+```
+
+**⚠️ Warning:** Ignoring the `reasoning` field will silently drop thinking content, potentially degrading model performance on complex tasks.
+
+### Implementing `_format_messages()`
+
+Here's a complete reference implementation:
+
+```python
+def _format_messages(
+    self,
+    messages: list[dict[str, Any]],
+    system: str | None,
+) -> list[dict[str, Any]]:
+    """Transform Brynhild messages to OpenAI-compatible format."""
+    formatted: list[dict[str, Any]] = []
+    
+    # Add system message if provided
+    if system:
+        formatted.append({"role": "system", "content": system})
+    
+    # Determine if we're in a tool loop (affects reasoning handling)
+    # Heuristic: if last message is tool_result, keep reasoning
+    in_tool_loop = messages and messages[-1].get("role") == "tool_result"
+    
+    for msg in messages:
+        role = msg["role"]
+        content = msg.get("content", "")
+        
+        if role == "user":
+            formatted.append({"role": "user", "content": str(content)})
+        
+        elif role == "assistant":
+            assistant_msg: dict[str, Any] = {"role": "assistant"}
+            
+            # Handle tool calls
+            if "tool_calls" in msg:
+                assistant_msg["tool_calls"] = msg["tool_calls"]
+                if content:
+                    assistant_msg["content"] = str(content)
+            else:
+                assistant_msg["content"] = str(content)
+            
+            # Handle reasoning field based on your format setting
+            if in_tool_loop and "reasoning" in msg and msg["reasoning"]:
+                reasoning_format = self.default_reasoning_format
+                
+                if reasoning_format == "reasoning_field":
+                    # OpenRouter convention: separate field
+                    assistant_msg["reasoning"] = msg["reasoning"]
+                    
+                elif reasoning_format == "thinking_tags":
+                    # Wrap in XML tags in content
+                    existing = assistant_msg.get("content", "")
+                    wrapped = f"<thinking>{msg['reasoning']}</thinking>"
+                    if existing:
+                        assistant_msg["content"] = f"{wrapped}\n\n{existing}"
+                    else:
+                        assistant_msg["content"] = wrapped
+                
+                # else: "none" - don't include reasoning (discard it)
+            
+            formatted.append(assistant_msg)
+        
+        elif role == "tool_result":
+            # Transform to OpenAI's tool response format
+            formatted.append({
+                "role": "tool",
+                "tool_call_id": msg.get("tool_use_id", ""),
+                "content": str(content),
+            })
+    
+    return formatted
+```
+
+### When to Include Reasoning
+
+Brynhild's reasoning lifecycle:
+
+| Phase | Include Reasoning? | Why |
+|-------|-------------------|-----|
+| **Tool loop** (tool_result was last message) | ✅ Yes | Model needs context for why it made tool calls |
+| **After final response** (new user message) | ❌ No | Save tokens; reasoning was for previous task |
+
+The heuristic `in_tool_loop = messages[-1].get("role") == "tool_result"` captures this.
+
+### Reasoning Format Options
+
+| Format | When to Use | Example Output |
+|--------|-------------|----------------|
+| `"reasoning_field"` | OpenRouter, native reasoning APIs | `{"reasoning": "...", "content": "..."}` |
+| `"thinking_tags"` | Most open-source models, Anthropic | `{"content": "<thinking>...</thinking>\n\nAnswer"}` |
+| `"none"` | Models without CoT support | `{"content": "Answer"}` (reasoning discarded) |
+
+---
+
+## Token Counting Best Practices
+
+Accurate token counting is essential for context window management and usage display.
+
+### Key Principle: Count AFTER Formatting
+
+**✅ Correct:** Count tokens in the formatted messages (what's actually sent to API):
+
+```python
+def _estimate_input_tokens(
+    self,
+    messages: list[dict[str, Any]],
+    system: str | None,
+) -> int:
+    # Format messages first
+    formatted = self._format_messages(messages, system)
+    
+    # Count the formatted version
+    return self._count_formatted_messages(formatted)
+```
+
+**❌ Incorrect:** Counting raw Brynhild messages:
+
+```python
+# DON'T do this - doesn't match actual API payload
+for msg in messages:  # Raw Brynhild format
+    tokens += count(msg["content"])
+```
+
+### What to Count
+
+```python
+def _count_formatted_messages(
+    self,
+    formatted: list[dict[str, Any]],
+) -> int:
+    """Count tokens in formatted messages."""
+    total = 0
+    
+    for msg in formatted:
+        total += 4  # Message overhead (~4 tokens per message)
+        
+        # Content (may include thinking tags if using that format)
+        if "content" in msg:
+            total += self._count_tokens(str(msg["content"]))
+        
+        # Tool calls (JSON-serialized)
+        if "tool_calls" in msg:
+            import json
+            for tc in msg["tool_calls"]:
+                total += self._count_tokens(json.dumps(tc))
+        
+        # Reasoning field (for APIs that support it)
+        if "reasoning" in msg:
+            total += self._count_tokens(str(msg["reasoning"]))
+    
+    total += 3  # Framing overhead
+    return total
+```
+
+### Token Counting Libraries
+
+- **tiktoken**: Best for OpenAI models (`pip install tiktoken`)
+- **transformers**: For HuggingFace models
+- **Estimate**: `len(text) // 4` as rough approximation
+
+---
+
+## Thinking/Reasoning Lifecycle
+
+Understanding how Brynhild manages reasoning helps providers implement correct handling.
+
+### How It Works
+
+**During a tool loop:**
+```
+User: "Analyze the code"
+↓
+Assistant: [thinking: "I need to search..."] [tool_call: search()]
+Tool Result: [results]
+↓
+Assistant: [thinking: "Based on results..."] [tool_call: read()]
+Tool Result: [contents]
+↓
+Messages sent to API include reasoning from both turns
+```
+
+**After final response:**
+```
+Assistant: "Here's my analysis..." (final text, no tool call)
+↓
+User: "Tell me more"  ← New turn starts
+↓
+Previous reasoning is NOT sent to API (to save tokens)
+```
+
+### Provider Responsibilities
+
+| Do | Don't |
+|----|-------|
+| ✅ Transform current turn's `reasoning` based on `default_reasoning_format` | ❌ Try to manage when reasoning is stripped (Brynhild handles this) |
+| ✅ Count tokens after formatting (includes reasoning if using tags) | ❌ Count reasoning separately from formatted content |
+| ✅ Handle reasoning in streaming responses | ❌ Assume reasoning is always present (only during tool loops) |
+
+### Why This Matters
+
+1. **Token efficiency**: Reasoning is removed after final responses to prevent context overflow
+2. **Model context**: During tool loops, reasoning helps the model understand WHY it made previous tool calls
+3. **Provider behavior**: Your `_format_messages()` only sees messages Brynhild has decided to include
+
 ### Complete Provider Example
 
 ```python

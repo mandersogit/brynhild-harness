@@ -56,8 +56,11 @@ When processing conversation history, assistant messages may now include a `reas
 ```
 
 **Provider responsibility:** 
-- If your provider supports reasoning, preserve this field when formatting messages for your API
-- If your provider doesn't support it, the base class will handle stripping based on `default_reasoning_format`
+- **You must handle the `reasoning` field in your `_format_messages()` method**
+- Transform it based on your `default_reasoning_format` setting (see Plugin API Reference for implementation)
+- If you ignore this field, reasoning content will be silently dropped
+
+**⚠️ Important:** The base `LLMProvider` class does NOT automatically transform reasoning. Each provider must implement this in `_format_messages()`. See the "Message Format Transformation" section in [Plugin API Reference](plugin-api-reference.md) for complete code examples.
 
 ---
 
