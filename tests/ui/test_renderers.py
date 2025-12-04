@@ -103,7 +103,7 @@ class TestPlainTextRenderer:
         )
         renderer.show_tool_call(tool_call)
         result = output.getvalue()
-        assert "[Tool: Bash]" in result
+        assert "Tool: Bash]" in result  # Icon prefix varies
         assert "command: echo test" in result
 
     def test_show_tool_result_success(self) -> None:
@@ -114,7 +114,8 @@ class TestPlainTextRenderer:
         display = ui.ToolResultDisplay(tool_name="Bash", result=result)
         renderer.show_tool_result(display)
         result_text = output.getvalue()
-        assert "[✓ Bash]" in result_text
+        assert "✓" in result_text  # Success icon present
+        assert "Bash]" in result_text
         assert "test output" in result_text
 
     def test_show_tool_result_failure(self) -> None:
@@ -125,7 +126,8 @@ class TestPlainTextRenderer:
         display = ui.ToolResultDisplay(tool_name="Bash", result=result)
         renderer.show_tool_result(display)
         result_text = output.getvalue()
-        assert "[✗ Bash]" in result_text
+        assert "✗" in result_text  # Failure icon present
+        assert "Bash]" in result_text
         assert "Error: Failed!" in result_text
 
     def test_show_error(self) -> None:

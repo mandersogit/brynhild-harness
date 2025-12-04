@@ -10,6 +10,7 @@ import sys as _sys
 import typing as _typing
 
 import brynhild.ui.base as base
+import brynhild.ui.icons as icons
 
 
 class PlainTextRenderer(base.Renderer):
@@ -66,9 +67,11 @@ class PlainTextRenderer(base.Renderer):
     def show_tool_call(self, tool_call: base.ToolCallDisplay) -> None:
         """Display that a tool is being called."""
         if tool_call.is_recovered:
-            self._output.write(f"[↺ Tool (recovered): {tool_call.tool_name}]\n")
+            self._output.write(
+                f"[{icons.icon_recovered()}Tool (recovered): {tool_call.tool_name}]\n"
+            )
         else:
-            self._output.write(f"[Tool: {tool_call.tool_name}]\n")
+            self._output.write(f"[{icons.icon_bolt()}Tool: {tool_call.tool_name}]\n")
         # Format input nicely for text output
         for key, value in tool_call.tool_input.items():
             if isinstance(value, str) and len(value) > 80:
@@ -78,8 +81,11 @@ class PlainTextRenderer(base.Renderer):
 
     def show_tool_result(self, result: base.ToolResultDisplay) -> None:
         """Display the result of a tool call."""
-        status = "✓" if result.result.success else "✗"
-        self._output.write(f"[{status} {result.tool_name}]\n")
+        if result.result.success:
+            status = icons.icon_success()
+        else:
+            status = icons.icon_failure()
+        self._output.write(f"[{status}{result.tool_name}]\n")
 
         if result.result.success:
             output = result.result.output

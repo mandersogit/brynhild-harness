@@ -10,6 +10,7 @@ import textual.containers as _containers
 import textual.widgets as _widgets
 
 import brynhild.ui.base as ui_base
+import brynhild.ui.icons as icons
 
 
 class MessageWidget(_widgets.Static):
@@ -117,11 +118,11 @@ class MessageWidget(_widgets.Static):
         """Create a tool call widget."""
         if tool_call.is_recovered:
             lines = [f"**Tool (recovered):** {tool_call.tool_name}"]
-            title = f"↺ {tool_call.tool_name} (recovered)"
+            title = f"{icons.icon_recovered()}{tool_call.tool_name} (recovered)"
             extra_classes = "recovered"
         else:
             lines = [f"**Tool:** {tool_call.tool_name}"]
-            title = f"⚡ {tool_call.tool_name}"
+            title = f"{icons.icon_bolt()}{tool_call.tool_name}"
             extra_classes = ""
 
         for key, value in tool_call.tool_input.items():
@@ -144,11 +145,11 @@ class MessageWidget(_widgets.Static):
                 output = output[:497] + "..."
             content = output if output else "(no output)"
             status_class = "success"
-            title = f"✓ {result.tool_name}"
+            title = f"{icons.icon_success()}{result.tool_name}"
         else:
             content = result.result.error or "Unknown error"
             status_class = "error"
-            title = f"✗ {result.tool_name}"
+            title = f"{icons.icon_failure()}{result.tool_name}"
 
         return cls(content, "tool-result", title=title, classes=status_class)
 

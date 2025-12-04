@@ -16,6 +16,7 @@ import rich.syntax as _rich_syntax
 import rich.text as _rich_text
 
 import brynhild.ui.base as base
+import brynhild.ui.icons as icons
 
 
 class RichConsoleRenderer(base.Renderer):
@@ -103,7 +104,7 @@ class RichConsoleRenderer(base.Renderer):
             # Prominent warning banner for recovered calls
             self._console.print(
                 "[bold #ff8c00 on #3d2600]"
-                " ⚠️  RECOVERED FROM MODEL THINKING "
+                f" {icons.icon_warning()}RECOVERED FROM MODEL THINKING "
                 "[/bold #ff8c00 on #3d2600]"
             )
             self._console.print(
@@ -112,13 +113,13 @@ class RichConsoleRenderer(base.Renderer):
                 "[/dim #ff8c00]"
             )
 
-            # Orange border with warning icon (extra space after ⚠️ to match ⚡ visually)
-            title = f"[bold #ff8c00]⚠️  {tool_call.tool_name}[/bold #ff8c00]"
+            # Orange border with warning icon
+            title = f"[bold #ff8c00]{icons.icon_warning()}{tool_call.tool_name}[/bold #ff8c00]"
             subtitle = "[dim #ff8c00](recovered from model thinking)[/dim #ff8c00]"
             border_style = "#ff8c00"  # Orange
         else:
             # Yellow border and "⚡" for native calls
-            title = f"[bold yellow]⚡ {tool_call.tool_name}[/bold yellow]"
+            title = f"[bold yellow]{icons.icon_bolt()}{tool_call.tool_name}[/bold yellow]"
             subtitle = None
             border_style = "yellow"
 
@@ -147,7 +148,7 @@ class RichConsoleRenderer(base.Renderer):
             self._console.print(
                 _rich_panel.Panel(
                     content,
-                    title=f"[bold green]✓ {result.tool_name}[/bold green]",
+                    title=f"[bold green]{icons.icon_success()}{result.tool_name}[/bold green]",
                     border_style="green",
                 )
             )
@@ -156,7 +157,7 @@ class RichConsoleRenderer(base.Renderer):
             self._console.print(
                 _rich_panel.Panel(
                     f"[red]{error_msg}[/red]",
-                    title=f"[bold red]✗ {result.tool_name}[/bold red]",
+                    title=f"[bold red]{icons.icon_failure()}{result.tool_name}[/bold red]",
                     border_style="red",
                 )
             )

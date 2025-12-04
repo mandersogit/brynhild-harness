@@ -28,6 +28,7 @@ import brynhild.session as session
 import brynhild.skills as skills
 import brynhild.tools.registry as tools_registry
 import brynhild.ui.base as ui_base
+import brynhild.ui.icons as icons
 import brynhild.ui.widgets as widgets
 
 # Re-export for backwards compatibility
@@ -180,7 +181,7 @@ class PermissionScreen(_screen.Screen[bool | None]):
     def compose(self) -> _app.ComposeResult:
         with _containers.Container(id="permission-container"):
             yield _widgets.Static(
-                "⚠️ Permission Required",
+                f"{icons.icon_warning()}Permission Required",
                 id="permission-title",
             )
             yield _widgets.Static(
