@@ -930,8 +930,11 @@ class ConversationProcessor:
             await self._callbacks.on_stream_end()
 
             # Update totals and notify UI
+            # NOTE: input_tokens is the ABSOLUTE context size for this call (not a delta)
+            # Providers return the total prompt tokens sent, which IS the context size.
+            # output_tokens is per-call generation, so we accumulate for session total.
             if usage:
-                total_input += usage.input_tokens
+                total_input = usage.input_tokens  # Last context size (not accumulated)
                 total_output += usage.output_tokens
                 await self._callbacks.on_usage_update(total_input, total_output)
 
@@ -1209,8 +1212,11 @@ class ConversationProcessor:
             )
 
             # Update totals and notify UI
+            # NOTE: input_tokens is the ABSOLUTE context size for this call (not a delta)
+            # Providers return the total prompt tokens sent, which IS the context size.
+            # output_tokens is per-call generation, so we accumulate for session total.
             if response.usage:
-                total_input += response.usage.input_tokens
+                total_input = response.usage.input_tokens  # Last context size (not accumulated)
                 total_output += response.usage.output_tokens
                 await self._callbacks.on_usage_update(total_input, total_output)
 
