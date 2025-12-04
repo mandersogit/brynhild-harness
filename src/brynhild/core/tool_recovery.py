@@ -432,6 +432,159 @@ def _match_with_context_and_policy(
     return None
 
 
+# Pattern to match [tool_call: ToolName(args)] format
+# Examples:
+#   [tool_call: Bash(command="pwd")]
+#   [tool_call: Inspect(operation="cwd")]
+#   [tool_call: Search(query="something", limit=5)]
+TOOL_CALL_TAG_PATTERN = _re.compile(
+    r'\[tool_call:\s*(\w+)\s*\(([^)]*)\)\s*\]',
+    _re.IGNORECASE
+)
+
+
+def try_recover_tool_call_from_content(
+    content: str,
+    tool_registry: "tools_registry.ToolRegistry",
+    *,
+    model_recovery_enabled: bool = True,
+) -> RecoveryResult | None:
+    """
+    Attempt to recover tool calls from content text in [tool_call: ...] format.
+
+    Some providers translate Harmony format tool calls into text patterns like:
+        [tool_call: Bash(command="pwd")]
+        [tool_call: Search(query="test", limit=5)]
+
+    This function parses these patterns and creates ToolUse objects.
+
+    Args:
+        content: The model's response content text.
+        tool_registry: Registry of available tools to match against.
+        model_recovery_enabled: Whether the model profile allows recovery.
+
+    Returns:
+        RecoveryResult with the ToolUse and diagnostic info, or None if no recovery.
+    """
+    if not model_recovery_enabled:
+        return None
+
+    if not content or not tool_registry:
+        return None
+
+    # Find all [tool_call: ...] patterns
+    matches = list(TOOL_CALL_TAG_PATTERN.finditer(content))
+    if not matches:
+        return None
+
+    candidates_tried = 0
+
+    # Try each match (from last to first, preferring later tool calls)
+    for match in reversed(matches):
+        candidates_tried += 1
+        tool_name = match.group(1)
+        args_str = match.group(2)
+
+        # Parse the arguments from Python-like syntax: key="value", key=5
+        args = _parse_tool_call_args(args_str)
+        if args is None:
+            continue
+
+        # Try to match against registered tools
+        tool = tool_registry.get(tool_name)
+        if tool is None:
+            # Try case-insensitive match
+            for t in tool_registry.list_tools():
+                if t.name.lower() == tool_name.lower():
+                    tool = t
+                    break
+
+        if tool is None:
+            continue
+
+        # Check recovery policy
+        if tool.recovery_policy == "deny":
+            continue
+
+        tool_use = api_types.ToolUse(
+            id=f"recovered-content-{_uuid.uuid4().hex[:12]}",
+            name=tool.name,
+            input=args,
+        )
+
+        # Extract context
+        start_pos = match.start()
+        end_pos = match.end()
+        context_start = max(0, start_pos - 100)
+        context_before = content[context_start:start_pos]
+        context_after = content[end_pos:end_pos + 100]
+
+        return RecoveryResult(
+            tool_use=tool_use,
+            recovery_type="content_tag",
+            json_position=start_pos,
+            text_length=len(content),
+            candidates_tried=candidates_tried,
+            extracted_json=match.group(0),
+            context_before=context_before,
+            context_after=context_after,
+            tool_risk_level=tool.risk_level,
+            requires_confirmation=(tool.recovery_policy == "confirm"),
+            has_intent_signal=True,  # Tag format implies intent
+        )
+
+    return None
+
+
+def _parse_tool_call_args(args_str: str) -> dict[str, _typing.Any] | None:
+    """
+    Parse Python-like argument syntax into a dict.
+
+    Handles:
+        command="pwd"
+        query="test", limit=5
+        operation="cwd", filter="all"
+
+    Returns:
+        Dict of parsed arguments, or None if parsing fails.
+    """
+    if not args_str.strip():
+        return {}
+
+    args: dict[str, _typing.Any] = {}
+
+    # Pattern for key=value pairs
+    # Handles: key="string", key=123, key=true/false
+    arg_pattern = _re.compile(
+        r'(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|\d+(?:\.\d+)?|true|false)',
+        _re.IGNORECASE
+    )
+
+    for match in arg_pattern.finditer(args_str):
+        key = match.group(1)
+        value_str = match.group(2)
+
+        # Parse the value
+        if value_str.startswith('"') and value_str.endswith('"'):
+            # String with double quotes
+            value = value_str[1:-1].replace('\\"', '"').replace('\\\\', '\\')
+        elif value_str.startswith("'") and value_str.endswith("'"):
+            # String with single quotes
+            value = value_str[1:-1].replace("\\'", "'").replace('\\\\', '\\')
+        elif value_str.lower() == 'true':
+            value = True
+        elif value_str.lower() == 'false':
+            value = False
+        elif '.' in value_str:
+            value = float(value_str)
+        else:
+            value = int(value_str)
+
+        args[key] = value
+
+    return args if args else None
+
+
 def extract_all_json_from_thinking(thinking: str) -> list[dict[str, _typing.Any]]:
     """
     Extract all JSON objects from thinking text.

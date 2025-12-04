@@ -3,11 +3,9 @@ Tests for tool call recovery from thinking output.
 """
 
 import typing as _typing
-import unittest.mock as _mock
 
 import pytest as _pytest
 
-import brynhild.api.types as api_types
 import brynhild.core.tool_recovery as tool_recovery
 import brynhild.tools.base as tools_base
 import brynhild.tools.registry as tools_registry
@@ -41,8 +39,9 @@ class MockTool(tools_base.Tool):
         return False
 
     async def execute(
-        self, input_data: dict[str, _typing.Any]
+        self, input: dict[str, _typing.Any]  # noqa: A002
     ) -> tools_base.ToolResult:
+        _ = input  # unused in mock
         return tools_base.ToolResult(success=True, output="mock result", error=None)
 
 
@@ -62,6 +61,27 @@ def registry_with_search_tool() -> tools_registry.ToolRegistry:
                     "generate_summary": {"type": "boolean"},
                 },
                 "required": ["corpus_key", "query"],
+            },
+        )
+    )
+    return registry
+
+
+@_pytest.fixture
+def registry_with_bash_tool() -> tools_registry.ToolRegistry:
+    """Create a registry with a Bash tool."""
+    registry = tools_registry.ToolRegistry()
+    registry.register(
+        MockTool(
+            name="Bash",
+            schema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "timeout": {"type": "integer"},
+                    "background": {"type": "boolean"},
+                },
+                "required": ["command"],
             },
         )
     )
@@ -671,4 +691,156 @@ class TestRecoveryResultFields:
 
         assert result is not None
         assert result.tool_risk_level == "read_only"  # Default for MockTool
+
+
+class TestContentTagRecovery:
+    """Tests for [tool_call: ToolName(args)] format recovery from content."""
+
+    def test_recovers_tool_call_tag(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Recovers tool call from [tool_call: Bash(command="pwd")]."""
+        content = 'Let me check the current directory.\n\n[tool_call: Bash(command="pwd")]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.name == "Bash"
+        assert result.tool_use.input == {"command": "pwd"}
+        assert result.recovery_type == "content_tag"
+        assert result.has_intent_signal is True
+
+    def test_recovers_with_multiple_args(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Recovers tool call with multiple arguments."""
+        content = '[tool_call: semantic_search(corpus_key="test", query="find something", limit=10)]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_search_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.name == "semantic_search"
+        assert result.tool_use.input["query"] == "find something"
+        assert result.tool_use.input["limit"] == 10
+
+    def test_case_insensitive_tool_name(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Matches tool names case-insensitively."""
+        content = '[tool_call: bash(command="ls")]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.name == "Bash"
+
+    def test_recovers_boolean_args(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Parses boolean argument values."""
+        content = '[tool_call: Bash(command="echo test", background=true)]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.input["command"] == "echo test"
+        assert result.tool_use.input["background"] is True
+
+    def test_recovers_numeric_args(
+        self, registry_with_search_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Parses numeric argument values."""
+        content = '[tool_call: semantic_search(corpus_key="test", query="q", limit=5)]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_search_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.input["limit"] == 5
+
+    def test_no_match_for_unknown_tool(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """No recovery for unknown tool names."""
+        content = '[tool_call: UnknownTool(arg="value")]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is None
+
+    def test_no_match_for_plain_text(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """No recovery for content without tool_call tags."""
+        content = "Just some text about using tools"
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is None
+
+    def test_recovers_last_tool_call_when_multiple(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """Recovers the last tool call tag when multiple are present."""
+        content = """[tool_call: Bash(command="first")]
+More text here
+[tool_call: Bash(command="second")]"""
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool
+        )
+
+        assert result is not None
+        assert result.tool_use.input["command"] == "second"
+
+    def test_disabled_when_model_recovery_false(
+        self, registry_with_bash_tool: tools_registry.ToolRegistry
+    ) -> None:
+        """No recovery when model_recovery_enabled=False."""
+        content = '[tool_call: Bash(command="pwd")]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(
+            content, registry_with_bash_tool, model_recovery_enabled=False
+        )
+
+        assert result is None
+
+    def test_respects_deny_recovery_policy(self) -> None:
+        """Skips tool with deny recovery policy."""
+
+        class DenyRecoveryTool(MockTool):
+            @property
+            def recovery_policy(self) -> str:
+                return "deny"
+
+        registry = tools_registry.ToolRegistry()
+        registry.register(
+            DenyRecoveryTool(
+                name="Bash",
+                schema={
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+            )
+        )
+
+        content = '[tool_call: Bash(command="pwd")]'
+
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry)
+
+        assert result is None
 
