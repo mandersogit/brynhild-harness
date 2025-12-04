@@ -49,14 +49,34 @@ TOOL_POLICY_PATTERN = """<tool_use_policy>
 - Give each tool call a distinct purpose - vary queries/parameters to get different information.
 - Only use search/browse tools for information NOT already provided in the conversation.
 - If you reference a document/file you don't have in context, search to find it, then fetch the relevant section before answering.
-
-CRITICAL - Emitting vs. thinking about tool calls:
-- When you decide to call a tool, you must EMIT the tool call in your response.
-- Do NOT put tool call JSON in your thinking/analysis - that will NOT execute.
-- If you think "I should call X next", immediately emit that tool call.
-- After receiving tool results, if more information is needed, emit another tool call.
-- Only provide your final answer AFTER all necessary tool calls are complete.
 </tool_use_policy>"""
+
+TOOL_EXECUTION_PATTERN = """<tool_execution_critical>
+CRITICAL: HOW TO ACTUALLY CALL TOOLS
+
+You have access to tools through the function calling API. When you want to use a tool,
+you MUST emit a function call in your response - not just write about it in text.
+
+Thinking about tools is NOT the same as calling them.
+
+WRONG - These just produce text, no tool actually runs:
+  - Writing "I will use the Bash tool to run pwd"
+  - Writing "Let me call Bash with..."
+  - Writing anything that describes a tool call instead of making one
+
+CORRECT - Invoke tools through function calling:
+  - Use the function calling mechanism to emit a tool call
+  - The tool call is a separate API channel, not text output
+  - When you want to run a command, you emit a function call - you don't write about it
+
+Every turn, you MUST produce one of:
+- A function call (to take action) - via the function calling API
+- A text response (to answer the user)
+- Both (brief text + function call)
+
+If you find yourself writing about calling a tool instead of actually calling it,
+STOP and emit a proper function call instead.
+</tool_execution_critical>"""
 
 PARALLELIZATION_PATTERN = """<parallelization_spec>
 Definition: Run independent or read-only tool actions in parallel (same turn/batch) to reduce latency.
@@ -190,6 +210,7 @@ GPT_OSS_120B = types.ModelProfile(
         "persistence": PERSISTENCE_PATTERN,
         "context_gathering": CONTEXT_GATHERING_PATTERN,
         "tool_policy": TOOL_POLICY_PATTERN,
+        "tool_execution": TOOL_EXECUTION_PATTERN,
         "parallelization": PARALLELIZATION_PATTERN,
         "coding": CODING_PATTERN,
         "self_reflection": SELF_REFLECTION_PATTERN,
@@ -205,6 +226,7 @@ GPT_OSS_120B = types.ModelProfile(
         "persistence",
         "context_gathering",
         "tool_policy",
+        "tool_execution",  # Critical for models that think about but don't emit tool calls
         "parallelization",
         "coding",
         "self_reflection",
@@ -252,6 +274,7 @@ GPT_OSS_120B_FAST = types.ModelProfile(
     prompt_patterns={
         "persistence": PERSISTENCE_PATTERN,
         "tool_policy": TOOL_POLICY_PATTERN,
+        "tool_execution": TOOL_EXECUTION_PATTERN,
         "coding": CODING_PATTERN,
         "fast_path": FAST_PATH_PATTERN,
         "loop_prevention": LOOP_PREVENTION_PATTERN,
@@ -260,6 +283,7 @@ GPT_OSS_120B_FAST = types.ModelProfile(
     enabled_patterns=[
         "persistence",
         "tool_policy",
+        "tool_execution",  # Critical for this model
         "coding",
         "fast_path",
         "loop_prevention",
