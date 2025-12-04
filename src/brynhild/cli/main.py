@@ -16,6 +16,7 @@ import click as _click
 
 import brynhild
 import brynhild.api as api
+import brynhild.cli.dev as cli_dev
 import brynhild.config as config
 import brynhild.core.conversation as core_conversation
 import brynhild.logging as logging
@@ -2464,10 +2465,7 @@ def profile_resolve(
 # Developer Commands (Hidden)
 # =============================================================================
 
-# Import dev commands from separate module
-import brynhild.cli.dev as _dev
-
-cli.add_command(_dev.dev_group)
+cli.add_command(cli_dev.dev_group)
 
 
 def main() -> None:

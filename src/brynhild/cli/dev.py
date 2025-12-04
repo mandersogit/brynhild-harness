@@ -45,8 +45,8 @@ class MockSemanticSearch(tools_base.Tool):
             "required": ["query"],
         }
 
-    async def execute(self, **kwargs: _typing.Any) -> tools_base.ToolResult:
-        query = kwargs.get("query", "")
+    async def execute(self, input: dict[str, _typing.Any]) -> tools_base.ToolResult:
+        query = input.get("query", "")
         return tools_base.ToolResult(
             success=True,
             output=(
@@ -77,7 +77,8 @@ class MockFileRead(tools_base.Tool):
             "required": ["path"],
         }
 
-    async def execute(self, **_kwargs: _typing.Any) -> tools_base.ToolResult:
+    async def execute(self, input: dict[str, _typing.Any]) -> tools_base.ToolResult:
+        _ = input  # unused in mock
         return tools_base.ToolResult(
             success=True,
             output="# AsyncIO Best Practices\n\nWhen working with async/await...",
@@ -108,13 +109,15 @@ class RecoveryDemoProvider(api_base.LLMProvider):
 
     async def complete(
         self,
-        _messages: list[dict[str, _typing.Any]],
+        messages: list[dict[str, _typing.Any]],
         *,
-        _system_prompt: str | None = None,
-        _max_tokens: int = 4096,
-        _tools: list[dict[str, _typing.Any]] | None = None,
-        **_kwargs: _typing.Any,
+        system: str | None = None,
+        tools: list[api_types.Tool] | None = None,
+        max_tokens: int = 4096,
+        use_profile: bool = True,
     ) -> api_types.CompletionResponse:
+        # Silence unused args (mock doesn't need them)
+        _ = messages, system, tools, max_tokens, use_profile
         """Return scripted responses to demo recovery."""
         self._call_count += 1
 
@@ -169,18 +172,18 @@ class RecoveryDemoProvider(api_base.LLMProvider):
         self,
         messages: list[dict[str, _typing.Any]],
         *,
-        system_prompt: str | None = None,
+        system: str | None = None,
+        tools: list[api_types.Tool] | None = None,
         max_tokens: int = 4096,
-        tools: list[dict[str, _typing.Any]] | None = None,
-        **kwargs: _typing.Any,
+        use_profile: bool = True,
     ) -> _typing.AsyncIterator[api_types.StreamEvent]:
         """Stream version - just wraps complete() for demo."""
         response = await self.complete(
             messages,
-            system_prompt=system_prompt,
+            system=system,
             max_tokens=max_tokens,
             tools=tools,
-            **kwargs,
+            use_profile=use_profile,
         )
 
         # Message start
