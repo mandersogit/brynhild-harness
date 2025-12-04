@@ -15,6 +15,7 @@ Usage:
 from brynhild.tools.base import SandboxMixin, Tool, ToolResult
 from brynhild.tools.bash import BashTool
 from brynhild.tools.file import FileEditTool, FileReadTool, FileWriteTool
+from brynhild.tools.finish import FinishTool
 from brynhild.tools.glob import GlobTool
 from brynhild.tools.grep import GrepTool
 from brynhild.tools.inspect import InspectTool
@@ -60,6 +61,7 @@ __all__ = [
     "FileReadTool",
     "FileWriteTool",
     "FileEditTool",
+    "FinishTool",
     "GrepTool",
     "GlobTool",
     "InspectTool",

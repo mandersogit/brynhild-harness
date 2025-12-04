@@ -266,6 +266,12 @@ def build_registry_from_settings(
         )
         registry.register(skill_tool.LearnSkillTool(skill_registry=skill_registry))
 
+    # Register Finish tool (control flow, no configuration needed)
+    if "Finish" not in disabled_tools:
+        import brynhild.tools.finish as finish_tool
+
+        registry.register(finish_tool.FinishTool())
+
     # Load tools from enabled plugins
     _load_plugin_tools(registry, discovered_plugins)
 
@@ -387,5 +393,7 @@ def _load_plugin_tools(
 
 
 # Builtin tool names for reference
-BUILTIN_TOOL_NAMES = frozenset({"Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect", "LearnSkill"})
+BUILTIN_TOOL_NAMES = frozenset({
+    "Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect", "LearnSkill", "Finish"
+})
 
