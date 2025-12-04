@@ -108,6 +108,26 @@ class Renderer(_abc.ABC):
         Note: Not abstract because most renderers don't need this.
         """
 
+    def show_session_banner(  # noqa: B027
+        self,
+        *,
+        model: str,  # noqa: ARG002
+        provider: str,  # noqa: ARG002
+        profile: str | None = None,  # noqa: ARG002
+        session: str | None = None,  # noqa: ARG002
+    ) -> None:
+        """
+        Display session info banner at the start of a conversation.
+
+        Optional - renderers may override to show model/profile/session info.
+
+        Args:
+            model: Model name/identifier.
+            provider: Provider name (openrouter, ollama, etc).
+            profile: Profile name if using one, or None for default.
+            session: Session name if resuming, or None/new for new session.
+        """
+
 
 class ConversationResult(_typing.TypedDict, total=False):
     """Result of a conversation turn for JSON output."""

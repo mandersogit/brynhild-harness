@@ -309,6 +309,14 @@ async def _run_conversation(
         provider=settings.provider,
     )
 
+    # Show session banner with model/profile/session info
+    renderer.show_session_banner(
+        model=settings.model,
+        provider=settings.provider,
+        profile=context.profile.name if context.profile else None,
+        session=None,  # TODO: Pass actual session name when resume is implemented
+    )
+
     if verbose and context.injections:
         renderer.show_info(f"Applied {len(context.injections)} context injection(s)")
         if context.profile:

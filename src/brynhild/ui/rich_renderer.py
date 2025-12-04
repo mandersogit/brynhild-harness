@@ -170,6 +170,46 @@ class RichConsoleRenderer(base.Renderer):
 
         self._thinking_content = ""
 
+    def show_session_banner(
+        self,
+        *,
+        model: str,
+        provider: str,
+        profile: str | None = None,
+        session: str | None = None,
+    ) -> None:
+        """
+        Display session info banner at the start of a conversation.
+
+        Args:
+            model: Model name/identifier.
+            provider: Provider name (openrouter, ollama, etc).
+            profile: Profile name if using one, or None for default.
+            session: Session name if resuming, or None/new for new session.
+        """
+        # Build info parts
+        parts = [f"[bold]{model}[/bold] [dim]({provider})[/dim]"]
+
+        if profile:
+            parts.append(f"Profile: [cyan]{profile}[/cyan]")
+        else:
+            parts.append("Profile: [dim]default[/dim]")
+
+        if session and session != "new":
+            parts.append(f"Session: [yellow]{session}[/yellow]")
+        else:
+            parts.append("Session: [dim]new[/dim]")
+
+        content = " │ ".join(parts)
+
+        self._console.print(
+            _rich_panel.Panel(
+                content,
+                border_style="dim",
+                padding=(0, 1),
+            )
+        )
+
     def show_user_message(self, content: str) -> None:
         """Display a user message with formatting."""
         self._console.print(

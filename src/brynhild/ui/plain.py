@@ -39,6 +39,22 @@ class PlainTextRenderer(base.Renderer):
         self._stream_buffer = ""
         self._stream_header_printed = False  # Track if we've printed "Assistant:"
 
+    def show_session_banner(
+        self,
+        *,
+        model: str,
+        provider: str,
+        profile: str | None = None,
+        session: str | None = None,
+    ) -> None:
+        """Display session info banner."""
+        profile_str = profile if profile else "default"
+        session_str = session if session and session != "new" else "new"
+        self._output.write(
+            f"[{model} ({provider}) | Profile: {profile_str} | Session: {session_str}]\n"
+        )
+        self._output.flush()
+
     def show_user_message(self, content: str) -> None:
         """Display a user message."""
         self._output.write(f"User: {content}\n")
