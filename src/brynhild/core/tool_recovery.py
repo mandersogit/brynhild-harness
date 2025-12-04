@@ -22,6 +22,7 @@ The recovery extracts the JSON and creates a ToolUse that can be executed.
 
 import dataclasses as _dataclasses
 import json as _json
+import re as _re
 import typing as _typing
 import uuid as _uuid
 
@@ -29,6 +30,60 @@ import brynhild.api.types as api_types
 
 if _typing.TYPE_CHECKING:
     import brynhild.tools.registry as tools_registry
+
+
+# Search window for recovery (default 16k chars from end)
+DEFAULT_SEARCH_WINDOW = 16384
+
+# Intent phrases that suggest a tool call is intended
+INTENT_PATTERNS = [
+    _re.compile(r"I will (call|use|invoke)", _re.IGNORECASE),
+    _re.compile(r"I'll (call|use|invoke)", _re.IGNORECASE),
+    _re.compile(r"Let me (call|use|invoke)", _re.IGNORECASE),
+    _re.compile(r"Now I (should|will|need to) (call|use)", _re.IGNORECASE),
+    _re.compile(r"Using the .* tool", _re.IGNORECASE),
+    _re.compile(r"Next.*(call|use)", _re.IGNORECASE),
+    _re.compile(r"I('ll| will| should) search", _re.IGNORECASE),
+]
+
+# Anti-patterns that suggest JSON is example/descriptive, not intended for execution
+ANTI_PATTERNS = [
+    _re.compile(r"[Ee]xample:"),
+    _re.compile(r"[Ff]or instance"),
+    _re.compile(r"[Tt]he format is:"),
+    _re.compile(r"might look like:"),
+    _re.compile(r"would look like:"),
+    _re.compile(r"looks like this:"),
+    _re.compile(r"[Hh]ere's (an|the) example"),
+]
+
+
+def _has_intent_signal(text_before_json: str, window: int = 200) -> bool:
+    """Check if text before JSON contains intent phrases.
+
+    Args:
+        text_before_json: Text that appears before the JSON
+        window: Number of chars before JSON to search (default 200)
+
+    Returns:
+        True if intent phrase found, False otherwise
+    """
+    search_text = text_before_json[-window:] if len(text_before_json) > window else text_before_json
+    return any(p.search(search_text) for p in INTENT_PATTERNS)
+
+
+def _has_anti_pattern(text_before_json: str, window: int = 100) -> bool:
+    """Check if text before JSON contains example/descriptive patterns.
+
+    Args:
+        text_before_json: Text that appears before the JSON
+        window: Number of chars before JSON to search (default 100)
+
+    Returns:
+        True if anti-pattern found (suggesting JSON is not for execution)
+    """
+    search_text = text_before_json[-window:] if len(text_before_json) > window else text_before_json
+    return any(p.search(search_text) for p in ANTI_PATTERNS)
 
 
 @_dataclasses.dataclass
@@ -68,6 +123,15 @@ class RecoveryResult:
     context_after: str
     """Text after the JSON, if any (for debugging)."""
 
+    tool_risk_level: str = "read_only"
+    """Risk level of the recovered tool."""
+
+    requires_confirmation: bool = False
+    """Whether this recovery requires user confirmation before execution."""
+
+    has_intent_signal: bool = False
+    """Whether intent phrases were found near the JSON."""
+
     def to_log_dict(self) -> dict[str, _typing.Any]:
         """Convert to a dict suitable for logging."""
         return {
@@ -80,12 +144,18 @@ class RecoveryResult:
             "extracted_json": self.extracted_json[:500],  # Truncate for logs
             "context_before": self.context_before,
             "context_after": self.context_after,
+            "tool_risk_level": self.tool_risk_level,
+            "requires_confirmation": self.requires_confirmation,
+            "has_intent_signal": self.has_intent_signal,
         }
 
 
 def try_recover_tool_call_from_thinking(
     thinking: str,
     tool_registry: "tools_registry.ToolRegistry",
+    *,
+    model_recovery_enabled: bool = True,
+    search_window: int = DEFAULT_SEARCH_WINDOW,
 ) -> RecoveryResult | None:
     """
     Attempt to recover a tool call that was placed in thinking instead of being emitted.
@@ -93,32 +163,64 @@ def try_recover_tool_call_from_thinking(
     Uses a robust heuristic: finds all potential JSON objects near the end of the
     text and tries to match each one against registered tools until a match is found.
 
+    Respects tool-level recovery policies:
+    - "allow": Auto-recover and execute
+    - "deny": Skip this tool, try other candidates
+    - "confirm": Recover but mark requires_confirmation=True
+
+    Skips JSON candidates that appear to be examples (preceded by "Example:", etc.)
+
     Args:
         thinking: The model's thinking/analysis text.
         tool_registry: Registry of available tools to match against.
+        model_recovery_enabled: Whether the model profile allows recovery.
+            If False, returns None immediately.
+        search_window: Maximum characters to search from end of thinking text.
+            Default is 16k. Set to 0 or negative to search full text.
 
     Returns:
         RecoveryResult with the ToolUse and diagnostic info, or None if no recovery.
     """
+    if not model_recovery_enabled:
+        return None
+
     if not thinking or not tool_registry:
         return None
 
-    text_length = len(thinking)
+    original_text_length = len(thinking)
+
+    # Apply search window - only search last N characters
+    window_offset = 0
+    if search_window > 0 and len(thinking) > search_window:
+        window_offset = len(thinking) - search_window
+        thinking = thinking[-search_window:]
+
     candidates_tried = 0
 
     # Try each JSON candidate until one matches a tool
     for args, json_start, json_end in _extract_json_candidates(thinking):
         candidates_tried += 1
 
+        # Get text before JSON for context checking
+        text_before = thinking[:json_start] if json_start > 0 else ""
+
+        # Skip JSON candidates that appear to be examples
+        if text_before and _has_anti_pattern(text_before):
+            continue
+
         # Try to match against known tools by schema
-        tool_use = _match_args_to_tool(args, tool_registry)
+        tool_match = _match_args_to_tool_with_policy(args, tool_registry)
 
         # Also check if tool name is mentioned in context before the JSON
-        if tool_use is None and json_start > 0:
-            text_before = thinking[:json_start]
-            tool_use = _match_with_context(text_before, args, tool_registry)
+        if tool_match is None and json_start > 0:
+            tool_match = _match_with_context_and_policy(text_before, args, tool_registry)
 
-        if tool_use is not None:
+        if tool_match is not None:
+            tool_use, risk_level, recovery_policy = tool_match
+
+            # Check for intent signal
+            has_intent = _has_intent_signal(text_before) if text_before else False
+
             # Determine recovery type
             stripped = thinking.strip()
             if stripped.endswith("}") and json_end >= len(stripped) - 1:
@@ -133,18 +235,32 @@ def try_recover_tool_call_from_thinking(
             context_before = thinking[context_start:json_start]
             context_after = thinking[json_end + 1 : json_end + 101]
 
+            # Adjust position to account for window offset
+            actual_json_position = json_start + window_offset
+
             return RecoveryResult(
                 tool_use=tool_use,
                 recovery_type=recovery_type,
-                json_position=json_start,
-                text_length=text_length,
+                json_position=actual_json_position,
+                text_length=original_text_length,
                 candidates_tried=candidates_tried,
                 extracted_json=thinking[json_start : json_end + 1],
                 context_before=context_before,
                 context_after=context_after,
+                tool_risk_level=risk_level,
+                requires_confirmation=(recovery_policy == "confirm"),
+                has_intent_signal=has_intent,
             )
 
     return None
+
+
+# Type alias for tool match result: (ToolUse, risk_level, recovery_policy)
+_ToolMatch = tuple[api_types.ToolUse, str, str]
+
+
+MAX_JSON_CANDIDATES = 20
+"""Maximum number of JSON candidates to try before giving up."""
 
 
 def _extract_json_candidates(
@@ -158,6 +274,9 @@ def _extract_json_candidates(
     - Text has trailing punctuation/comments after JSON
     - Multiple JSON objects exist and we need to try several
     - JSON is followed by closing tags or other syntax
+
+    Limited to MAX_JSON_CANDIDATES (20) to prevent excessive CPU usage
+    in pathological cases.
 
     Args:
         text: The text to search for JSON.
@@ -175,9 +294,13 @@ def _extract_json_candidates(
 
     # Track which ranges we've already yielded to avoid duplicates
     yielded_ranges: set[tuple[int, int]] = set()
+    candidates_yielded = 0
 
     # Try each } from end to start
     for close_pos in reversed(close_brace_positions):
+        if candidates_yielded >= MAX_JSON_CANDIDATES:
+            break
+
         # Get text up to and including this }
         text_to_close = text[: close_pos + 1]
 
@@ -195,6 +318,7 @@ def _extract_json_candidates(
                 obj = _json.loads(candidate)
                 if isinstance(obj, dict):
                     yielded_ranges.add((open_pos, close_pos))
+                    candidates_yielded += 1
                     yield (obj, open_pos, close_pos)
                     # Found valid JSON for this }, move to next }
                     break
@@ -202,19 +326,27 @@ def _extract_json_candidates(
                 continue
 
 
-def _match_args_to_tool(
+def _match_args_to_tool_with_policy(
     args: dict[str, _typing.Any],
     tool_registry: "tools_registry.ToolRegistry",
-) -> api_types.ToolUse | None:
+) -> _ToolMatch | None:
     """
-    Try to match args to a tool based on required parameters.
+    Try to match args to a tool based on required parameters, respecting recovery policy.
 
-    We look for tools where the args contain all required parameters
-    from the tool's input schema.
+    We look for tools where:
+    1. Args contain all required parameters from the tool's input schema
+    2. Tool's recovery_policy is not "deny"
     """
-    candidates: list[tuple[str, int]] = []  # (tool_name, match_score)
+    import brynhild.tools.base as tools_base
+
+    # (tool, score) - tool object so we can access risk_level and recovery_policy
+    candidates: list[tuple[tools_base.Tool, int]] = []
 
     for tool in tool_registry.list_tools():
+        # Skip tools that deny recovery
+        if tool.recovery_policy == "deny":
+            continue
+
         schema = tool.input_schema
         if not schema:
             continue
@@ -237,29 +369,31 @@ def _match_args_to_tool(
         if required and required.issubset(arg_keys):
             score += 10  # Bonus for having all required
 
-        candidates.append((tool.name, score))
+        candidates.append((tool, score))
 
     if not candidates:
         return None
 
     # Pick best match
     candidates.sort(key=lambda x: x[1], reverse=True)
-    best_tool_name = candidates[0][0]
+    best_tool = candidates[0][0]
 
-    return api_types.ToolUse(
+    tool_use = api_types.ToolUse(
         id=f"recovered-{_uuid.uuid4().hex[:12]}",
-        name=best_tool_name,
+        name=best_tool.name,
         input=args,
     )
 
+    return (tool_use, best_tool.risk_level, best_tool.recovery_policy)
 
-def _match_with_context(
+
+def _match_with_context_and_policy(
     text_before: str,
     args: dict[str, _typing.Any],
     tool_registry: "tools_registry.ToolRegistry",
-) -> api_types.ToolUse | None:
+) -> _ToolMatch | None:
     """
-    Try to match args to a tool using context clues from surrounding text.
+    Try to match args to a tool using context clues, respecting recovery policy.
 
     Looks for tool names mentioned in the text before the JSON.
     """
@@ -267,6 +401,10 @@ def _match_with_context(
     context = text_before[-500:].lower()
 
     for tool in tool_registry.list_tools():
+        # Skip tools that deny recovery
+        if tool.recovery_policy == "deny":
+            continue
+
         tool_name_lower = tool.name.lower()
 
         # Check if tool name appears in context
@@ -284,11 +422,12 @@ def _match_with_context(
                 if schema:
                     properties = set(schema.get("properties", {}).keys())
                     if set(args.keys()).intersection(properties):
-                        return api_types.ToolUse(
+                        tool_use = api_types.ToolUse(
                             id=f"recovered-{_uuid.uuid4().hex[:12]}",
                             name=tool.name,
                             input=args,
                         )
+                        return (tool_use, tool.risk_level, tool.recovery_policy)
 
     return None
 
