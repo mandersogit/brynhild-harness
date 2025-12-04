@@ -296,6 +296,10 @@ class OllamaProvider(base.LLMProvider):
             "stream": stream,
         }
 
+        # Request usage data in streaming mode (OpenAI extension)
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
+
         if tools:
             payload["tools"] = [t.to_openai_format() for t in tools]
 
