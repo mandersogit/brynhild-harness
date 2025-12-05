@@ -113,8 +113,10 @@ main() {
     fi
     debug "Python: $python"
 
-    # Change to project root for .env loading
-    cd "$PROJECT_ROOT"
+    # Export project root so Python can find brynhild's .env
+    # (user's CWD is preserved for their relative file paths)
+    export BRYNHILD_PROJECT_ROOT="$PROJECT_ROOT"
+    debug "Project root: $PROJECT_ROOT"
     debug "Working directory: $(pwd)"
 
     # Execute brynhild

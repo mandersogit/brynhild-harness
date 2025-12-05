@@ -5,12 +5,43 @@ Loads configuration from environment variables with BRYNHILD_ prefix.
 """
 
 import getpass as _getpass
+import os as _os
 import pathlib as _pathlib
 import subprocess as _subprocess
 import typing as _typing
 
 import pydantic as _pydantic
 import pydantic_settings as _pydantic_settings
+
+
+def _get_env_file() -> str | None:
+    """Determine which .env file to load.
+
+    Priority:
+    1. BRYNHILD_ENV_FILE if set (explicit override)
+    2. .env in BRYNHILD_PROJECT_ROOT if set (brynhild's install directory)
+    3. None (no .env loaded, rely on environment variables)
+
+    This allows:
+    - Users to override with BRYNHILD_ENV_FILE for custom setups
+    - bin/brynhild to set BRYNHILD_PROJECT_ROOT so brynhild finds its own .env
+    - Running without any .env if neither is set (pure env var config)
+    """
+    # Explicit override takes priority
+    if env_file := _os.environ.get("BRYNHILD_ENV_FILE"):
+        if _pathlib.Path(env_file).exists():
+            return env_file
+        # If explicitly set but doesn't exist, don't fall back silently
+        return None
+
+    # brynhild project's .env (set by bin/brynhild wrapper)
+    if project_root := _os.environ.get("BRYNHILD_PROJECT_ROOT"):
+        env_path = _pathlib.Path(project_root) / ".env"
+        if env_path.exists():
+            return str(env_path)
+
+    # No .env found - rely on environment variables
+    return None
 
 
 def _get_username() -> str:
@@ -140,7 +171,7 @@ class Settings(_pydantic_settings.BaseSettings):
 
     model_config = _pydantic_settings.SettingsConfigDict(
         env_prefix="BRYNHILD_",
-        env_file=".env",
+        env_file=_get_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
     )
