@@ -299,6 +299,7 @@ class ConversationProcessor:
         auto_approve_tools: bool = False,
         dry_run: bool = False,
         logger: brynhild_logging.ConversationLogger | None = None,
+        markdown_logger: brynhild_logging.MarkdownLogger | None = None,
         hook_manager: hooks_manager.HookManager | None = None,
         session_id: str = "",
         cwd: _pathlib.Path | None = None,
@@ -318,6 +319,7 @@ class ConversationProcessor:
             auto_approve_tools: Auto-approve all tool executions.
             dry_run: Show tool calls without executing.
             logger: Conversation logger instance.
+            markdown_logger: Markdown logger for presentation output.
             hook_manager: Optional hook manager for lifecycle events.
             session_id: Session ID for hook context.
             cwd: Working directory for hook context.
@@ -334,6 +336,7 @@ class ConversationProcessor:
         self._auto_approve = auto_approve_tools
         self._dry_run = dry_run
         self._logger = logger
+        self._markdown_logger = markdown_logger
         self._hook_manager = hook_manager
         self._session_id = session_id
         self._cwd = cwd or _pathlib.Path.cwd()
@@ -507,6 +510,12 @@ class ConversationProcessor:
                 tool_id=tool_use.id,
                 call_type=call_type,
             )
+        if self._markdown_logger:
+            self._markdown_logger.log_tool_call(
+                tool_name=tool_use.name,
+                tool_input=tool_input,
+                tool_id=tool_use.id,
+            )
 
         # Check registry exists
         if self._tool_registry is None:
@@ -654,6 +663,14 @@ class ConversationProcessor:
         """Log a tool result if logger is configured."""
         if self._logger:
             self._logger.log_tool_result(
+                tool_name=tool_use.name,
+                success=result.success,
+                output=result.output if result.success else None,
+                error=result.error,
+                tool_id=tool_use.id,
+            )
+        if self._markdown_logger:
+            self._markdown_logger.log_tool_result(
                 tool_name=tool_use.name,
                 success=result.success,
                 output=result.output if result.success else None,
@@ -839,6 +856,13 @@ class ConversationProcessor:
                 summary=tool_use.input.get("summary", "Task completed."),
                 next_steps=tool_use.input.get("next_steps"),
             )
+            # Log to markdown
+            if self._markdown_logger:
+                self._markdown_logger.log_finish(
+                    status=self._finish_result.status,
+                    summary=self._finish_result.summary,
+                    next_steps=self._finish_result.next_steps,
+                )
             return True
         return False
 
@@ -1020,6 +1044,12 @@ class ConversationProcessor:
                         provider=usage.details.provider if usage.details else None,
                         generation_id=usage.details.generation_id if usage.details else None,
                     )
+                if self._markdown_logger:
+                    self._markdown_logger.log_usage(
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                        cost=usage.cost,
+                    )
             else:
                 # Log when provider doesn't report usage (unexpected)
                 if self._logger:
@@ -1037,6 +1067,8 @@ class ConversationProcessor:
             if current_thinking and self._logger:
                 self._logger.log_thinking(current_thinking)
                 final_thinking = current_thinking
+            if current_thinking and self._markdown_logger:
+                self._markdown_logger.log_thinking(current_thinking)
 
             # Try to recover tool calls from thinking if none were emitted
             # Some models put tool call JSON in thinking instead of emitting properly
@@ -1149,6 +1181,11 @@ class ConversationProcessor:
                             current_text,
                             thinking=current_thinking if current_thinking else None,
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_assistant_message(
+                            current_text,
+                            thinking=current_thinking if current_thinking else None,
+                        )
 
                 # Execute tools and add results as individual messages
                 finish_detected = False
@@ -1204,6 +1241,11 @@ class ConversationProcessor:
                             current_text,
                             thinking=current_thinking if current_thinking else None,
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_assistant_message(
+                            current_text,
+                            thinking=current_thinking if current_thinking else None,
+                        )
 
                     if self._inject_finish_reminder(working_messages):
                         continue  # Try again
@@ -1219,6 +1261,11 @@ class ConversationProcessor:
                 # Log assistant response
                 if self._logger:
                     self._logger.log_assistant_message(
+                        current_text,
+                        thinking=current_thinking if current_thinking else None,
+                    )
+                if self._markdown_logger:
+                    self._markdown_logger.log_assistant_message(
                         current_text,
                         thinking=current_thinking if current_thinking else None,
                     )
@@ -1334,6 +1381,13 @@ class ConversationProcessor:
                         provider=usage.details.provider if usage.details else None,
                         generation_id=usage.details.generation_id if usage.details else None,
                     )
+                if self._markdown_logger:
+                    usage = response.usage
+                    self._markdown_logger.log_usage(
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                        cost=usage.cost,
+                    )
             else:
                 # Log when provider doesn't report usage (unexpected)
                 if self._logger:
@@ -1350,6 +1404,8 @@ class ConversationProcessor:
                 await self._callbacks.on_thinking_complete(response.thinking)
                 if self._logger:
                     self._logger.log_thinking(response.thinking)
+                if self._markdown_logger:
+                    self._markdown_logger.log_thinking(response.thinking)
 
             # Get tool uses, with recovery from thinking if needed
             tool_uses = list(response.tool_uses) if response.tool_uses else []
@@ -1472,6 +1528,11 @@ class ConversationProcessor:
                             response.content,
                             thinking=response.thinking,
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_assistant_message(
+                            response.content,
+                            thinking=response.thinking,
+                        )
 
                 # Execute tools and add results as individual messages
                 finish_detected = False
@@ -1531,6 +1592,11 @@ class ConversationProcessor:
                             response.content,
                             thinking=response.thinking,
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_assistant_message(
+                            response.content,
+                            thinking=response.thinking,
+                        )
 
                     if self._inject_finish_reminder(working_messages):
                         continue  # Try again
@@ -1550,6 +1616,11 @@ class ConversationProcessor:
                 # Log assistant response
                 if self._logger:
                     self._logger.log_assistant_message(
+                        response.content,
+                        thinking=response.thinking,
+                    )
+                if self._markdown_logger:
+                    self._markdown_logger.log_assistant_message(
                         response.content,
                         thinking=response.thinking,
                     )

@@ -45,6 +45,7 @@ class ConversationRunner:
         system_prompt: str | None = None,
         verbose: bool = False,
         logger: logging.ConversationLogger | None = None,
+        markdown_logger: logging.MarkdownLogger | None = None,
         recovery_config: core_conversation.RecoveryConfig | None = None,
         show_thinking: bool = False,
         require_finish: bool = False,
@@ -64,6 +65,7 @@ class ConversationRunner:
             system_prompt: System prompt (required).
             verbose: Log full API requests/responses for debugging.
             logger: Conversation logger for JSONL output.
+            markdown_logger: Markdown logger for presentation output.
             recovery_config: Configuration for tool call recovery from thinking.
             show_thinking: If True, display full thinking/reasoning content.
             require_finish: Require agent to call Finish tool to complete.
@@ -76,6 +78,7 @@ class ConversationRunner:
         self._system_prompt = system_prompt
         self._verbose = verbose
         self._logger = logger
+        self._markdown_logger = markdown_logger
 
         # Create callbacks for the renderer
         self._callbacks = ui_adapters.RendererCallbacks(
@@ -96,6 +99,7 @@ class ConversationRunner:
             auto_approve_tools=auto_approve_tools,
             dry_run=dry_run,
             logger=logger,
+            markdown_logger=markdown_logger,
             recovery_config=recovery_config,
             require_finish=require_finish,
         )

@@ -265,6 +265,8 @@ async def _run_conversation(
     show_cost: bool = False,
     require_finish: bool = False,
     prompt_sources: list[str] | None = None,
+    markdown_output: _pathlib.Path | None = None,
+    markdown_title: str | None = None,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -325,6 +327,21 @@ async def _run_conversation(
         # Set raw logger on provider
         provider_instance.raw_logger = raw_logger
 
+    # Create markdown logger if output path specified
+    markdown_logger: logging.MarkdownLogger | None = None
+    if markdown_output:
+        markdown_logger = logging.MarkdownLogger(
+            output_path=markdown_output,
+            title=markdown_title,
+            provider=settings.provider,
+            model=settings.model,
+            profile=profile_name,
+            include_thinking=show_thinking,
+        )
+        markdown_logger.log_session_start(session_id)
+        if verbose:
+            renderer.show_info(f"Markdown output to: {markdown_output}")
+
     # Build conversation context with rules, skills, and profile
     # Pass tool_registry so prompt reflects which tools are actually available
     # Use empty registry if tools disabled (prompt will say "no tools available")
@@ -374,11 +391,16 @@ async def _run_conversation(
         dry_run=dry_run,
         verbose=verbose,
         logger=conv_logger,
+        markdown_logger=markdown_logger,
         system_prompt=context.system_prompt,  # Use enhanced prompt
         recovery_config=recovery_config,
         show_thinking=show_thinking,
         require_finish=require_finish,
     )
+
+    # Log user message to markdown logger
+    if markdown_logger:
+        markdown_logger.log_user_message(prompt)
 
     try:
         # Run conversation
@@ -394,6 +416,8 @@ async def _run_conversation(
         renderer.show_error(str(e))
         if conv_logger:
             conv_logger.log_error(str(e))
+        if markdown_logger:
+            markdown_logger.log_error(str(e))
         if json_output:
             renderer.finalize()
         raise SystemExit(1) from None
@@ -404,6 +428,8 @@ async def _run_conversation(
             conv_logger.close()
         if raw_logger:
             raw_logger.close()
+        if markdown_logger:
+            markdown_logger.close()
 
 
 async def _send_message(
@@ -574,6 +600,19 @@ def _handle_interactive_mode(
     multiple=True,
     help="Read prompt from file(s); can be specified multiple times",
 )
+@_click.option(
+    "-o",
+    "--markdown-output",
+    type=_click.Path(dir_okay=False, path_type=_pathlib.Path),
+    default=None,
+    help="Write presentation markdown to file",
+)
+@_click.option(
+    "--markdown-title",
+    type=str,
+    default=None,
+    help="Title for markdown output (default: timestamp)",
+)
 @_click.argument("prompt", required=False, nargs=-1)
 @_click.pass_context
 def chat(
@@ -590,6 +629,8 @@ def chat(
     raw_log: bool,
     require_finish: bool,
     prompt_file: tuple[_pathlib.Path, ...],
+    markdown_output: _pathlib.Path | None,
+    markdown_title: str | None,
     prompt: tuple[str, ...],
 ) -> None:
     """Send a prompt to the AI (single query mode)."""
@@ -662,6 +703,8 @@ def chat(
             show_cost=show_cost,
             require_finish=require_finish,
             prompt_sources=prompt_sources,
+            markdown_output=markdown_output,
+            markdown_title=markdown_title,
         )
     )
 
@@ -1875,6 +1918,118 @@ def logs_view(
         elif event_type == "session_end":
             _click.echo(f"🏁 Session ended ({event.get('total_events', 0)} events)")
             _click.echo()
+
+
+@logs_group.command(name="export")
+@_click.argument("log_file", required=False)
+@_click.option(
+    "-o",
+    "--output",
+    type=str,
+    default="-",
+    help="Output file path (use '-' for stdout)",
+)
+@_click.option(
+    "--title",
+    type=str,
+    default=None,
+    help="Title for markdown output (default: session ID)",
+)
+@_click.option(
+    "--thinking/--no-thinking",
+    "include_thinking",
+    default=True,
+    help="Include thinking sections",
+)
+@_click.option(
+    "--thinking-style",
+    type=_click.Choice(["collapsible", "full", "summary", "hidden"]),
+    default="collapsible",
+    help="How to render thinking content",
+)
+@_click.pass_context
+def logs_export(
+    ctx: _click.Context,
+    log_file: str | None,
+    output: str,
+    title: str | None,
+    include_thinking: bool,
+    thinking_style: str,
+) -> None:
+    """Export a conversation log to presentation markdown.
+
+    If LOG_FILE is not specified, exports the most recent log.
+    Use '-o -' to print to stdout.
+
+    Examples:
+
+        brynhild logs export -o session.md
+
+        brynhild logs export -o -  # print to stdout
+
+        brynhild logs export brynhild_20251205.jsonl -o report.md --title "Code Review"
+
+        brynhild logs export -o report.md --no-thinking
+    """
+    settings: config.Settings = ctx.obj["settings"]
+    log_dir = settings.logs_dir
+
+    # Determine which file to export
+    if log_file:
+        log_path = _pathlib.Path(log_file)
+        if not log_path.is_absolute():
+            log_path = log_dir / log_file
+    else:
+        # Find most recent (exclude raw logs)
+        log_files = sorted(
+            [f for f in log_dir.glob("brynhild_*.jsonl") if not f.name.startswith("brynhild_raw_")],
+            reverse=True,
+        )
+        if not log_files:
+            _click.echo(f"No logs found in {log_dir}", err=True)
+            raise SystemExit(1)
+        log_path = log_files[0]
+
+    if not log_path.exists():
+        _click.echo(f"Log file not found: {log_path}", err=True)
+        raise SystemExit(1)
+
+    # Read events
+    events: list[dict[str, _typing.Any]] = []
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    events.append(_json.loads(line))
+                except _json.JSONDecodeError:
+                    continue
+
+    if not events:
+        _click.echo(f"No events found in {log_path}", err=True)
+        raise SystemExit(1)
+
+    # Generate markdown
+    markdown = logging.export_log_to_markdown(
+        events,
+        title=title,
+        include_thinking=include_thinking,
+        thinking_style=thinking_style,
+    )
+
+    # Write output
+    if output == "-":
+        # Print to stdout
+        _click.echo(markdown)
+    else:
+        # Write to file
+        output_path = _pathlib.Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(markdown, encoding="utf-8")
+
+        _click.echo(f"✅ Exported to {output}", err=True)
+        _click.echo(f"   Source: {log_path.name}", err=True)
+        _click.echo(f"   Events: {len(events)}", err=True)
 
 
 @logs_group.command(name="raw")
