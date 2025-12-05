@@ -6,6 +6,64 @@ import tempfile as _tempfile
 import brynhild.logging as logging
 
 
+class TestFormatMarkdownTable:
+    """Tests for format_markdown_table function."""
+
+    def test_basic_table(self) -> None:
+        """Test basic table formatting."""
+        result = logging.format_markdown_table(
+            ["Name", "Value"],
+            [["Alice", "100"], ["Bob", "200"]],
+        )
+
+        lines = result.strip().split("\n")
+        assert len(lines) == 4  # header, separator, 2 data rows
+
+        # Check alignment - all rows should have same structure
+        assert lines[0].startswith("| Name")
+        assert lines[0].endswith("|")
+        assert lines[1].startswith("|--")
+        assert "| Alice" in lines[2]
+        assert "| Bob" in lines[3]
+
+    def test_column_alignment(self) -> None:
+        """Test columns are properly aligned to longest value."""
+        result = logging.format_markdown_table(
+            ["Metric", "Value"],
+            [
+                ["Short", "1"],
+                ["Much Longer Name", "12345"],
+            ],
+        )
+
+        lines = result.strip().split("\n")
+
+        # All pipe characters should be vertically aligned
+        # Find positions of pipes in header
+        header_pipes = [i for i, c in enumerate(lines[0]) if c == "|"]
+
+        # All rows should have pipes at same positions
+        for line in lines:
+            line_pipes = [i for i, c in enumerate(line) if c == "|"]
+            assert line_pipes == header_pipes, f"Misaligned pipes in: {line}"
+
+    def test_empty_table(self) -> None:
+        """Test empty table returns empty string."""
+        assert logging.format_markdown_table([], []) == ""
+        assert logging.format_markdown_table(["Header"], []) == ""
+
+    def test_three_columns(self) -> None:
+        """Test table with more than two columns."""
+        result = logging.format_markdown_table(
+            ["A", "B", "C"],
+            [["1", "2", "3"], ["x", "y", "z"]],
+        )
+
+        lines = result.strip().split("\n")
+        # Should have 3 separators (4 pipes) per line
+        assert lines[0].count("|") == 4
+
+
 class TestExportLogToMarkdown:
     """Tests for export_log_to_markdown function."""
 
@@ -33,7 +91,11 @@ class TestExportLogToMarkdown:
         assert "Hello" in markdown
         assert "### Assistant" in markdown
         assert "Hi there!" in markdown
-        assert "100 in / 50 out" in markdown
+        # Check summary shows context size and generated tokens
+        assert "Context Size" in markdown
+        assert "100 tokens" in markdown
+        assert "Generated" in markdown
+        assert "50 tokens" in markdown
 
     def test_export_with_tools(self) -> None:
         """Test exporting logs with tool calls."""
@@ -405,7 +467,11 @@ class TestMarkdownLogger:
 
             content = output_path.read_text()
 
-            assert "1,000 in / 500 out" in content
+            # Check summary shows context size and generated tokens
+            assert "Context Size" in content
+            assert "1,000 tokens" in content
+            assert "Generated" in content
+            assert "500 tokens" in content
             assert "$0.0100" in content
 
     def test_tools_used_tracking(self) -> None:

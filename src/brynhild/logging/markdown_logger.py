@@ -11,6 +11,57 @@ import pathlib as _pathlib
 import typing as _typing
 
 
+def format_markdown_table(
+    headers: list[str],
+    rows: list[list[str]],
+) -> str:
+    """
+    Format a properly aligned markdown table.
+
+    Args:
+        headers: Column header strings.
+        rows: List of rows, each row is a list of cell values.
+
+    Returns:
+        Formatted markdown table string with aligned columns.
+
+    Example:
+        >>> format_markdown_table(
+        ...     ["Name", "Value"],
+        ...     [["Total", "100"], ["Average", "25"]],
+        ... )
+        '| Name    | Value |\\n|---------|-------|\\n| Total   | 100   |\\n| Average | 25    |\\n'
+    """
+    if not headers or not rows:
+        return ""
+
+    # Calculate column widths (max of header and all row values)
+    num_cols = len(headers)
+    widths = [len(h) for h in headers]
+
+    for row in rows:
+        for i, cell in enumerate(row[:num_cols]):
+            widths[i] = max(widths[i], len(cell))
+
+    # Build table
+    lines: list[str] = []
+
+    # Header row
+    header_cells = [f" {headers[i]:<{widths[i]}} " for i in range(num_cols)]
+    lines.append("|" + "|".join(header_cells) + "|")
+
+    # Separator row
+    sep_cells = ["-" * (widths[i] + 2) for i in range(num_cols)]
+    lines.append("|" + "|".join(sep_cells) + "|")
+
+    # Data rows
+    for row in rows:
+        data_cells = [f" {row[i] if i < len(row) else '':<{widths[i]}} " for i in range(num_cols)]
+        lines.append("|" + "|".join(data_cells) + "|")
+
+    return "\n".join(lines) + "\n"
+
+
 class MarkdownLogger:
     """
     Generates presentation-grade markdown from conversation events.
@@ -84,9 +135,11 @@ class MarkdownLogger:
         self._total_output_tokens = 0
         self._total_cost: float = 0.0
         self._tools_used: dict[str, int] = {}  # tool_name -> call_count
+        self._tool_recoveries = 0  # Count of tool calls recovered from thinking
 
         # State tracking
         self._last_thinking: str | None = None  # Buffer for thinking before assistant message
+        self._pending_usage: list[tuple[int, int, float | None]] = []  # Buffer usage until turn ends
         self._enabled = True
 
     def log_session_start(self, session_id: str) -> None:
@@ -104,6 +157,8 @@ class MarkdownLogger:
         """Log a user message."""
         # Flush any buffered thinking first (shouldn't happen but be safe)
         self._flush_thinking()
+        # Flush any pending usage from the previous assistant turn
+        self._flush_pending_usage()
 
         self._sections.append(f"### User\n\n{content}\n")
 
@@ -241,17 +296,41 @@ class MarkdownLogger:
         cost: float | None = None,
         reasoning_tokens: int | None = None,  # noqa: ARG002
     ) -> None:
-        """Log token usage - accumulated for summary."""
+        """Log token usage - flushes previous usage, buffers new one."""
+        # A new usage event means a new API call completed.
+        # Flush any PREVIOUS buffered usage to the last section (content from previous API call)
+        self._flush_pending_usage()
+
+        # Buffer this new usage - it will be flushed when next API call completes or turn ends
+        self._pending_usage.append((input_tokens, output_tokens, cost))
+
+        # Accumulate for summary
         self._total_input_tokens = input_tokens  # Use latest (context size)
         self._total_output_tokens += output_tokens  # Accumulate output
         if cost is not None:
             self._total_cost += cost
 
-    def log_event(self, event_type: str, **kwargs: _typing.Any) -> None:
+    def _flush_pending_usage(self) -> None:
+        """Flush any pending usage to the last section."""
+        if not self._pending_usage or not self._sections:
+            self._pending_usage = []
+            return
+
+        # Add all buffered usage entries as footers to the last section
+        for input_tokens, output_tokens, cost in self._pending_usage:
+            usage_line = f"\n*Context: {input_tokens:,} tokens | Generated: {output_tokens:,} tokens"
+            if cost is not None and cost > 0:
+                usage_line += f" | ${cost:.4f}"
+            usage_line += "*\n"
+            self._sections[-1] += usage_line
+
+        self._pending_usage = []
+
+    def log_event(self, event_type: str, **kwargs: _typing.Any) -> None:  # noqa: ARG002
         """Log a generic event - most are not shown in presentation output."""
-        # Most generic events are internal and not shown in presentation
-        # But we could add specific handling for certain event types
-        pass
+        # Track tool recoveries for summary
+        if event_type == "tool_call_recovered":
+            self._tool_recoveries += 1
 
     def _format_thinking(self, thinking: str) -> str:
         """Format thinking content according to configured style."""
@@ -312,31 +391,39 @@ class MarkdownLogger:
 
     def _render_summary(self) -> str:
         """Render the session summary footer."""
-        summary = "\n---\n\n## Session Summary\n\n"
-        summary += "| Metric | Value |\n"
-        summary += "|--------|-------|\n"
+        rows: list[list[str]] = []
 
-        # Tokens
-        summary += f"| Total Tokens | {self._total_input_tokens:,} in / {self._total_output_tokens:,} out |\n"
+        # Context size (input tokens)
+        if self._total_input_tokens > 0:
+            rows.append(["Context Size", f"{self._total_input_tokens:,} tokens"])
+
+        # Generated tokens
+        if self._total_output_tokens > 0:
+            rows.append(["Generated", f"{self._total_output_tokens:,} tokens"])
 
         # Cost (if tracked)
         if self._total_cost > 0:
-            summary += f"| Estimated Cost | ${self._total_cost:.4f} |\n"
+            rows.append(["Estimated Cost", f"${self._total_cost:.4f}"])
 
         # Tools used
         if self._tools_used:
             tools_str = ", ".join(
                 f"{name} ({count})" for name, count in sorted(self._tools_used.items())
             )
-            summary += f"| Tools Used | {tools_str} |\n"
+            rows.append(["Tools Used", tools_str])
+
+        # Tool recoveries (if any)
+        if self._tool_recoveries > 0:
+            rows.append(["Tool Recoveries", str(self._tool_recoveries)])
 
         # Duration
         if self._start_time:
             duration = _datetime.datetime.now() - self._start_time
             duration_str = str(duration).split(".")[0]  # Remove microseconds
-            summary += f"| Duration | {duration_str} |\n"
+            rows.append(["Duration", duration_str])
 
-        summary += "\n---\n\n*Generated by Brynhild*\n"
+        summary = "\n---\n\n## Session Summary\n\n"
+        summary += format_markdown_table(["Metric", "Value"], rows)
 
         return summary
 
@@ -366,6 +453,7 @@ class MarkdownLogger:
 
         # Flush any remaining buffered content
         self._flush_thinking()
+        self._flush_pending_usage()
 
         # Render and write
         document = self._render_document()
@@ -443,7 +531,23 @@ def export_log_to_markdown(
     total_input_tokens = 0
     total_output_tokens = 0
     total_cost: float = 0.0
+    tool_recoveries = 0
     last_thinking: str | None = None
+    pending_usage: list[tuple[int, int, float]] = []  # Buffer usage until turn ends
+
+    def flush_pending_usage() -> None:
+        """Flush pending usage to the last section."""
+        nonlocal pending_usage
+        if not pending_usage or not sections:
+            pending_usage = []
+            return
+        for input_tok, output_tok, cost in pending_usage:
+            usage_line = f"\n*Context: {input_tok:,} tokens | Generated: {output_tok:,} tokens"
+            if cost and cost > 0:
+                usage_line += f" | ${cost:.4f}"
+            usage_line += "*\n"
+            sections[-1] += usage_line
+        pending_usage = []
 
     def format_thinking(thinking: str) -> str:
         """Format thinking content according to style."""
@@ -474,6 +578,8 @@ def export_log_to_markdown(
         event_type = event.get("event_type")
 
         if event_type == "user_message":
+            # Flush pending usage from previous assistant turn
+            flush_pending_usage()
             content = event.get("content", "")
             sections.append(f"### User\n\n{content}\n")
 
@@ -588,10 +694,28 @@ def export_log_to_markdown(
             sections.append(section)
 
         elif event_type == "usage":
-            total_input_tokens = event.get("input_tokens", 0)
-            total_output_tokens += event.get("output_tokens", 0)
-            if event.get("cost_usd"):
-                total_cost += event.get("cost_usd", 0)
+            input_tokens = event.get("input_tokens", 0)
+            output_tokens = event.get("output_tokens", 0)
+            cost = event.get("cost_usd", 0)
+
+            # A new usage event means a new API call completed.
+            # Flush any PREVIOUS buffered usage to the last section (content from previous API call)
+            flush_pending_usage()
+
+            # Buffer this new usage - it will be flushed when next API call completes or turn ends
+            pending_usage.append((input_tokens, output_tokens, cost))
+
+            # Accumulate for summary
+            total_input_tokens = input_tokens
+            total_output_tokens += output_tokens
+            if cost:
+                total_cost += cost
+
+        elif event_type == "tool_call_recovered":
+            tool_recoveries += 1
+
+    # Flush any remaining usage from the last turn
+    flush_pending_usage()
 
     # Build header
     doc_title = title or f"Session {session_id}" if session_id else "Brynhild Session"
@@ -612,17 +736,32 @@ def export_log_to_markdown(
         header += f"> **Session ID**: {session_id}\n"
     header += "\n---\n\n## Conversation\n\n"
 
-    # Build summary
-    summary = "\n---\n\n## Session Summary\n\n"
-    summary += "| Metric | Value |\n"
-    summary += "|--------|-------|\n"
-    summary += f"| Total Tokens | {total_input_tokens:,} in / {total_output_tokens:,} out |\n"
+    # Build summary rows
+    summary_rows: list[list[str]] = []
+
+    # Context size (input tokens)
+    if total_input_tokens > 0:
+        summary_rows.append(["Context Size", f"{total_input_tokens:,} tokens"])
+
+    # Generated tokens
+    if total_output_tokens > 0:
+        summary_rows.append(["Generated", f"{total_output_tokens:,} tokens"])
+
+    # Cost
     if total_cost > 0:
-        summary += f"| Estimated Cost | ${total_cost:.4f} |\n"
+        summary_rows.append(["Estimated Cost", f"${total_cost:.4f}"])
+
+    # Tools used
     if tools_used:
         tools_str = ", ".join(f"{name} ({count})" for name, count in sorted(tools_used.items()))
-        summary += f"| Tools Used | {tools_str} |\n"
-    summary += "\n---\n\n*Generated by Brynhild*\n"
+        summary_rows.append(["Tools Used", tools_str])
+
+    # Tool recoveries
+    if tool_recoveries > 0:
+        summary_rows.append(["Tool Recoveries", str(tool_recoveries)])
+
+    summary = "\n---\n\n## Session Summary\n\n"
+    summary += format_markdown_table(["Metric", "Value"], summary_rows)
 
     # Combine all parts
     return header + "\n".join(sections) + summary
