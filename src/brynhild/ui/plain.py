@@ -66,18 +66,21 @@ class PlainTextRenderer(base.Renderer):
         )
         self._output.flush()
 
-    def show_prompt_source(self, file_paths: list[str], content: str) -> None:
-        """Display the source of a prompt read from file(s)."""
+    def show_prompt_source(self, sources: list[str], content: str) -> None:
+        """Display the source(s) of a prompt."""
         # Truncate content for display
         max_display_chars = 1000
         display_content = content
         if len(content) > max_display_chars:
             display_content = content[:max_display_chars] + "... (truncated)"
-        # Format source info
-        if len(file_paths) == 1:
-            source_info = file_paths[0]
-        else:
-            source_info = ", ".join(file_paths)
+
+        # Format sources for display
+        def format_source(s: str) -> str:
+            if s.startswith("file:"):
+                return s[5:]  # Remove "file:" prefix
+            return s
+
+        source_info = ", ".join(format_source(s) for s in sources)
         self._output.write(f"[Prompt from {source_info}]\n{display_content}\n")
         self._output.flush()
 

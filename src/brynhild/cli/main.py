@@ -264,7 +264,7 @@ async def _run_conversation(
     show_thinking: bool = False,
     show_cost: bool = False,
     require_finish: bool = False,
-    prompt_files: tuple[_pathlib.Path, ...] = (),
+    prompt_sources: list[str] | None = None,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -349,10 +349,9 @@ async def _run_conversation(
         session=None,  # TODO: Pass actual session name when resume is implemented
     )
 
-    # Show prompt source if prompt was read from file(s)
-    if prompt_files:
-        file_paths = [str(f) for f in prompt_files]
-        renderer.show_prompt_source(file_paths, prompt)
+    # Show prompt source if prompt includes multiple sources
+    if prompt_sources:
+        renderer.show_prompt_source(prompt_sources, prompt)
 
     if verbose and context.injections:
         renderer.show_info(f"Applied {len(context.injections)} context injection(s)")
@@ -599,17 +598,34 @@ def chat(
     # Note: print_mode is accepted but not currently used - JSON output is primary
     _ = print_mode  # Acknowledge the parameter
 
-    # Handle prompt from file(s), arguments, or stdin (in priority order)
-    prompt_text: str | None = None
-    if prompt_file:
-        # Concatenate all files in order, separated by double newlines
-        file_contents = [f.read_text().strip() for f in prompt_file]
-        prompt_text = "\n\n".join(file_contents)
-    elif prompt:
-        prompt_text = " ".join(prompt)
-    elif not _sys.stdin.isatty():
-        # Check for piped input
-        prompt_text = _sys.stdin.read().strip()
+    # Collect all prompt sources: files, stdin, ARGV (in that order)
+    # Each source is wrapped in XML tags to communicate provenance to the model
+    prompt_parts: list[str] = []
+    prompt_sources: list[str] = []  # For display: "file:path", "stdin", "args"
+
+    # 1. Files (in order specified)
+    for f in prompt_file:
+        content = f.read_text().strip()
+        if content:
+            prompt_parts.append(f'<prompt_file path="{f}">\n{content}\n</prompt_file>')
+            prompt_sources.append(f"file:{f}")
+
+    # 2. Stdin (if piped)
+    if not _sys.stdin.isatty():
+        stdin_content = _sys.stdin.read().strip()
+        if stdin_content:
+            prompt_parts.append(f"<stdin>\n{stdin_content}\n</stdin>")
+            prompt_sources.append("stdin")
+
+    # 3. ARGV arguments
+    if prompt:
+        argv_content = " ".join(prompt)
+        if argv_content.strip():
+            prompt_parts.append(f"<prompt>\n{argv_content}\n</prompt>")
+            prompt_sources.append("args")
+
+    # Combine all parts
+    prompt_text = "\n\n".join(prompt_parts) if prompt_parts else None
 
     if not prompt_text:
         if json_output:
@@ -645,7 +661,7 @@ def chat(
             show_thinking=show_thinking,
             show_cost=show_cost,
             require_finish=require_finish,
-            prompt_files=prompt_file,
+            prompt_sources=prompt_sources,
         )
     )
 

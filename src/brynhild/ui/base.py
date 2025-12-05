@@ -147,17 +147,17 @@ class Renderer(_abc.ABC):
 
     def show_prompt_source(  # noqa: B027
         self,
-        file_paths: list[str],  # noqa: ARG002
+        sources: list[str],  # noqa: ARG002
         content: str,  # noqa: ARG002
     ) -> None:
         """
-        Display the source of a prompt read from file(s).
+        Display the source(s) of a prompt.
 
         Optional - renderers may override to show prompt source info.
-        Called after session banner when prompt is read from file(s).
+        Called after session banner when prompt has trackable sources.
 
         Args:
-            file_paths: List of paths to the prompt file(s).
+            sources: List of source identifiers ("file:/path", "stdin", "args").
             content: The combined prompt content (may be truncated for display).
         """
 

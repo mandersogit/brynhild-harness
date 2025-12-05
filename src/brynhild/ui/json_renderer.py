@@ -58,9 +58,9 @@ class JSONRenderer(base.Renderer):
         self._total_cost: float = 0.0
         self._reasoning_tokens: int = 0
 
-    def show_prompt_source(self, file_paths: list[str], content: str) -> None:
-        """Record the source of a prompt read from file(s)."""
-        self._prompt_source = {"files": file_paths, "content": content}
+    def show_prompt_source(self, sources: list[str], content: str) -> None:
+        """Record the source(s) of a prompt."""
+        self._prompt_source = {"sources": sources, "content": content}
 
     def show_user_message(self, content: str) -> None:
         """Record a user message."""
