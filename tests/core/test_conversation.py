@@ -711,6 +711,7 @@ class ThinkingOnlyMockProvider(api_base.LLMProvider):
     ) -> None:
         self._responses = responses
         self._call_index = 0
+        self.received_messages: list[list[dict[str, _typing.Any]]] = []
 
     @property
     def name(self) -> str:
@@ -728,12 +729,13 @@ class ThinkingOnlyMockProvider(api_base.LLMProvider):
 
     async def complete(
         self,
-        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        messages: list[dict[str, _typing.Any]],
         *,
         system: str | None = None,  # noqa: ARG002
         max_tokens: int = 4096,  # noqa: ARG002
         tools: list[api_types.Tool] | None = None,  # noqa: ARG002
     ) -> api_types.CompletionResponse:
+        self.received_messages.append(list(messages))
         if self._call_index < len(self._responses):
             resp = self._responses[self._call_index]
         else:
@@ -751,12 +753,13 @@ class ThinkingOnlyMockProvider(api_base.LLMProvider):
 
     async def stream(
         self,
-        messages: list[dict[str, _typing.Any]],  # noqa: ARG002
+        messages: list[dict[str, _typing.Any]],
         *,
         system: str | None = None,  # noqa: ARG002
         max_tokens: int = 4096,  # noqa: ARG002
         tools: list[api_types.Tool] | None = None,  # noqa: ARG002
     ) -> _typing.AsyncIterator[api_types.StreamEvent]:
+        self.received_messages.append(list(messages))
         if self._call_index < len(self._responses):
             resp = self._responses[self._call_index]
         else:
@@ -867,6 +870,62 @@ class TestThinkingOnlyRecovery:
         assert result.response_text == "Hello!"
         # Only one call needed
         assert provider._call_index == 1
+
+    @_pytest.mark.asyncio
+    async def test_thinking_only_preserves_reasoning_in_retry(self) -> None:
+        """
+        When model produces thinking-only, the retry should include the thinking
+        as reasoning so the model has context.
+
+        This is a critical test - without preserving reasoning, the model loses
+        context about what it was trying to do, leading to repeated failures.
+        """
+        thinking_content = "I should call the Finish tool with success status."
+        provider = ThinkingOnlyMockProvider(responses=[
+            # First response: thinking only
+            {"thinking": thinking_content},
+            # Second response: actual text
+            {"text": "Done!", "thinking": "Now I'll respond"},
+        ])
+
+        callbacks = MockCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "hello"}],
+            system_prompt="You are helpful.",
+        )
+
+        # Should eventually get a response
+        assert result.response_text == "Done!"
+        # Two calls should have been made
+        assert len(provider.received_messages) == 2
+
+        # The second call should include the thinking from the first attempt
+        # in the assistant message's reasoning field
+        second_call_messages = provider.received_messages[1]
+
+        # Find the assistant message with the thinking-only fake tool call
+        thinking_only_assistant_msg = None
+        for msg in second_call_messages:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                tool_calls = msg["tool_calls"]
+                if any(tc.get("function", {}).get("name") == "incomplete_response"
+                       for tc in tool_calls):
+                    thinking_only_assistant_msg = msg
+                    break
+
+        assert thinking_only_assistant_msg is not None, (
+            "Expected to find assistant message with incomplete_response tool call"
+        )
+        assert thinking_only_assistant_msg.get("reasoning") == thinking_content, (
+            f"Expected reasoning field to contain '{thinking_content}', "
+            f"got: {thinking_only_assistant_msg.get('reasoning')}"
+        )
 
 
 # =============================================================================
@@ -1027,7 +1086,10 @@ class CancellableMockCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def on_usage_update(
-        self, input_tokens: int, output_tokens: int  # noqa: ARG002
+        self,
+        input_tokens: int,  # noqa: ARG002
+        output_tokens: int,  # noqa: ARG002
+        usage: _typing.Any = None,  # noqa: ARG002
     ) -> None:
         pass
 
@@ -1086,7 +1148,10 @@ class PermissionDenyingCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def on_usage_update(
-        self, input_tokens: int, output_tokens: int  # noqa: ARG002
+        self,
+        input_tokens: int,  # noqa: ARG002
+        output_tokens: int,  # noqa: ARG002
+        usage: _typing.Any = None,  # noqa: ARG002
     ) -> None:
         pass
 
