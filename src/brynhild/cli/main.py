@@ -138,6 +138,11 @@ def _validate_sandbox_availability(settings: config.Settings) -> None:
     is_flag=True,
     help="Display full thinking/reasoning content (for debugging)",
 )
+@_click.option(
+    "--show-cost",
+    is_flag=True,
+    help="Display cost information in token footers (OpenRouter only)",
+)
 @_click.pass_context
 def cli(
     ctx: _click.Context,
@@ -152,6 +157,7 @@ def cli(
     dangerously_skip_permissions: bool,
     dangerously_skip_sandbox: bool,
     show_thinking: bool,
+    show_cost: bool,
 ) -> None:
     """
     Brynhild - AI coding assistant.
@@ -203,6 +209,7 @@ def cli(
     ctx.obj["session_name"] = session_name
     ctx.obj["profile_name"] = profile
     ctx.obj["show_thinking"] = show_thinking
+    ctx.obj["show_cost"] = show_cost
 
     # If a subcommand is invoked, let it handle everything
     if ctx.invoked_subcommand is not None:
@@ -227,14 +234,15 @@ def _create_renderer(
     no_color: bool,
     *,
     show_thinking: bool = False,
+    show_cost: bool = False,
 ) -> ui.Renderer:
     """Create the appropriate renderer based on output mode."""
     if json_output:
-        return ui.JSONRenderer()
+        return ui.JSONRenderer(show_cost=show_cost)
     elif no_color or not _sys.stdout.isatty():
-        return ui.PlainTextRenderer()
+        return ui.PlainTextRenderer(show_cost=show_cost)
     else:
-        return ui.RichConsoleRenderer(show_thinking=show_thinking)
+        return ui.RichConsoleRenderer(show_thinking=show_thinking, show_cost=show_cost)
 
 
 async def _run_conversation(
@@ -250,15 +258,19 @@ async def _run_conversation(
     verbose: bool = False,
     log_enabled: bool | None = None,
     log_file: str | None = None,
+    raw_log_enabled: bool = False,
     profile_name: str | None = None,
     show_thinking: bool = False,
+    show_cost: bool = False,
     require_finish: bool = False,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
 
     # Create renderer
-    renderer = _create_renderer(json_output, no_color, show_thinking=show_thinking)
+    renderer = _create_renderer(
+        json_output, no_color, show_thinking=show_thinking, show_cost=show_cost
+    )
 
     # Create provider
     try:
@@ -282,6 +294,7 @@ async def _run_conversation(
     # Use explicit parameter if set, otherwise fall back to settings
     should_log = log_enabled if log_enabled is not None else settings.log_conversations
     conv_logger: logging.ConversationLogger | None = None
+    session_id = _datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     if should_log:
         conv_logger = logging.ConversationLogger(
             log_dir=settings.logs_dir,
@@ -293,6 +306,22 @@ async def _run_conversation(
         )
         if conv_logger.file_path and verbose:
             renderer.show_info(f"Logging to: {conv_logger.file_path}")
+
+    # Create raw payload logger if enabled
+    raw_logger: logging.RawPayloadLogger | None = None
+    if raw_log_enabled:
+        raw_logger = logging.RawPayloadLogger(
+            log_dir=settings.logs_dir,
+            session_id=session_id,
+            private_mode=settings.log_dir_private,
+            provider=settings.provider,
+            model=settings.model,
+            enabled=True,
+        )
+        if raw_logger.file_path and verbose:
+            renderer.show_info(f"Raw logging to: {raw_logger.file_path}")
+        # Set raw logger on provider
+        provider_instance.raw_logger = raw_logger
 
     # Build conversation context with rules, skills, and profile
     # Pass tool_registry so prompt reflects which tools are actually available
@@ -364,9 +393,11 @@ async def _run_conversation(
         raise SystemExit(1) from None
 
     finally:
-        # Close the logger
+        # Close loggers
         if conv_logger:
             conv_logger.close()
+        if raw_logger:
+            raw_logger.close()
 
 
 async def _send_message(
@@ -524,6 +555,7 @@ def _handle_interactive_mode(
 @_click.option("--tools/--no-tools", "tools_enabled", default=True, help="Enable/disable tool use")
 @_click.option("--no-log", is_flag=True, help="Disable conversation logging")
 @_click.option("--log-file", type=str, default=None, help="Explicit log file path")
+@_click.option("--raw-log", is_flag=True, help="Enable raw payload logging (full JSON request/response)")
 @_click.option(
     "--require-finish",
     is_flag=True,
@@ -542,6 +574,7 @@ def chat(
     tools_enabled: bool,
     no_log: bool,
     log_file: str | None,
+    raw_log: bool,
     require_finish: bool,
     prompt: tuple[str, ...],
 ) -> None:
@@ -568,9 +601,10 @@ def chat(
             )
         raise SystemExit(1)
 
-    # Get profile and show_thinking from parent context
+    # Get profile and display options from parent context
     profile_name: str | None = ctx.obj.get("profile_name")
     show_thinking: bool = ctx.obj.get("show_thinking", False)
+    show_cost: bool = ctx.obj.get("show_cost", False)
 
     # Send the message using new conversation runner
     _run_async(
@@ -586,8 +620,10 @@ def chat(
             verbose=settings.verbose,
             log_enabled=not no_log if no_log else None,
             log_file=log_file,
+            raw_log_enabled=raw_log or settings.raw_log,
             profile_name=profile_name,
             show_thinking=show_thinking,
+            show_cost=show_cost,
             require_finish=require_finish,
         )
     )
@@ -1530,8 +1566,11 @@ def logs_list(ctx: _click.Context, limit: int, json_output: bool) -> None:
             _click.echo(f"No logs found. Log directory: {log_dir}")
         return
 
-    # Find all log files
-    log_files = sorted(log_dir.glob("brynhild_*.jsonl"), reverse=True)[:limit]
+    # Find all log files (exclude raw logs)
+    log_files = sorted(
+        [f for f in log_dir.glob("brynhild_*.jsonl") if not f.name.startswith("brynhild_raw_")],
+        reverse=True,
+    )[:limit]
 
     if json_output:
         logs_data = []
@@ -1588,8 +1627,11 @@ def logs_view(
         if not log_path.is_absolute():
             log_path = log_dir / log_file
     else:
-        # Find most recent
-        log_files = sorted(log_dir.glob("brynhild_*.jsonl"), reverse=True)
+        # Find most recent (exclude raw logs)
+        log_files = sorted(
+            [f for f in log_dir.glob("brynhild_*.jsonl") if not f.name.startswith("brynhild_raw_")],
+            reverse=True,
+        )
         if not log_files:
             _click.echo(f"No logs found in {log_dir}", err=True)
             raise SystemExit(1)
@@ -1730,9 +1772,345 @@ def logs_view(
                 _click.echo(f"   Context: {event.get('context')}")
             _click.echo()
 
+        elif event_type == "thinking":
+            # Standalone thinking event (when model produces thinking separately)
+            thinking = event.get("content", "")
+            _click.echo(f"💭 Thinking [{timestamp}] ({len(thinking)} chars)")
+            _click.echo("-" * 40)
+            if summary:
+                preview = thinking[:300] + "..." if len(thinking) > 300 else thinking
+                _click.echo(preview)
+            else:
+                _click.echo(thinking)
+            _click.echo("-" * 40)
+            _click.echo()
+
+        elif event_type == "thinking_only_response":
+            # Model produced only thinking, no actual output
+            thinking = event.get("thinking", "")
+            attempt = event.get("retry_attempt", "?")
+            _click.echo(f"⚠️ Thinking-only response [{timestamp}] (attempt {attempt}/3)")
+            _click.echo("-" * 40)
+            if summary:
+                preview = thinking[:300] + "..." if len(thinking) > 300 else thinking
+                _click.echo(preview)
+            else:
+                _click.echo(thinking)
+            _click.echo("-" * 40)
+            _click.echo()
+
+        elif event_type == "thinking_retry_feedback":
+            # Feedback sent to model to prompt proper output
+            _click.echo(f"↩️ Retry feedback sent [{timestamp}]")
+            error_msg = event.get("error_message", "")
+            if summary:
+                _click.echo(f"   (tool_call_id: {event.get('tool_call_id', '?')})")
+            else:
+                _click.echo(f"   Tool call ID: {event.get('tool_call_id')}")
+                _click.echo(f"   Message: {error_msg[:200]}...")
+            _click.echo()
+
+        elif event_type == "usage":
+            # Token usage and cost
+            input_tokens = event.get("input_tokens", 0)
+            output_tokens = event.get("output_tokens", 0)
+            cost = event.get("cost_usd")
+            reasoning = event.get("reasoning_tokens")
+            provider = event.get("provider")
+            gen_id = event.get("generation_id")
+
+            cost_str = f" | ${cost:.6f}" if cost else ""
+            reasoning_str = f" (reasoning: {reasoning})" if reasoning else ""
+            provider_str = f" via {provider}" if provider else ""
+
+            _click.echo(
+                f"📊 Usage [{timestamp}]: {input_tokens} in / {output_tokens} out"
+                f"{reasoning_str}{cost_str}{provider_str}"
+            )
+            if gen_id and not summary:
+                _click.echo(f"   Generation ID: {gen_id}")
+            _click.echo()
+
+        elif event_type == "no_usage_reported":
+            _click.echo(f"⚠️ No usage reported [{timestamp}]")
+            _click.echo()
+
         elif event_type == "session_end":
             _click.echo(f"🏁 Session ended ({event.get('total_events', 0)} events)")
             _click.echo()
+
+
+@logs_group.command(name="raw")
+@_click.argument("log_file", required=False)
+@_click.option("--list", "list_files", is_flag=True, help="List available raw log files")
+@_click.option("--index", "-i", type=str, default=None, help="Show specific record(s): '0', '0-5', '0,2,4'")
+@_click.option("--direction", "-d", type=str, default=None, help="Filter by direction: request, response, error, stream_complete, meta")
+@_click.option("--json", "json_output", is_flag=True, help="Raw JSON output (pretty-printed)")
+@_click.option("--summary", is_flag=True, help="Show truncated payload")
+@_click.option("--limit", "-n", default=None, type=int, help="Limit number of records shown")
+@_click.pass_context
+def logs_raw(
+    ctx: _click.Context,
+    log_file: str | None,
+    list_files: bool,
+    index: str | None,
+    direction: str | None,
+    json_output: bool,
+    summary: bool,
+    limit: int | None,
+) -> None:
+    """View raw API payload logs.
+
+    Raw logs capture the exact JSON sent to and received from LLM providers.
+    Use --raw-log flag when running brynhild to enable raw logging.
+
+    \b
+    Examples:
+        brynhild logs raw --list              # List available raw log files
+        brynhild logs raw                     # View most recent raw log
+        brynhild logs raw -i 0                # Show first record only
+        brynhild logs raw -i 1-3              # Show records 1, 2, 3
+        brynhild logs raw -d request          # Show only requests
+        brynhild logs raw -d response         # Show only responses
+        brynhild logs raw --summary           # Truncate large payloads
+    """
+    settings: config.Settings = ctx.obj["settings"]
+    log_dir = settings.logs_dir
+
+    # List files mode
+    if list_files:
+        if not log_dir.exists():
+            _click.echo(f"No raw logs found. Log directory: {log_dir}")
+            return
+
+        raw_files = sorted(log_dir.glob("brynhild_raw_*.jsonl"), reverse=True)
+        if not raw_files:
+            _click.echo(f"No raw log files found in {log_dir}")
+            _click.echo("Use --raw-log flag when running brynhild chat to enable raw logging.")
+            return
+
+        _click.echo(f"Raw payload logs ({len(raw_files)} found):")
+        _click.echo(f"Directory: {log_dir}")
+        _click.echo()
+        _click.echo(f"{'Filename':<45} {'Records':>8} {'Req/Res':>8} {'Size':>10} {'Modified'}")
+        _click.echo("-" * 95)
+        for f in raw_files[:20]:  # Show up to 20
+            stat = f.stat()
+            size = f"{stat.st_size:,}"
+            modified = _datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+
+            # Count records and extract metadata
+            record_count = 0
+            request_count = 0
+            response_count = 0
+            try:
+                with open(f, encoding="utf-8") as log_f:
+                    for line in log_f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                record = _json.loads(line)
+                                record_count += 1
+                                direction = record.get("direction")
+                                if direction == "request":
+                                    request_count += 1
+                                elif direction in ("response", "stream_complete"):
+                                    response_count += 1
+                            except _json.JSONDecodeError:
+                                pass
+            except OSError:
+                pass
+
+            req_res = f"{request_count}/{response_count}"
+            _click.echo(f"{f.name:<45} {record_count:>8} {req_res:>8} {size:>10} {modified}")
+        return
+
+    # Determine which file to view
+    if log_file:
+        log_path = _pathlib.Path(log_file)
+        if not log_path.is_absolute():
+            log_path = log_dir / log_file
+    else:
+        # Find most recent raw log
+        raw_files = sorted(log_dir.glob("brynhild_raw_*.jsonl"), reverse=True)
+        if not raw_files:
+            _click.echo(f"No raw log files found in {log_dir}", err=True)
+            _click.echo("Use --raw-log flag when running brynhild chat to enable raw logging.", err=True)
+            raise SystemExit(1)
+        log_path = raw_files[0]
+
+    if not log_path.exists():
+        _click.echo(f"Raw log file not found: {log_path}", err=True)
+        raise SystemExit(1)
+
+    # Read all records
+    records: list[dict[str, _typing.Any]] = []
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(_json.loads(line))
+                except _json.JSONDecodeError:
+                    continue
+
+    # Parse index filter
+    indices_to_show: set[int] | None = None
+    if index is not None:
+        indices_to_show = set()
+        for part in index.split(","):
+            part = part.strip()
+            if "-" in part:
+                start, end = part.split("-", 1)
+                try:
+                    indices_to_show.update(range(int(start), int(end) + 1))
+                except ValueError:
+                    _click.echo(f"Invalid index range: {part}", err=True)
+                    raise SystemExit(1) from None
+            else:
+                try:
+                    indices_to_show.add(int(part))
+                except ValueError:
+                    _click.echo(f"Invalid index: {part}", err=True)
+                    raise SystemExit(1) from None
+
+    # Filter and display
+    filtered_records: list[tuple[int, dict[str, _typing.Any]]] = []
+    for i, record in enumerate(records):
+        # Apply index filter
+        if indices_to_show is not None and i not in indices_to_show:
+            continue
+        # Apply direction filter
+        if direction is not None and record.get("direction") != direction:
+            continue
+        filtered_records.append((i, record))
+
+    # Apply limit
+    if limit is not None:
+        filtered_records = filtered_records[:limit]
+
+    if json_output:
+        for i, record in filtered_records:
+            _click.echo(f"// Record {i}")
+            _click.echo(_json.dumps(record, indent=2))
+        return
+
+    # Pretty-print the records
+    _click.echo(f"📁 Raw Log: {log_path.name}")
+    _click.echo(f"   Total records: {len(records)}")
+    if direction:
+        _click.echo(f"   Filter: direction={direction}")
+    if indices_to_show:
+        _click.echo(f"   Filter: indices={sorted(indices_to_show)}")
+    _click.echo("=" * 80)
+    _click.echo()
+
+    direction_icons = {
+        "meta": "ℹ️",
+        "request": "📤",
+        "response": "📥",
+        "stream_complete": "✅",
+        "stream_chunk": "📦",
+        "error": "❌",
+    }
+
+    def _render_payload_readable(payload: dict[str, _typing.Any], indent: str = "") -> None:
+        """Render payload with content fields as readable text, messages last."""
+        # Separate messages from other keys - render messages last for easy viewing
+        messages_value = None
+        other_keys: list[tuple[str, _typing.Any]] = []
+        for key, value in payload.items():
+            if key == "messages":
+                messages_value = value
+            else:
+                other_keys.append((key, value))
+
+        # Render non-message keys first
+        for key, value in other_keys:
+            if key == "content" and isinstance(value, str):
+                # Render content as readable text
+                _click.echo(f"{indent}{key}:")
+                content_lines = value.split("\n")
+                if summary and len(content_lines) > 20:
+                    for line in content_lines[:20]:
+                        _click.echo(f"{indent}  {line}")
+                    _click.echo(f"{indent}  ... ({len(content_lines)} lines total)")
+                else:
+                    for line in content_lines:
+                        _click.echo(f"{indent}  {line}")
+            elif key == "tools" and isinstance(value, list):
+                _click.echo(f"{indent}{key}: [{len(value)} tools]")
+                if not summary:
+                    for tool in value:
+                        name = tool.get("function", {}).get("name", "?")
+                        _click.echo(f"{indent}  - {name}")
+            elif isinstance(value, dict):
+                _click.echo(f"{indent}{key}: {_json.dumps(value)}")
+            elif isinstance(value, list):
+                if len(str(value)) > 100:
+                    _click.echo(f"{indent}{key}: [{len(value)} items]")
+                else:
+                    _click.echo(f"{indent}{key}: {_json.dumps(value)}")
+            else:
+                _click.echo(f"{indent}{key}: {value}")
+
+        # Render messages last
+        if messages_value is not None and isinstance(messages_value, list):
+            _click.echo(f"{indent}messages:")
+            for j, msg in enumerate(messages_value):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                _click.echo(f"{indent}  [{j}] {role}:")
+                if content:
+                    # Render content as readable text (not JSON escaped)
+                    content_lines = str(content).split("\n")
+                    if summary and len(content_lines) > 10:
+                        for line in content_lines[:10]:
+                            _click.echo(f"{indent}      {line}")
+                        _click.echo(f"{indent}      ... ({len(content_lines)} lines total)")
+                    else:
+                        for line in content_lines:
+                            _click.echo(f"{indent}      {line}")
+                # Show tool_calls if present
+                if "tool_calls" in msg:
+                    tc_json = _json.dumps(msg["tool_calls"], indent=2)
+                    tc_lines = tc_json.split("\n")
+                    _click.echo(f"{indent}      tool_calls:")
+                    for tc_line in tc_lines:
+                        _click.echo(f"{indent}        {tc_line}")
+
+    for i, record in filtered_records:
+        dir_type = record.get("direction", "unknown")
+        icon = direction_icons.get(dir_type, "❓")
+        timestamp = record.get("timestamp", "")[:19]
+        endpoint = record.get("endpoint", "")
+        duration = record.get("duration_ms")
+        provider = record.get("provider", "")
+        model = record.get("model", "")
+
+        # Header block (JSON-style metadata)
+        _click.echo(f"[{i}] {icon} {dir_type.upper()}")
+        _click.echo("-" * 60)
+        _click.echo(f"  endpoint: {endpoint}")
+        _click.echo(f"  timestamp: {timestamp}")
+        if provider:
+            _click.echo(f"  provider: {provider}")
+        if model:
+            _click.echo(f"  model: {model}")
+        if duration:
+            _click.echo(f"  duration_ms: {duration:.0f}")
+
+        # Error message if present
+        if record.get("error"):
+            _click.echo(f"  error: {record['error']}")
+
+        # Payload - render readable
+        payload = record.get("payload", {})
+        if payload:
+            _click.echo("-" * 60)
+            _render_payload_readable(payload, indent="  ")
+
+        _click.echo()
 
 
 # =============================================================================
