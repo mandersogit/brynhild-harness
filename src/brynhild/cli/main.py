@@ -170,6 +170,7 @@ def cli(
         brynhild                              # Interactive mode
         brynhild chat "explain this code"    # Single query
         brynhild chat -p "list files"        # Print mode (non-interactive)
+        brynhild chat -f prompt.txt          # Read prompt from file
         echo "prompt" | brynhild chat -p     # Pipe input
         brynhild config                      # Show configuration
         brynhild api test                    # Test API connectivity
@@ -263,6 +264,7 @@ async def _run_conversation(
     show_thinking: bool = False,
     show_cost: bool = False,
     require_finish: bool = False,
+    prompt_file: _pathlib.Path | None = None,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -346,6 +348,10 @@ async def _run_conversation(
         profile=context.profile.name if context.profile else None,
         session=None,  # TODO: Pass actual session name when resume is implemented
     )
+
+    # Show prompt source if prompt was read from a file
+    if prompt_file is not None:
+        renderer.show_prompt_source(str(prompt_file), prompt)
 
     if verbose and context.injections:
         renderer.show_info(f"Applied {len(context.injections)} context injection(s)")
@@ -561,6 +567,13 @@ def _handle_interactive_mode(
     is_flag=True,
     help="Require agent to call Finish tool to complete",
 )
+@_click.option(
+    "-f",
+    "--prompt-file",
+    type=_click.Path(exists=True, dir_okay=False, path_type=_pathlib.Path),
+    default=None,
+    help="Read prompt from file instead of arguments",
+)
 @_click.argument("prompt", required=False, nargs=-1)
 @_click.pass_context
 def chat(
@@ -576,6 +589,7 @@ def chat(
     log_file: str | None,
     raw_log: bool,
     require_finish: bool,
+    prompt_file: _pathlib.Path | None,
     prompt: tuple[str, ...],
 ) -> None:
     """Send a prompt to the AI (single query mode)."""
@@ -584,11 +598,14 @@ def chat(
     # Note: print_mode is accepted but not currently used - JSON output is primary
     _ = print_mode  # Acknowledge the parameter
 
-    # Handle prompt from arguments or stdin
-    prompt_text = " ".join(prompt) if prompt else None
-
-    # Check for piped input
-    if not prompt_text and not _sys.stdin.isatty():
+    # Handle prompt from file, arguments, or stdin (in priority order)
+    prompt_text: str | None = None
+    if prompt_file is not None:
+        prompt_text = prompt_file.read_text().strip()
+    elif prompt:
+        prompt_text = " ".join(prompt)
+    elif not _sys.stdin.isatty():
+        # Check for piped input
         prompt_text = _sys.stdin.read().strip()
 
     if not prompt_text:
@@ -596,7 +613,7 @@ def chat(
             _click.echo(_json.dumps({"error": "No prompt provided"}, indent=2))
         else:
             _click.echo(
-                'Error: No prompt provided. Usage: brynhild chat "your prompt"',
+                'Error: No prompt provided. Usage: brynhild chat "your prompt" or brynhild chat -f prompt.txt',
                 err=True,
             )
         raise SystemExit(1)
@@ -625,6 +642,7 @@ def chat(
             show_thinking=show_thinking,
             show_cost=show_cost,
             require_finish=require_finish,
+            prompt_file=prompt_file,
         )
     )
 
@@ -1945,8 +1963,8 @@ def logs_raw(
 
     # Read all records
     records: list[dict[str, _typing.Any]] = []
-    with open(log_path, encoding="utf-8") as f:
-        for line in f:
+    with open(log_path, encoding="utf-8") as log_f:
+        for line in log_f:
             line = line.strip()
             if line:
                 try:

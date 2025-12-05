@@ -302,6 +302,29 @@ class RichConsoleRenderer(base.Renderer):
             )
         )
 
+    def show_prompt_source(self, file_path: str, content: str) -> None:
+        """
+        Display the source of a prompt read from a file.
+
+        Args:
+            file_path: Path to the prompt file.
+            content: The prompt content (truncated if too long).
+        """
+        # Truncate content for display (same limit as thinking panels)
+        max_display_chars = 2000
+        display_content = content
+        if len(content) > max_display_chars:
+            display_content = content[:max_display_chars] + "\n[dim]... (truncated)[/dim]"
+
+        self._console.print(
+            _rich_panel.Panel(
+                display_content,
+                title=f"[bold blue]You[/bold blue] [dim]({file_path})[/dim]",
+                border_style="blue",
+                padding=(0, 1),
+            )
+        )
+
     def show_user_message(self, content: str) -> None:
         """Display a user message with formatting."""
         self._console.print(

@@ -145,6 +145,22 @@ class Renderer(_abc.ABC):
             next_steps: Optional suggestions for next actions.
         """
 
+    def show_prompt_source(  # noqa: B027
+        self,
+        file_path: str,  # noqa: ARG002
+        content: str,  # noqa: ARG002
+    ) -> None:
+        """
+        Display the source of a prompt read from a file.
+
+        Optional - renderers may override to show prompt source info.
+        Called after session banner when prompt is read from a file.
+
+        Args:
+            file_path: Path to the prompt file.
+            content: The prompt content (may be truncated for display).
+        """
+
 
 class ConversationResult(_typing.TypedDict, total=False):
     """Result of a conversation turn for JSON output."""

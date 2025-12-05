@@ -48,6 +48,7 @@ class JSONRenderer(base.Renderer):
         self._assistant_text = ""
         self._streaming = False
         self._finish_result: dict[str, _typing.Any] | None = None
+        self._prompt_source: dict[str, str] | None = None
         # Token tracking
         self._current_context_tokens = 0
         self._total_output_tokens = 0
@@ -56,6 +57,10 @@ class JSONRenderer(base.Renderer):
         # Cost tracking
         self._total_cost: float = 0.0
         self._reasoning_tokens: int = 0
+
+    def show_prompt_source(self, file_path: str, content: str) -> None:
+        """Record the source of a prompt read from a file."""
+        self._prompt_source = {"file": file_path, "content": content}
 
     def show_user_message(self, content: str) -> None:
         """Record a user message."""
@@ -188,6 +193,9 @@ class JSONRenderer(base.Renderer):
         if self._finish_result:
             output_data["finish"] = self._finish_result
 
+        if self._prompt_source:
+            output_data["prompt_source"] = self._prompt_source
+
         if self._errors:
             if len(self._errors) == 1:
                 output_data["error"] = self._errors[0]
@@ -214,6 +222,7 @@ class JSONRenderer(base.Renderer):
         self._assistant_text = ""
         self._streaming = False
         self._finish_result = None  # Don't forget to reset this!
+        self._prompt_source = None
         self._current_context_tokens = 0
         self._total_output_tokens = 0
         self._turn_output_tokens = 0
