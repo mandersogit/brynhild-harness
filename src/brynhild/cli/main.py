@@ -264,7 +264,7 @@ async def _run_conversation(
     show_thinking: bool = False,
     show_cost: bool = False,
     require_finish: bool = False,
-    prompt_file: _pathlib.Path | None = None,
+    prompt_files: tuple[_pathlib.Path, ...] = (),
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -349,9 +349,10 @@ async def _run_conversation(
         session=None,  # TODO: Pass actual session name when resume is implemented
     )
 
-    # Show prompt source if prompt was read from a file
-    if prompt_file is not None:
-        renderer.show_prompt_source(str(prompt_file), prompt)
+    # Show prompt source if prompt was read from file(s)
+    if prompt_files:
+        file_paths = [str(f) for f in prompt_files]
+        renderer.show_prompt_source(file_paths, prompt)
 
     if verbose and context.injections:
         renderer.show_info(f"Applied {len(context.injections)} context injection(s)")
@@ -571,8 +572,8 @@ def _handle_interactive_mode(
     "-f",
     "--prompt-file",
     type=_click.Path(exists=True, dir_okay=False, path_type=_pathlib.Path),
-    default=None,
-    help="Read prompt from file instead of arguments",
+    multiple=True,
+    help="Read prompt from file(s); can be specified multiple times",
 )
 @_click.argument("prompt", required=False, nargs=-1)
 @_click.pass_context
@@ -589,7 +590,7 @@ def chat(
     log_file: str | None,
     raw_log: bool,
     require_finish: bool,
-    prompt_file: _pathlib.Path | None,
+    prompt_file: tuple[_pathlib.Path, ...],
     prompt: tuple[str, ...],
 ) -> None:
     """Send a prompt to the AI (single query mode)."""
@@ -598,10 +599,12 @@ def chat(
     # Note: print_mode is accepted but not currently used - JSON output is primary
     _ = print_mode  # Acknowledge the parameter
 
-    # Handle prompt from file, arguments, or stdin (in priority order)
+    # Handle prompt from file(s), arguments, or stdin (in priority order)
     prompt_text: str | None = None
-    if prompt_file is not None:
-        prompt_text = prompt_file.read_text().strip()
+    if prompt_file:
+        # Concatenate all files in order, separated by double newlines
+        file_contents = [f.read_text().strip() for f in prompt_file]
+        prompt_text = "\n\n".join(file_contents)
     elif prompt:
         prompt_text = " ".join(prompt)
     elif not _sys.stdin.isatty():
@@ -642,7 +645,7 @@ def chat(
             show_thinking=show_thinking,
             show_cost=show_cost,
             require_finish=require_finish,
-            prompt_file=prompt_file,
+            prompt_files=prompt_file,
         )
     )
 

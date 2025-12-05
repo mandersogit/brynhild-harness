@@ -302,13 +302,13 @@ class RichConsoleRenderer(base.Renderer):
             )
         )
 
-    def show_prompt_source(self, file_path: str, content: str) -> None:
+    def show_prompt_source(self, file_paths: list[str], content: str) -> None:
         """
-        Display the source of a prompt read from a file.
+        Display the source of a prompt read from file(s).
 
         Args:
-            file_path: Path to the prompt file.
-            content: The prompt content (truncated if too long).
+            file_paths: List of paths to the prompt file(s).
+            content: The combined prompt content (truncated if too long).
         """
         # Truncate content for display (same limit as thinking panels)
         max_display_chars = 2000
@@ -316,10 +316,16 @@ class RichConsoleRenderer(base.Renderer):
         if len(content) > max_display_chars:
             display_content = content[:max_display_chars] + "\n[dim]... (truncated)[/dim]"
 
+        # Format file paths for display
+        if len(file_paths) == 1:
+            source_info = file_paths[0]
+        else:
+            source_info = f"{len(file_paths)} files"
+
         self._console.print(
             _rich_panel.Panel(
                 display_content,
-                title=f"[bold blue]You[/bold blue] [dim]({file_path})[/dim]",
+                title=f"[bold blue]You[/bold blue] [dim]({source_info})[/dim]",
                 border_style="blue",
                 padding=(0, 1),
             )
