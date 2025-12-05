@@ -4,6 +4,8 @@ Live tests for ConversationProcessor with real LLM providers.
 These tests verify token tracking semantics against actual provider responses,
 not mocks. They would catch bugs like token accumulation that mocks might miss.
 
+Also tests real-time streaming token display integration.
+
 Requirements:
     OPENROUTER_API_KEY: API key for OpenRouter
     or
@@ -15,6 +17,7 @@ Run:
 """
 
 import os as _os
+import typing as _typing
 
 import pytest as _pytest
 
@@ -23,6 +26,8 @@ import brynhild.core.conversation as conversation
 import brynhild.core.types as core_types
 import brynhild.tools.base as tools_base
 import brynhild.tools.registry as tools_registry
+import brynhild.ui.adapters as ui_adapters
+import brynhild.ui.base as ui_base
 
 pytestmark = [_pytest.mark.live, _pytest.mark.slow]
 
@@ -63,6 +68,7 @@ class CaptureCallbacks(conversation.ConversationCallbacks):
 
     def __init__(self) -> None:
         self.usage_updates: list[tuple[int, int]] = []
+        self.usage_objects: list[_typing.Any] = []  # Full Usage objects for cost testing
         self.events: list[str] = []
 
     async def on_stream_start(self) -> None:
@@ -108,8 +114,16 @@ class CaptureCallbacks(conversation.ConversationCallbacks):
     async def on_info(self, message: str) -> None:
         pass
 
-    async def on_usage_update(self, input_tokens: int, output_tokens: int) -> None:
+    async def on_usage_update(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        usage: "_typing.Any | None" = None,
+    ) -> None:
         self.usage_updates.append((input_tokens, output_tokens))
+        # Store full usage for cost testing if available
+        if usage is not None:
+            self.usage_objects.append(usage)
 
 
 class EchoTool(tools_base.Tool):
@@ -184,7 +198,8 @@ class TestLiveTokenTracking:
         assert result.output_tokens > 0, "Should have output tokens"
 
         # For a tiny prompt, input should be modest
-        assert result.input_tokens < 1000, (
+        # Note: gpt-oss models have large Harmony-format system prompts (~1500+ tokens)
+        assert result.input_tokens < 3000, (
             f"Input tokens {result.input_tokens} seems too high for tiny prompt"
         )
 
@@ -303,6 +318,82 @@ class TestLiveTokenTracking:
 
 
 # =============================================================================
+# Cost Tracking Tests (OpenRouter only)
+# =============================================================================
+
+
+class TestOpenRouterCostTracking:
+    """Live tests for cost tracking from OpenRouter."""
+
+    @_pytest.mark.asyncio
+    async def test_openrouter_reports_cost(
+        self, openrouter_provider: api.LLMProvider
+    ) -> None:
+        """OpenRouter should report cost in Usage.details."""
+        callbacks = CaptureCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=openrouter_provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "Say 'hi'."}],
+            system_prompt="Be brief.",
+        )
+
+        # Should have captured at least one usage object
+        assert len(callbacks.usage_objects) > 0, "Should have usage objects"
+
+        # Check last usage object has cost details
+        last_usage = callbacks.usage_objects[-1]
+        assert hasattr(last_usage, "details"), "Usage should have details"
+        assert last_usage.details is not None, "Details should not be None"
+        assert last_usage.details.cost is not None, "Cost should be reported"
+        assert last_usage.details.cost > 0, f"Cost should be > 0, got {last_usage.details.cost}"
+
+        # Verify reasoning tokens breakdown (for reasoning models)
+        if last_usage.details.reasoning_tokens is not None:
+            assert last_usage.details.reasoning_tokens >= 0
+
+    @_pytest.mark.asyncio
+    async def test_cost_details_structure(
+        self, openrouter_provider: api.LLMProvider
+    ) -> None:
+        """Verify the full structure of UsageDetails from OpenRouter."""
+        callbacks = CaptureCallbacks()
+
+        processor = conversation.ConversationProcessor(
+            provider=openrouter_provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "Hello"}],
+            system_prompt="Respond briefly.",
+        )
+
+        assert len(callbacks.usage_objects) > 0
+        last_usage = callbacks.usage_objects[-1]
+
+        # Verify structure
+        details = last_usage.details
+        assert details is not None
+
+        # Cost should be present
+        assert details.cost is not None
+        assert isinstance(details.cost, float)
+
+        # Provider info should be present
+        assert details.provider is not None, "Provider should be reported"
+        assert len(details.provider) > 0
+
+        # Generation ID should be present
+        assert details.generation_id is not None, "Generation ID should be reported"
+        assert details.generation_id.startswith("gen-")
+
+
+# =============================================================================
 # Ollama-specific tests (free to run)
 # =============================================================================
 
@@ -384,5 +475,241 @@ class TestOllamaTokenTracking:
         assert growth < result1.input_tokens * 3, (
             f"Token growth {growth} seems excessive compared to "
             f"turn 1 size {result1.input_tokens}"
+        )
+
+
+# =============================================================================
+# Real-Time Streaming Token Display Tests
+# =============================================================================
+
+
+class MockRendererForLiveTests(ui_base.Renderer):
+    """
+    Mock renderer that tracks streaming token display calls.
+    """
+
+    def __init__(self) -> None:
+        self.streaming_mode_calls: list[bool] = []
+        self.turn_token_updates: list[int] = []
+        self.provider_token_updates: list[tuple[int, int]] = []
+
+    def set_streaming_mode(self, is_streaming: bool) -> None:
+        self.streaming_mode_calls.append(is_streaming)
+
+    def update_turn_tokens(self, count: int) -> None:
+        self.turn_token_updates.append(count)
+
+    def update_token_counts(self, input_tokens: int, output_tokens: int) -> None:
+        self.provider_token_updates.append((input_tokens, output_tokens))
+
+    def start_streaming(self) -> None:
+        pass
+
+    def end_streaming(self) -> None:
+        pass
+
+    def show_user_message(self, content: str) -> None:
+        pass
+
+    def show_assistant_text(self, text: str, *, streaming: bool = False) -> None:
+        pass
+
+    def show_tool_call(self, tool_call: ui_base.ToolCallDisplay) -> None:
+        pass
+
+    def show_tool_result(self, result: ui_base.ToolResultDisplay) -> None:
+        pass
+
+    def show_error(self, error: str) -> None:
+        pass
+
+    def show_info(self, message: str) -> None:
+        pass
+
+    def prompt_permission(
+        self,
+        tool_call: ui_base.ToolCallDisplay,  # noqa: ARG002
+        *,
+        auto_approve: bool = False,
+    ) -> bool:
+        return auto_approve
+
+    def finalize(self, result: dict[str, _typing.Any] | None = None) -> None:
+        pass
+
+    def show_finish(
+        self,
+        status: str,
+        summary: str,
+        next_steps: str | None = None,
+    ) -> None:
+        pass
+
+
+@_pytest.mark.ollama_local
+class TestOllamaStreamingTokenDisplay:
+    """
+    Live tests for real-time streaming token display with Ollama.
+
+    Verifies:
+    1. Client-side token counts increment during streaming
+    2. Provider data replaces client estimates at turn end
+    """
+
+    @_pytest.mark.asyncio
+    async def test_streaming_token_counts_increment(
+        self, ollama_provider: api.LLMProvider
+    ) -> None:
+        """
+        During streaming, token counts should increment.
+        """
+        renderer = MockRendererForLiveTests()
+        callbacks = ui_adapters.RendererCallbacks(
+            renderer,
+            model=ollama_provider.model,
+            auto_approve=True,
+        )
+
+        processor = conversation.ConversationProcessor(
+            provider=ollama_provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "Write a haiku about coding."}],
+            system_prompt="You write poetry.",
+        )
+
+        # Should have received turn token updates during streaming
+        assert len(renderer.turn_token_updates) > 0, (
+            "Should have received turn token updates during streaming"
+        )
+
+        # Token counts should generally increase (may have some equal consecutive values)
+        if len(renderer.turn_token_updates) > 1:
+            # Last should be >= first
+            assert renderer.turn_token_updates[-1] >= renderer.turn_token_updates[0], (
+                "Token counts should accumulate during streaming"
+            )
+
+    @_pytest.mark.asyncio
+    async def test_provider_data_received_at_end(
+        self, ollama_provider: api.LLMProvider
+    ) -> None:
+        """
+        Provider should report usage at turn end.
+        """
+        renderer = MockRendererForLiveTests()
+        callbacks = ui_adapters.RendererCallbacks(
+            renderer,
+            model=ollama_provider.model,
+            auto_approve=True,
+        )
+
+        processor = conversation.ConversationProcessor(
+            provider=ollama_provider,
+            callbacks=callbacks,
+        )
+
+        result = await processor.process_streaming(
+            messages=[{"role": "user", "content": "Say hello."}],
+            system_prompt="Be brief.",
+        )
+
+        # Provider should have reported usage
+        assert len(renderer.provider_token_updates) > 0, (
+            "Provider should report usage"
+        )
+
+        # Last provider update should match result
+        last_input, last_output = renderer.provider_token_updates[-1]
+        assert last_input == result.input_tokens
+        # Output might be cumulative, check it's > 0
+        assert last_output > 0
+
+    @_pytest.mark.asyncio
+    async def test_streaming_mode_toggled(
+        self, ollama_provider: api.LLMProvider
+    ) -> None:
+        """
+        Streaming mode should be set True at start, False at end.
+        """
+        renderer = MockRendererForLiveTests()
+        callbacks = ui_adapters.RendererCallbacks(
+            renderer,
+            model=ollama_provider.model,
+            auto_approve=True,
+        )
+
+        processor = conversation.ConversationProcessor(
+            provider=ollama_provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "Hi"}],
+            system_prompt="Reply briefly.",
+        )
+
+        # Should have toggled streaming mode
+        assert len(renderer.streaming_mode_calls) >= 2, (
+            "Should have set streaming mode on and off"
+        )
+        assert renderer.streaming_mode_calls[0] is True, (
+            "First streaming mode call should be True (start)"
+        )
+        assert renderer.streaming_mode_calls[-1] is False, (
+            "Last streaming mode call should be False (end)"
+        )
+
+    @_pytest.mark.asyncio
+    async def test_client_estimate_vs_provider_final(
+        self, ollama_provider: api.LLMProvider
+    ) -> None:
+        """
+        Client estimate during streaming should be non-zero and provider should report usage.
+
+        CRITICAL: This test verifies the key invariant that provider data
+        is authoritative. The client estimate is for UI feedback only.
+
+        Note: Provider output_tokens may be MUCH higher than client estimate because:
+        - Provider counts ALL tokens including thinking/reasoning
+        - Client only counts tokens delivered via streaming callbacks
+        - For reasoning models, thinking can be 5-10x the visible output
+        """
+        renderer = MockRendererForLiveTests()
+        callbacks = ui_adapters.RendererCallbacks(
+            renderer,
+            model=ollama_provider.model,
+            auto_approve=True,
+        )
+
+        processor = conversation.ConversationProcessor(
+            provider=ollama_provider,
+            callbacks=callbacks,
+        )
+
+        await processor.process_streaming(
+            messages=[{"role": "user", "content": "Explain recursion in one sentence."}],
+            system_prompt="Be concise.",
+        )
+
+        # Verify both client and provider produced counts
+        assert len(renderer.turn_token_updates) > 0, "Should have client token updates"
+        assert len(renderer.provider_token_updates) > 0, "Should have provider token updates"
+
+        client_final = renderer.turn_token_updates[-1]
+        _, provider_output = renderer.provider_token_updates[-1]
+
+        # Client should have counted something
+        assert client_final > 0, "Client should have counted tokens"
+        # Provider should have reported output
+        assert provider_output > 0, "Provider should report output tokens"
+
+        # Provider output >= client estimate (provider may include thinking)
+        # This is expected and correct - provider data is authoritative
+        assert provider_output >= client_final * 0.5, (
+            f"Provider output ({provider_output}) should be at least half of "
+            f"client estimate ({client_final}) - something may be wrong"
         )
 

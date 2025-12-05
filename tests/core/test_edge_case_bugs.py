@@ -220,7 +220,12 @@ class MinimalCallbacks(conversation.ConversationCallbacks):
     async def on_info(self, message: str) -> None:  # noqa: ARG002
         pass
 
-    async def on_usage_update(self, input_tokens: int, output_tokens: int) -> None:
+    async def on_usage_update(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        usage: "_typing.Any | None" = None,  # noqa: ARG002
+    ) -> None:
         self.usage_updates.append((input_tokens, output_tokens))
 
 

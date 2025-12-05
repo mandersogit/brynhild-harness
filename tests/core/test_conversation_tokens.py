@@ -206,7 +206,12 @@ class CapturingCallbacks(conversation.ConversationCallbacks):
     async def on_info(self, message: str) -> None:
         self.events.append(("info", message))
 
-    async def on_usage_update(self, input_tokens: int, output_tokens: int) -> None:
+    async def on_usage_update(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        usage: "_typing.Any | None" = None,  # noqa: ARG002
+    ) -> None:
         """Capture usage updates - this is the key callback for token tracking!"""
         self.usage_updates.append((input_tokens, output_tokens))
         self.events.append(("usage_update", (input_tokens, output_tokens)))
