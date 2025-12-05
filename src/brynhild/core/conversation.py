@@ -1196,6 +1196,15 @@ class ConversationProcessor:
                 if self._require_finish and not self._finish_called:
                     # Add assistant text to history first, then inject reminder
                     working_messages.append({"role": "assistant", "content": current_text})
+                    await self._callbacks.on_text_complete(current_text, current_thinking)
+
+                    # Log assistant response before continuing
+                    if self._logger:
+                        self._logger.log_assistant_message(
+                            current_text,
+                            thinking=current_thinking if current_thinking else None,
+                        )
+
                     if self._inject_finish_reminder(working_messages):
                         continue  # Try again
                     else:
@@ -1512,6 +1521,17 @@ class ConversationProcessor:
                     working_messages.append(
                         {"role": "assistant", "content": response.content}
                     )
+                    await self._callbacks.on_text_complete(
+                        response.content, response.thinking
+                    )
+
+                    # Log assistant response before continuing
+                    if self._logger:
+                        self._logger.log_assistant_message(
+                            response.content,
+                            thinking=response.thinking,
+                        )
+
                     if self._inject_finish_reminder(working_messages):
                         continue  # Try again
                     else:
