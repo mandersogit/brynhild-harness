@@ -83,6 +83,7 @@ class ConversationRunner:
             auto_approve=auto_approve_tools,
             verbose=verbose,
             show_thinking=show_thinking,
+            model=provider.model,  # For tiktoken encoder selection
         )
 
         # Create conversation processor

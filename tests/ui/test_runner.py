@@ -670,6 +670,12 @@ class MockConversationLogger:
         self,
         input_tokens: int,  # noqa: ARG002
         output_tokens: int,  # noqa: ARG002
+        *,
+        cost: float | None = None,  # noqa: ARG002
+        reasoning_tokens: int | None = None,  # noqa: ARG002
+        cached_tokens: int | None = None,  # noqa: ARG002
+        provider: str | None = None,  # noqa: ARG002
+        generation_id: str | None = None,  # noqa: ARG002
     ) -> None:
         pass
 

@@ -25,6 +25,7 @@ class JSONRenderer(base.Renderer):
         output: _typing.TextIO | None = None,
         *,
         indent: int = 2,
+        show_cost: bool = False,
     ) -> None:
         """
         Initialize the JSON renderer.
@@ -32,9 +33,12 @@ class JSONRenderer(base.Renderer):
         Args:
             output: Stream for output (default: sys.stdout).
             indent: JSON indentation level.
+            show_cost: Accepted for consistency but JSON always includes cost data.
         """
         self._output = output or _sys.stdout
         self._indent = indent
+        # JSON always includes cost if available (for programmatic use)
+        _ = show_cost
 
         # Accumulate conversation data
         self._messages: list[dict[str, _typing.Any]] = []
@@ -44,6 +48,14 @@ class JSONRenderer(base.Renderer):
         self._assistant_text = ""
         self._streaming = False
         self._finish_result: dict[str, _typing.Any] | None = None
+        # Token tracking
+        self._current_context_tokens = 0
+        self._total_output_tokens = 0
+        self._turn_output_tokens = 0
+        self._is_streaming_mode = False
+        # Cost tracking
+        self._total_cost: float = 0.0
+        self._reasoning_tokens: int = 0
 
     def show_user_message(self, content: str) -> None:
         """Record a user message."""
@@ -92,6 +104,32 @@ class JSONRenderer(base.Renderer):
         """Info messages are not included in JSON output."""
         # Could add to a separate "info" field if needed
         pass
+
+    def update_token_counts(self, input_tokens: int, output_tokens: int) -> None:
+        """Update provider-reported token counts (authoritative)."""
+        self._current_context_tokens = input_tokens
+        self._total_output_tokens = output_tokens
+
+    def update_cost(
+        self,
+        cost: float | None,
+        reasoning_tokens: int | None = None,
+    ) -> None:
+        """Update cost tracking from provider usage details."""
+        if cost is not None:
+            self._total_cost += cost
+        if reasoning_tokens is not None:
+            self._reasoning_tokens += reasoning_tokens
+
+    def set_streaming_mode(self, is_streaming: bool) -> None:
+        """Set streaming mode for token tracking."""
+        self._is_streaming_mode = is_streaming
+        if is_streaming:
+            self._turn_output_tokens = 0
+
+    def update_turn_tokens(self, count: int) -> None:
+        """Update per-turn token count (client-side estimate, temporary)."""
+        self._turn_output_tokens = count
 
     def start_streaming(self) -> None:
         """Called when streaming response starts."""
@@ -156,6 +194,12 @@ class JSONRenderer(base.Renderer):
             else:
                 output_data["errors"] = self._errors
 
+        # Add cost tracking if available
+        if self._total_cost > 0:
+            output_data["cost_usd"] = self._total_cost
+        if self._reasoning_tokens > 0:
+            output_data["reasoning_tokens"] = self._reasoning_tokens
+
         # Output JSON
         self._output.write(_json.dumps(output_data, indent=self._indent))
         self._output.write("\n")
@@ -170,4 +214,10 @@ class JSONRenderer(base.Renderer):
         self._assistant_text = ""
         self._streaming = False
         self._finish_result = None  # Don't forget to reset this!
+        self._current_context_tokens = 0
+        self._total_output_tokens = 0
+        self._turn_output_tokens = 0
+        self._is_streaming_mode = False
+        self._total_cost = 0.0
+        self._reasoning_tokens = 0
 

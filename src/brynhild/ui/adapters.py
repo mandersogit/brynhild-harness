@@ -10,6 +10,7 @@ import typing as _typing
 import brynhild.core.conversation as core_conversation
 import brynhild.core.types as core_types
 import brynhild.ui.base as ui_base
+import brynhild.ui.tokenizer as tokenizer
 
 
 class RendererCallbacks(core_conversation.ConversationCallbacks):
@@ -19,6 +20,12 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
     Used by ConversationRunner for non-interactive CLI mode.
 
     Implements ConversationCallbacks interface.
+
+    Token counting:
+        This class tracks per-turn output tokens during streaming using client-side
+        tiktoken counting. These counts are TEMPORARY - they provide real-time
+        feedback during streaming but are replaced by provider-reported values
+        when the turn completes.
     """
 
     def __init__(
@@ -28,6 +35,7 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         auto_approve: bool = False,
         verbose: bool = False,
         show_thinking: bool = False,
+        model: str = "gpt-4",
     ) -> None:
         self._renderer = renderer
         self._auto_approve = auto_approve
@@ -37,6 +45,9 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         self._thinking_stream_started = False  # Track if thinking Live is active
         self._content_started = False  # Track if real content has started
         self._accumulated_thinking = ""  # Accumulate thinking for full display
+        # Token counting for streaming display
+        self._turn_counter = tokenizer.TurnTokenCounter(model)
+        self._is_streaming = False
 
     async def on_stream_start(self) -> None:
         self._renderer.start_streaming()
@@ -44,13 +55,28 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
         self._thinking_stream_started = False
         self._content_started = False
         self._accumulated_thinking = ""
+        # Reset turn token counter for new turn
+        self._turn_counter.reset()
+        self._is_streaming = True
+        # Set renderer to streaming mode for footer display
+        if hasattr(self._renderer, "set_streaming_mode"):
+            self._renderer.set_streaming_mode(True)
 
     async def on_stream_end(self) -> None:
+        self._is_streaming = False
+        # Switch renderer back to non-streaming mode for footer display
+        if hasattr(self._renderer, "set_streaming_mode"):
+            self._renderer.set_streaming_mode(False)
         self._renderer.end_streaming()
 
     async def on_thinking_delta(self, text: str) -> None:
         # Accumulate thinking
         self._accumulated_thinking += text
+
+        # Count tokens for streaming display
+        turn_tokens = self._turn_counter.add_text(text)
+        if hasattr(self._renderer, "update_turn_tokens"):
+            self._renderer.update_turn_tokens(turn_tokens)
 
         # Start/update thinking stream (always show activity)
         if hasattr(self._renderer, "start_thinking_stream"):
@@ -87,6 +113,12 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
             if not text.strip():
                 return  # Skip whitespace-only content
             self._content_started = True
+
+        # Count tokens for streaming display
+        turn_tokens = self._turn_counter.add_text(text)
+        if hasattr(self._renderer, "update_turn_tokens"):
+            self._renderer.update_turn_tokens(turn_tokens)
+
         self._renderer.show_assistant_text(text, streaming=True)
 
     async def on_text_complete(
@@ -121,10 +153,22 @@ class RendererCallbacks(core_conversation.ConversationCallbacks):
     async def on_info(self, message: str) -> None:
         self._renderer.show_info(message)
 
-    async def on_usage_update(self, input_tokens: int, output_tokens: int) -> None:
-        """Update renderer's token counts for panel footers."""
+    async def on_usage_update(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        usage: "_typing.Any | None" = None,
+    ) -> None:
+        """Update renderer's token counts and cost for panel footers."""
         if hasattr(self._renderer, "update_token_counts"):
             self._renderer.update_token_counts(input_tokens, output_tokens)
+        # Update cost if the renderer supports it and usage has details
+        if hasattr(self._renderer, "update_cost") and usage is not None:  # noqa: SIM102
+            if hasattr(usage, "details") and usage.details is not None:
+                self._renderer.update_cost(
+                    usage.details.cost,
+                    usage.details.reasoning_tokens,
+                )
 
 
 class SyncCallbackAdapter:

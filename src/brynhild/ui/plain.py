@@ -25,6 +25,8 @@ class PlainTextRenderer(base.Renderer):
         self,
         output: _typing.TextIO | None = None,
         error: _typing.TextIO | None = None,
+        *,
+        show_cost: bool = False,
     ) -> None:
         """
         Initialize the plain text renderer.
@@ -32,12 +34,21 @@ class PlainTextRenderer(base.Renderer):
         Args:
             output: Stream for normal output (default: sys.stdout).
             error: Stream for error output (default: sys.stderr).
+            show_cost: If True, display cost information.
         """
         self._output = output or _sys.stdout
         self._error = error or _sys.stderr
         self._streaming = False
         self._stream_buffer = ""
         self._stream_header_printed = False  # Track if we've printed "Assistant:"
+        self._show_cost = show_cost
+        # Token tracking
+        self._current_context_tokens = 0
+        self._total_output_tokens = 0
+        self._turn_output_tokens = 0
+        self._is_streaming_mode = False
+        # Cost tracking
+        self._total_cost: float = 0.0
 
     def show_session_banner(
         self,
@@ -128,6 +139,32 @@ class PlainTextRenderer(base.Renderer):
         self._output.write(f"{message}\n")
         self._output.flush()
 
+    def update_token_counts(self, input_tokens: int, output_tokens: int) -> None:
+        """Update provider-reported token counts (authoritative)."""
+        self._current_context_tokens = input_tokens
+        self._total_output_tokens = output_tokens
+
+    def update_cost(
+        self,
+        cost: float | None,
+        reasoning_tokens: int | None = None,
+    ) -> None:
+        """Update cost tracking from provider usage details."""
+        if cost is not None:
+            self._total_cost += cost
+        # reasoning_tokens not displayed in plain text (too verbose)
+        _ = reasoning_tokens
+
+    def set_streaming_mode(self, is_streaming: bool) -> None:
+        """Set streaming mode for token display."""
+        self._is_streaming_mode = is_streaming
+        if is_streaming:
+            self._turn_output_tokens = 0
+
+    def update_turn_tokens(self, count: int) -> None:
+        """Update per-turn token count (client-side estimate, temporary)."""
+        self._turn_output_tokens = count
+
     def start_streaming(self) -> None:
         """Called when streaming response starts."""
         self._streaming = True
@@ -164,9 +201,17 @@ class PlainTextRenderer(base.Renderer):
         """Finalize output - show usage stats if available."""
         if result and "usage" in result:
             usage = result["usage"]
+            cost_str = ""
+            if self._show_cost and self._total_cost > 0:
+                if self._total_cost < 0.0001:
+                    cost_str = f" | ${self._total_cost:.2e}"
+                elif self._total_cost < 0.01:
+                    cost_str = f" | ${self._total_cost:.4f}"
+                else:
+                    cost_str = f" | ${self._total_cost:.2f}"
             self._output.write(
                 f"\nTokens: {usage.get('input_tokens', 0)} in / "
-                f"{usage.get('output_tokens', 0)} out\n"
+                f"{usage.get('output_tokens', 0)} out{cost_str}\n"
             )
             self._output.flush()
 

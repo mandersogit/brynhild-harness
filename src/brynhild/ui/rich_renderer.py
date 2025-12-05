@@ -37,6 +37,7 @@ class RichConsoleRenderer(base.Renderer):
         force_terminal: bool | None = None,
         no_color: bool = False,
         show_thinking: bool = False,
+        show_cost: bool = False,
     ) -> None:
         """
         Initialize the Rich renderer.
@@ -46,6 +47,7 @@ class RichConsoleRenderer(base.Renderer):
             force_terminal: Force terminal mode even if not detected.
             no_color: Disable all colors.
             show_thinking: If True, display full thinking/reasoning content.
+            show_cost: If True, display cost information in footers.
         """
         self._console = console or _rich_console.Console(
             force_terminal=force_terminal,
@@ -55,6 +57,7 @@ class RichConsoleRenderer(base.Renderer):
         self._stream_content = ""
         self._live: _rich_live.Live | None = None
         self._show_thinking = show_thinking
+        self._show_cost = show_cost
 
         # Thinking streaming state
         self._thinking_live: _rich_live.Live | None = None
@@ -62,13 +65,21 @@ class RichConsoleRenderer(base.Renderer):
 
         # Token tracking for panel footers
         self._current_context_tokens = 0  # Absolute context size (last API call)
-        self._total_output_tokens = 0  # Cumulative tokens generated
+        self._total_output_tokens = 0  # Cumulative tokens generated (provider-reported)
+        # Per-turn token tracking (client-side, temporary during streaming)
+        self._turn_output_tokens = 0  # Client-side estimate during streaming
+        self._is_streaming_mode = False  # True during active streaming
+
+        # Cost tracking (OpenRouter only, provider-reported)
+        self._total_cost: float = 0.0  # Cumulative cost in USD
+        self._reasoning_tokens: int = 0  # Total reasoning tokens (subset of output)
 
     def update_token_counts(self, input_tokens: int, output_tokens: int) -> None:
         """
-        Update token counts for display.
+        Update token counts for display (provider-reported, authoritative).
 
         Called after each API call to track context window usage.
+        These values are AUTHORITATIVE and replace any client-side estimates.
 
         Args:
             input_tokens: Current context window size (absolute, not cumulative).
@@ -79,14 +90,94 @@ class RichConsoleRenderer(base.Renderer):
         self._current_context_tokens = input_tokens
         self._total_output_tokens = output_tokens
 
+    def set_streaming_mode(self, is_streaming: bool) -> None:
+        """
+        Set streaming mode for footer display.
+
+        When streaming, footer shows "generating: N" with client-side count.
+        When not streaming, footer shows "generated: N" with provider total.
+
+        Args:
+            is_streaming: True when actively streaming output.
+        """
+        self._is_streaming_mode = is_streaming
+        if is_streaming:
+            # Reset turn counter at start of streaming
+            self._turn_output_tokens = 0
+
+    def update_turn_tokens(self, count: int) -> None:
+        """
+        Update per-turn token count (client-side estimate, temporary).
+
+        This count is for UI feedback during streaming ONLY.
+        It will be replaced by provider-reported values when the turn ends.
+
+        Args:
+            count: Current estimated token count for this turn.
+        """
+        self._turn_output_tokens = count
+
+    def update_cost(
+        self,
+        cost: float | None,
+        reasoning_tokens: int | None = None,
+    ) -> None:
+        """
+        Update cost tracking from provider usage details.
+
+        Called when provider reports usage with cost information (e.g., OpenRouter).
+
+        Args:
+            cost: Cost in USD for this request (added to cumulative total).
+            reasoning_tokens: Number of reasoning tokens in output (for breakdown).
+        """
+        if cost is not None:
+            self._total_cost += cost
+        if reasoning_tokens is not None:
+            self._reasoning_tokens += reasoning_tokens
+
+    def _format_cost(self, cost: float) -> str:
+        """Format cost for display (scientific notation for tiny values)."""
+        if cost < 0.0001:
+            return f"${cost:.2e}"
+        elif cost < 0.01:
+            return f"${cost:.4f}"
+        else:
+            return f"${cost:.2f}"
+
     def _token_footer(self) -> str:
-        """Generate a token count footer string."""
+        """
+        Generate a token count footer string.
+
+        Shows different labels based on streaming state:
+        - During streaming: "generating: N" (client-side estimate)
+        - After turn completes: "generated: N" (provider-reported total)
+
+        When show_cost is enabled, also displays cumulative cost.
+        """
+        # During streaming, show per-turn estimate
+        if self._is_streaming_mode:
+            if self._current_context_tokens == 0 and self._turn_output_tokens == 0:
+                return ""
+            footer = (
+                f"[dim]context: {self._current_context_tokens:,} tokens | "
+                f"generating: {self._turn_output_tokens:,}"
+            )
+            if self._show_cost and self._total_cost > 0:
+                footer += f" | {self._format_cost(self._total_cost)}"
+            return footer + "[/dim]"
+
+        # After streaming, show provider-reported totals
         if self._current_context_tokens == 0 and self._total_output_tokens == 0:
             return ""
-        return (
+
+        footer = (
             f"[dim]context: {self._current_context_tokens:,} tokens | "
-            f"generated: {self._total_output_tokens:,}[/dim]"
+            f"generated: {self._total_output_tokens:,}"
         )
+        if self._show_cost and self._total_cost > 0:
+            footer += f" | {self._format_cost(self._total_cost)}"
+        return footer + "[/dim]"
 
     def show_thinking(self, thinking: str) -> None:
         """
@@ -438,10 +529,14 @@ class RichConsoleRenderer(base.Renderer):
             content_lines.append("")
             content_lines.append(f"[dim]Next steps: {next_steps}[/dim]")
 
+        # Build footer with token/cost info
+        footer = self._token_footer()
+
         self._console.print(
             _rich_panel.Panel(
                 "\n".join(content_lines),
                 title=f"{icon} Task Finished",
+                subtitle=footer if footer else None,
                 border_style=border_color,
                 expand=True,
             )
