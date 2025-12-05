@@ -15,6 +15,7 @@ import brynhild.api.base as api_base
 import brynhild.api.types as api_types
 import brynhild.constants as _constants
 import brynhild.core.message_validators as message_validators
+import brynhild.core.token_tracker as token_tracker
 import brynhild.core.tool_recovery as tool_recovery
 import brynhild.core.types as core_types
 import brynhild.hooks.events as hooks_events
@@ -360,6 +361,9 @@ class ConversationProcessor:
         self._finish_result: FinishResult | None = None
         self._finish_reminder_count: int = 0
         self._max_finish_reminders: int = 3
+
+        # Token estimation for fallback when provider doesn't report usage
+        self._token_tracker = token_tracker.ConversationTokenTracker(provider.model)
 
         # Message validation
         self._validate_messages = validate_messages
@@ -957,6 +961,12 @@ class ConversationProcessor:
                 working_messages, f"before streaming API call (round {tool_round})"
             )
 
+            # Estimate context tokens before API call (for fallback if provider doesn't report)
+            estimated_input = self._token_tracker.estimate_context_tokens(
+                working_messages, system_prompt
+            )
+            self._token_tracker.reset_turn()
+
             # Start streaming
             await self._callbacks.on_stream_start()
             current_text = ""
@@ -989,6 +999,7 @@ class ConversationProcessor:
 
                     if event.type == "thinking_delta" and event.thinking:
                         current_thinking += event.thinking
+                        self._token_tracker.add_output_text(event.thinking)
                         await self._callbacks.on_thinking_delta(event.thinking)
 
                     elif event.type == "text_delta" and event.text:
@@ -996,6 +1007,7 @@ class ConversationProcessor:
                         if current_thinking and not current_text:
                             await self._callbacks.on_thinking_complete(current_thinking)
                         current_text += event.text
+                        self._token_tracker.add_output_text(event.text)
                         await self._callbacks.on_text_delta(event.text)
 
                     elif event.type == "tool_use_start" and event.tool_use:
@@ -1051,11 +1063,27 @@ class ConversationProcessor:
                         cost=usage.cost,
                     )
             else:
-                # Log when provider doesn't report usage (unexpected)
+                # Provider didn't report usage - fall back to tiktoken estimates
+                estimated_output = self._token_tracker.current_turn_output
+                total_input = estimated_input
+                total_output += estimated_output
+
+                # Log estimated usage with flag indicating it's an estimate
                 if self._logger:
-                    self._logger.log_event(
-                        "no_usage_reported",
-                        message="Provider did not report usage for this API call",
+                    self._logger.log_usage(
+                        input_tokens=estimated_input,
+                        output_tokens=estimated_output,
+                        cost=None,
+                        reasoning_tokens=None,
+                        provider=None,
+                        generation_id=None,
+                        estimated=True,
+                    )
+                if self._markdown_logger:
+                    self._markdown_logger.log_usage(
+                        input_tokens=estimated_input,
+                        output_tokens=estimated_output,
+                        cost=None,
                     )
 
             # If we have thinking that wasn't already shown (no text arrived), show it now
@@ -1110,6 +1138,8 @@ class ConversationProcessor:
                                 "tool_call_recovered",
                                 **recovery.to_log_dict(),
                             )
+                        if self._markdown_logger:
+                            self._markdown_logger.log_event("tool_call_recovered")
                 elif self._recovery_config.enabled:
                     # Budget exceeded
                     if self._logger:
@@ -1155,6 +1185,8 @@ class ConversationProcessor:
                             "tool_call_recovered",
                             **recovery.to_log_dict(),
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_event("tool_call_recovered")
 
             # Handle response text and/or tool calls
             if tool_uses:
@@ -1353,6 +1385,12 @@ class ConversationProcessor:
                 working_messages, f"before complete API call (round {tool_round})"
             )
 
+            # Estimate context tokens before API call (for fallback if provider doesn't report)
+            estimated_input = self._token_tracker.estimate_context_tokens(
+                working_messages, system_prompt
+            )
+            self._token_tracker.reset_turn()
+
             # Make completion request
             response = await self._provider.complete(
                 messages=working_messages,
@@ -1389,11 +1427,31 @@ class ConversationProcessor:
                         cost=usage.cost,
                     )
             else:
-                # Log when provider doesn't report usage (unexpected)
+                # Provider didn't report usage - estimate from response content
+                estimated_output = 0
+                if response.content:
+                    estimated_output += self._token_tracker.add_output_text(response.content)
+                if response.thinking:
+                    estimated_output += self._token_tracker.add_output_text(response.thinking)
+                total_input = estimated_input
+                total_output += estimated_output
+
+                # Log estimated usage with flag indicating it's an estimate
                 if self._logger:
-                    self._logger.log_event(
-                        "no_usage_reported",
-                        message="Provider did not report usage for this API call",
+                    self._logger.log_usage(
+                        input_tokens=estimated_input,
+                        output_tokens=estimated_output,
+                        cost=None,
+                        reasoning_tokens=None,
+                        provider=None,
+                        generation_id=None,
+                        estimated=True,
+                    )
+                if self._markdown_logger:
+                    self._markdown_logger.log_usage(
+                        input_tokens=estimated_input,
+                        output_tokens=estimated_output,
+                        cost=None,
                     )
 
             stop_reason = response.stop_reason
@@ -1450,6 +1508,8 @@ class ConversationProcessor:
                                 "tool_call_recovered",
                                 **recovery.to_log_dict(),
                             )
+                        if self._markdown_logger:
+                            self._markdown_logger.log_event("tool_call_recovered")
                 elif self._recovery_config.enabled:
                     # Budget exceeded
                     if self._logger:
@@ -1500,6 +1560,8 @@ class ConversationProcessor:
                             "tool_call_recovered",
                             **recovery.to_log_dict(),
                         )
+                    if self._markdown_logger:
+                        self._markdown_logger.log_event("tool_call_recovered")
 
             # Handle response text and/or tool calls
             if tool_uses:

@@ -11,6 +11,9 @@ CRITICAL INVARIANT:
 - Client-side counts MUST be replaced by provider data when available.
 
 See: workflow/design-realtime-token-display.md
+
+For conversation-level token tracking (used when provider doesn't return usage),
+see brynhild.core.token_tracker.
 """
 
 import tiktoken as _tiktoken

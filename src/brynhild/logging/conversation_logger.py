@@ -248,6 +248,7 @@ class ConversationLogger:
         cached_tokens: int | None = None,
         provider: str | None = None,
         generation_id: str | None = None,
+        estimated: bool = False,
     ) -> None:
         """Log token usage with optional extended details.
 
@@ -259,6 +260,7 @@ class ConversationLogger:
             cached_tokens: Tokens served from cache (subset of input).
             provider: Provider that served the request.
             generation_id: Unique ID for this generation.
+            estimated: True if values are tiktoken estimates (provider didn't report usage).
         """
         data: dict[str, _typing.Any] = {
             "input_tokens": input_tokens,
@@ -276,6 +278,8 @@ class ConversationLogger:
             data["provider"] = provider
         if generation_id is not None:
             data["generation_id"] = generation_id
+        if estimated:
+            data["estimated"] = True
 
         self._write_event("usage", data)
 

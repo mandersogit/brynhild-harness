@@ -308,9 +308,12 @@ class TestNullUsageHandling:
         assert result.response_text == "Hello"
 
     @_pytest.mark.asyncio
-    async def test_null_usage_returns_zero(self) -> None:
+    async def test_null_usage_returns_estimate(self) -> None:
         """
-        With null usage, tokens should be 0 (not crash or negative).
+        With null usage, tokens should be tiktoken estimates (not crash or negative).
+
+        When provider doesn't return usage, we fall back to tiktoken-based estimates
+        so that logging still captures meaningful token counts.
         """
         provider = NullUsageProvider()
         callbacks = MinimalCallbacks()
@@ -325,16 +328,18 @@ class TestNullUsageHandling:
             system_prompt="Be helpful",
         )
 
-        # Should be 0, not None or negative
-        assert result.input_tokens == 0
-        assert result.output_tokens == 0
+        # Should be reasonable estimates, not None or negative
+        assert result.input_tokens > 0  # Estimated from messages + system prompt
+        assert result.output_tokens > 0  # Estimated from response content
 
     @_pytest.mark.asyncio
     async def test_null_usage_no_callback(self) -> None:
         """
-        With null usage, on_usage_update should NOT be called.
+        With null usage from provider, on_usage_update should NOT be called.
 
-        This is important because calling with (0, 0) could be misleading.
+        When provider doesn't return usage, we don't call the UI callback
+        (to avoid displaying potentially inaccurate estimates). However,
+        we do log the estimates for post-hoc analysis.
         """
         provider = NullUsageProvider()
         callbacks = MinimalCallbacks()
@@ -349,7 +354,7 @@ class TestNullUsageHandling:
             system_prompt="Be helpful",
         )
 
-        # on_usage_update should not have been called
+        # on_usage_update should not have been called (estimates are only logged, not displayed)
         assert len(callbacks.usage_updates) == 0
 
 
