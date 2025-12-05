@@ -258,6 +258,11 @@ class Settings(_pydantic_settings.BaseSettings):
         description="Lock down log directory to owner-only (drwx------). Set False for shared access.",
     )
 
+    raw_log: bool = _pydantic.Field(
+        default=False,
+        description="Enable raw payload logging (full JSON request/response). Useful for debugging provider issues.",
+    )
+
     # Tool settings
     disable_builtin_tools: bool = _pydantic.Field(
         default=False,

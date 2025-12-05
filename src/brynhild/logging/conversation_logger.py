@@ -242,16 +242,42 @@ class ConversationLogger:
         self,
         input_tokens: int,
         output_tokens: int,
+        *,
+        cost: float | None = None,
+        reasoning_tokens: int | None = None,
+        cached_tokens: int | None = None,
+        provider: str | None = None,
+        generation_id: str | None = None,
     ) -> None:
-        """Log token usage."""
-        self._write_event(
-            "usage",
-            {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
-            },
-        )
+        """Log token usage with optional extended details.
+
+        Args:
+            input_tokens: Number of input/prompt tokens.
+            output_tokens: Number of output/completion tokens.
+            cost: Cost in USD (OpenRouter only).
+            reasoning_tokens: Tokens used for reasoning (subset of output).
+            cached_tokens: Tokens served from cache (subset of input).
+            provider: Provider that served the request.
+            generation_id: Unique ID for this generation.
+        """
+        data: dict[str, _typing.Any] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+        # Add optional details if provided
+        if cost is not None:
+            data["cost_usd"] = cost
+        if reasoning_tokens is not None:
+            data["reasoning_tokens"] = reasoning_tokens
+        if cached_tokens is not None:
+            data["cached_tokens"] = cached_tokens
+        if provider is not None:
+            data["provider"] = provider
+        if generation_id is not None:
+            data["generation_id"] = generation_id
+
+        self._write_event("usage", data)
 
     def log_tool_metrics(
         self,
@@ -596,5 +622,263 @@ class ConversationLogger:
         """Context manager exit."""
         if exc_type:
             self.log_error(str(exc_val), context=f"Exception: {exc_type.__name__}")
+        self.close()
+
+
+class RawPayloadLogger:
+    """
+    Logs raw API request/response payloads for debugging.
+
+    This is a secondary log that captures the exact JSON payloads sent to
+    and received from LLM providers. Useful for debugging provider issues.
+
+    Off by default. Enable via:
+    - CLI: --raw-log
+    - Environment: BRYNHILD_RAW_LOG=true
+
+    Each line in the file is a JSON envelope containing:
+    - timestamp: When the request/response occurred
+    - direction: "request" or "response"
+    - provider: Provider name
+    - model: Model name
+    - endpoint: API endpoint (e.g., "/chat/completions")
+    - payload: The actual JSON payload
+
+    Files are named: brynhild_raw_{session_id}.jsonl
+    """
+
+    def __init__(
+        self,
+        *,
+        log_dir: _pathlib.Path | str | None = None,
+        session_id: str | None = None,
+        private_mode: bool = True,
+        provider: str = "unknown",
+        model: str = "unknown",
+        enabled: bool = False,  # Off by default
+    ) -> None:
+        """
+        Initialize the raw payload logger.
+
+        Args:
+            log_dir: Directory for log files (same as conversation log).
+            session_id: Session ID to match with conversation log.
+            private_mode: If True, set log directory to drwx------.
+            provider: LLM provider name.
+            model: Model name.
+            enabled: Whether logging is enabled (default: False).
+        """
+        self._enabled = enabled
+        self._provider = provider
+        self._model = model
+        self._file: _typing.TextIO | None = None
+        self._file_path: _pathlib.Path | None = None
+        self._session_id = session_id or _datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._event_count = 0
+
+        if not enabled:
+            return
+
+        # Use log_dir with auto-generated filename
+        base_dir = _pathlib.Path(log_dir) if log_dir else _pathlib.Path("/tmp/brynhild-logs")
+
+        # Create directory if needed
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        # Lock down permissions if private_mode (drwx------)
+        if private_mode:
+            import os as _os
+            _os.chmod(base_dir, 0o700)
+
+        # Generate filename with "raw" in the name
+        filename = f"brynhild_raw_{self._session_id}.jsonl"
+        self._file_path = base_dir / filename
+
+        # Open the file
+        self._file = open(self._file_path, "w", encoding="utf-8")  # noqa: SIM115
+
+        # Log session start
+        self._write_envelope(
+            direction="meta",
+            endpoint="session_start",
+            payload={
+                "session_id": self._session_id,
+                "provider": provider,
+                "model": model,
+            },
+        )
+
+    def _write_envelope(
+        self,
+        direction: str,
+        endpoint: str,
+        payload: dict[str, _typing.Any],
+        *,
+        duration_ms: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Write an envelope to the log file."""
+        if not self._enabled or not self._file:
+            return
+
+        envelope: dict[str, _typing.Any] = {
+            "timestamp": _datetime.datetime.now().isoformat(),
+            "direction": direction,
+            "provider": self._provider,
+            "model": self._model,
+            "endpoint": endpoint,
+            "payload": payload,
+        }
+
+        if duration_ms is not None:
+            envelope["duration_ms"] = duration_ms
+        if error is not None:
+            envelope["error"] = error
+
+        self._file.write(_json.dumps(envelope) + "\n")
+        self._file.flush()
+        self._event_count += 1
+
+    def log_request(
+        self,
+        endpoint: str,
+        payload: dict[str, _typing.Any],
+    ) -> None:
+        """
+        Log an outgoing API request.
+
+        Args:
+            endpoint: API endpoint (e.g., "/chat/completions").
+            payload: The JSON payload being sent.
+        """
+        self._write_envelope(
+            direction="request",
+            endpoint=endpoint,
+            payload=payload,
+        )
+
+    def log_response(
+        self,
+        endpoint: str,
+        payload: dict[str, _typing.Any],
+        *,
+        duration_ms: float | None = None,
+    ) -> None:
+        """
+        Log an incoming API response.
+
+        Args:
+            endpoint: API endpoint (e.g., "/chat/completions").
+            payload: The JSON response payload.
+            duration_ms: Request duration in milliseconds.
+        """
+        self._write_envelope(
+            direction="response",
+            endpoint=endpoint,
+            payload=payload,
+            duration_ms=duration_ms,
+        )
+
+    def log_stream_chunk(
+        self,
+        endpoint: str,
+        chunk: dict[str, _typing.Any],
+    ) -> None:
+        """
+        Log a streaming response chunk.
+
+        Args:
+            endpoint: API endpoint.
+            chunk: The streaming chunk payload.
+        """
+        self._write_envelope(
+            direction="stream_chunk",
+            endpoint=endpoint,
+            payload=chunk,
+        )
+
+    def log_stream_complete(
+        self,
+        endpoint: str,
+        *,
+        chunk_count: int,
+        duration_ms: float | None = None,
+    ) -> None:
+        """
+        Log completion of a streaming response.
+
+        Args:
+            endpoint: API endpoint.
+            chunk_count: Number of chunks received.
+            duration_ms: Total streaming duration.
+        """
+        self._write_envelope(
+            direction="stream_complete",
+            endpoint=endpoint,
+            payload={"chunk_count": chunk_count},
+            duration_ms=duration_ms,
+        )
+
+    def log_error(
+        self,
+        endpoint: str,
+        error: str,
+        *,
+        payload: dict[str, _typing.Any] | None = None,
+    ) -> None:
+        """
+        Log an API error.
+
+        Args:
+            endpoint: API endpoint.
+            error: Error message.
+            payload: Optional error response payload.
+        """
+        self._write_envelope(
+            direction="error",
+            endpoint=endpoint,
+            payload=payload or {},
+            error=error,
+        )
+
+    @property
+    def file_path(self) -> _pathlib.Path | None:
+        """Get the path to the log file."""
+        return self._file_path
+
+    @property
+    def enabled(self) -> bool:
+        """Check if logging is enabled."""
+        return self._enabled
+
+    def close(self) -> None:
+        """Close the log file."""
+        if not self._enabled or not self._file:
+            return
+
+        self._write_envelope(
+            direction="meta",
+            endpoint="session_end",
+            payload={"total_events": self._event_count},
+        )
+
+        try:
+            self._file.close()
+        except OSError:
+            pass
+        finally:
+            self._file = None
+
+    def __enter__(self) -> "RawPayloadLogger":
+        """Context manager entry."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: _typing.Any,
+    ) -> None:
+        """Context manager exit."""
         self.close()
 

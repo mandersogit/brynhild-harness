@@ -302,16 +302,33 @@ class OpenRouterProvider(base.LLMProvider):
             stream=False,
         )
 
+        # Log raw request if raw logger is enabled
+        if self._raw_logger:
+            self._raw_logger.log_request("/chat/completions", payload)
+
+        import time as _time
+        start_time = _time.perf_counter()
+
         try:
             response = await self._client.post("/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
         except _httpx.HTTPStatusError as e:
+            if self._raw_logger:
+                self._raw_logger.log_error("/chat/completions", str(e))
             raise _translate_http_error(e) from e
         except _httpx.RequestError as e:
+            if self._raw_logger:
+                self._raw_logger.log_error("/chat/completions", str(e))
             raise OpenRouterAPIError(
                 f"Network error connecting to OpenRouter: {e}"
             ) from e
+
+        duration_ms = (_time.perf_counter() - start_time) * 1000
+
+        # Log raw response if raw logger is enabled
+        if self._raw_logger:
+            self._raw_logger.log_response("/chat/completions", data, duration_ms=duration_ms)
 
         return self._parse_response(data)
 
@@ -339,6 +356,14 @@ class OpenRouterProvider(base.LLMProvider):
             stream=True,
         )
 
+        # Log raw request if raw logger is enabled
+        if self._raw_logger:
+            self._raw_logger.log_request("/chat/completions (stream)", payload)
+
+        import time as _time
+        start_time = _time.perf_counter()
+        chunk_count = 0
+
         # Track accumulated tool calls
         tool_calls: dict[int, dict[str, _typing.Any]] = {}
 
@@ -355,6 +380,15 @@ class OpenRouterProvider(base.LLMProvider):
                     data_str = line[6:]  # Remove "data: " prefix
 
                     if data_str == "[DONE]":
+                        # Log stream completion
+                        if self._raw_logger:
+                            duration_ms = (_time.perf_counter() - start_time) * 1000
+                            self._raw_logger.log_stream_complete(
+                                "/chat/completions (stream)",
+                                chunk_count=chunk_count,
+                                duration_ms=duration_ms,
+                            )
+
                         # Emit final tool use events if any
                         for tool_call in tool_calls.values():
                             if tool_call.get("function"):
@@ -379,6 +413,10 @@ class OpenRouterProvider(base.LLMProvider):
 
                     try:
                         data = _json.loads(data_str)
+                        chunk_count += 1
+                        # Optionally log each chunk (can be very verbose)
+                        # if self._raw_logger:
+                        #     self._raw_logger.log_stream_chunk("/chat/completions (stream)", data)
                     except _json.JSONDecodeError:
                         continue
 
@@ -435,19 +473,23 @@ class OpenRouterProvider(base.LLMProvider):
                                 stop_reason=choice["finish_reason"],
                             )
 
-                    # Usage info
+                    # Usage info with extended details
                     if "usage" in data:
-                        usage_data = data["usage"]
+                        usage = self._parse_usage(data["usage"], generation_id=data.get("id"))
+                        # Capture provider info
+                        if usage.details:
+                            usage.details.provider = data.get("provider")
                         yield types.StreamEvent(
                             type="message_delta",
-                            usage=types.Usage(
-                                input_tokens=usage_data.get("prompt_tokens", 0),
-                                output_tokens=usage_data.get("completion_tokens", 0),
-                            ),
+                            usage=usage,
                         )
         except _httpx.HTTPStatusError as e:
+            if self._raw_logger:
+                self._raw_logger.log_error("/chat/completions (stream)", str(e))
             raise _translate_http_error(e) from e
         except _httpx.RequestError as e:
+            if self._raw_logger:
+                self._raw_logger.log_error("/chat/completions (stream)", str(e))
             raise OpenRouterAPIError(
                 f"Network error connecting to OpenRouter: {e}"
             ) from e
@@ -598,12 +640,14 @@ class OpenRouterProvider(base.LLMProvider):
                 )
             )
 
-        # Usage info
+        # Usage info with extended details
         usage_data = data.get("usage", {})
-        usage = types.Usage(
-            input_tokens=usage_data.get("prompt_tokens", 0),
-            output_tokens=usage_data.get("completion_tokens", 0),
-        )
+        usage = self._parse_usage(usage_data, generation_id=data.get("id"))
+
+        # Capture provider info
+        if usage.details:
+            usage.details.provider = data.get("provider")
+            usage.details.generation_id = data.get("id")
 
         return types.CompletionResponse(
             id=data.get("id", ""),
@@ -612,6 +656,44 @@ class OpenRouterProvider(base.LLMProvider):
             usage=usage,
             tool_uses=tool_uses,
             thinking=thinking,
+        )
+
+    def _parse_usage(
+        self,
+        usage_data: dict[str, _typing.Any],
+        generation_id: str | None = None,
+    ) -> types.Usage:
+        """Parse usage data including OpenRouter-specific details."""
+        # Extract basic token counts
+        input_tokens = usage_data.get("prompt_tokens", 0)
+        output_tokens = usage_data.get("completion_tokens", 0)
+
+        # Extract extended details if available
+        details: types.UsageDetails | None = None
+
+        # Check for any extended fields
+        cost = usage_data.get("cost")
+        cost_details = usage_data.get("cost_details", {})
+        prompt_details = usage_data.get("prompt_tokens_details", {})
+        completion_details = usage_data.get("completion_tokens_details", {})
+
+        if cost is not None or cost_details or prompt_details or completion_details:
+            details = types.UsageDetails(
+                # Token breakdown
+                reasoning_tokens=completion_details.get("reasoning_tokens"),
+                cached_tokens=prompt_details.get("cached_tokens"),
+                # Cost information
+                cost=cost,
+                prompt_cost=cost_details.get("upstream_inference_prompt_cost"),
+                completion_cost=cost_details.get("upstream_inference_completions_cost"),
+                # Provider metadata (will be set by caller)
+                generation_id=generation_id,
+            )
+
+        return types.Usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            details=details,
         )
 
     async def close(self) -> None:

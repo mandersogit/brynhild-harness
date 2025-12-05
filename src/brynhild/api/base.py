@@ -46,6 +46,7 @@ class LLMProvider(_abc.ABC):
     """
 
     _profile: profile_types.ModelProfile | None = None
+    _raw_logger: _typing.Any = None  # RawPayloadLogger, but avoid circular import
 
     @property
     @_abc.abstractmethod
@@ -68,6 +69,16 @@ class LLMProvider(_abc.ABC):
     def profile(self, value: profile_types.ModelProfile | None) -> None:
         """Set the model profile."""
         self._profile = value
+
+    @property
+    def raw_logger(self) -> _typing.Any:
+        """Raw payload logger for debugging."""
+        return self._raw_logger
+
+    @raw_logger.setter
+    def raw_logger(self, value: _typing.Any) -> None:
+        """Set the raw payload logger."""
+        self._raw_logger = value
 
     def apply_profile_to_system(self, system: str | None) -> str | None:
         """

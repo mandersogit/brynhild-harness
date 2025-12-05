@@ -11,15 +11,57 @@ import typing as _typing
 
 
 @_dataclasses.dataclass
+class UsageDetails:
+    """Detailed token usage breakdown (provider-specific)."""
+
+    # Token breakdown
+    reasoning_tokens: int | None = None
+    """Tokens used for reasoning/thinking (subset of output_tokens)."""
+
+    cached_tokens: int | None = None
+    """Tokens served from cache (subset of input_tokens)."""
+
+    # Cost information (USD)
+    cost: float | None = None
+    """Total cost in USD for this request."""
+
+    prompt_cost: float | None = None
+    """Cost for input/prompt tokens."""
+
+    completion_cost: float | None = None
+    """Cost for output/completion tokens."""
+
+    # Provider metadata
+    provider: str | None = None
+    """Actual provider that served the request (e.g., 'Novita' for OpenRouter)."""
+
+    generation_id: str | None = None
+    """Unique ID for this generation (for debugging/support)."""
+
+
+@_dataclasses.dataclass
 class Usage:
     """Token usage information."""
 
     input_tokens: int = 0
     output_tokens: int = 0
 
+    # Extended details (may be None for providers that don't support them)
+    details: UsageDetails | None = None
+
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def cost(self) -> float | None:
+        """Convenience accessor for cost."""
+        return self.details.cost if self.details else None
+
+    @property
+    def reasoning_tokens(self) -> int | None:
+        """Convenience accessor for reasoning tokens."""
+        return self.details.reasoning_tokens if self.details else None
 
 
 @_dataclasses.dataclass
