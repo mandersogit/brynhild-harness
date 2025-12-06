@@ -246,6 +246,62 @@ def _create_renderer(
         return ui.RichConsoleRenderer(show_thinking=show_thinking, show_cost=show_cost)
 
 
+def _resolve_log_path(
+    log_file: str | None,
+    log_dir: _pathlib.Path,
+    pattern: str = "brynhild_*.jsonl",
+    exclude_prefix: str | None = "brynhild_raw_",
+    error_message: str = "No logs found",
+) -> _pathlib.Path:
+    """Resolve a log file path argument.
+
+    Handles three cases:
+    1. Absolute path: Use as-is
+    2. Relative path or filename that exists in CWD: Use as-is
+    3. Just a filename that doesn't exist in CWD: Look in log_dir
+
+    Args:
+        log_file: User-provided path (absolute, relative, or filename).
+        log_dir: Default log directory for finding recent logs.
+        pattern: Glob pattern for finding most recent log.
+        exclude_prefix: Prefix to exclude when finding most recent.
+        error_message: Custom message when no logs found.
+
+    Returns:
+        Resolved path to log file.
+
+    Raises:
+        SystemExit: If log file not found.
+    """
+    if log_file:
+        log_path = _pathlib.Path(log_file)
+        # If path exists as-is (absolute or relative to CWD), use it
+        # Otherwise, if it's just a filename, look in log_dir
+        if not log_path.exists() and log_path.name == log_file:
+            # Just a filename, no path components - look in log_dir
+            log_path = log_dir / log_file
+    else:
+        # Find most recent
+        if exclude_prefix:
+            log_files = sorted(
+                [f for f in log_dir.glob(pattern) if not f.name.startswith(exclude_prefix)],
+                reverse=True,
+            )
+        else:
+            log_files = sorted(log_dir.glob(pattern), reverse=True)
+
+        if not log_files:
+            _click.echo(f"{error_message} in {log_dir}", err=True)
+            raise SystemExit(1)
+        log_path = log_files[0]
+
+    if not log_path.exists():
+        _click.echo(f"Log file not found: {log_path}", err=True)
+        raise SystemExit(1)
+
+    return log_path
+
+
 async def _run_conversation(
     settings: config.Settings,
     prompt: str,
@@ -258,7 +314,7 @@ async def _run_conversation(
     tools_enabled: bool = True,
     verbose: bool = False,
     log_enabled: bool | None = None,
-    log_file: str | None = None,
+    log_file: _pathlib.Path | str | None = None,
     raw_log_enabled: bool = False,
     profile_name: str | None = None,
     show_thinking: bool = False,
@@ -586,7 +642,12 @@ def _handle_interactive_mode(
 @_click.option("--dry-run", is_flag=True, help="Show tool calls without executing")
 @_click.option("--tools/--no-tools", "tools_enabled", default=True, help="Enable/disable tool use")
 @_click.option("--no-log", is_flag=True, help="Disable conversation logging")
-@_click.option("--log-file", type=str, default=None, help="Explicit log file path")
+@_click.option(
+    "--log-file",
+    type=_click.Path(dir_okay=False, path_type=_pathlib.Path),
+    default=None,
+    help="Explicit log file path",
+)
 @_click.option("--raw-log", is_flag=True, help="Enable raw payload logging (full JSON request/response)")
 @_click.option(
     "--require-finish",
@@ -625,7 +686,7 @@ def chat(
     dry_run: bool,
     tools_enabled: bool,
     no_log: bool,
-    log_file: str | None,
+    log_file: _pathlib.Path | None,
     raw_log: bool,
     require_finish: bool,
     prompt_file: tuple[_pathlib.Path, ...],
@@ -1699,27 +1760,7 @@ def logs_view(
     By default shows full content. Use --summary for truncated view.
     """
     settings: config.Settings = ctx.obj["settings"]
-    log_dir = settings.logs_dir
-
-    # Determine which file to view
-    if log_file:
-        log_path = _pathlib.Path(log_file)
-        if not log_path.is_absolute():
-            log_path = log_dir / log_file
-    else:
-        # Find most recent (exclude raw logs)
-        log_files = sorted(
-            [f for f in log_dir.glob("brynhild_*.jsonl") if not f.name.startswith("brynhild_raw_")],
-            reverse=True,
-        )
-        if not log_files:
-            _click.echo(f"No logs found in {log_dir}", err=True)
-            raise SystemExit(1)
-        log_path = log_files[0]
-
-    if not log_path.exists():
-        _click.echo(f"Log file not found: {log_path}", err=True)
-        raise SystemExit(1)
+    log_path = _resolve_log_path(log_file, settings.logs_dir)
 
     # Read and display
     events = []
@@ -1972,27 +2013,7 @@ def logs_export(
         brynhild logs export -o report.md --no-thinking
     """
     settings: config.Settings = ctx.obj["settings"]
-    log_dir = settings.logs_dir
-
-    # Determine which file to export
-    if log_file:
-        log_path = _pathlib.Path(log_file)
-        if not log_path.is_absolute():
-            log_path = log_dir / log_file
-    else:
-        # Find most recent (exclude raw logs)
-        log_files = sorted(
-            [f for f in log_dir.glob("brynhild_*.jsonl") if not f.name.startswith("brynhild_raw_")],
-            reverse=True,
-        )
-        if not log_files:
-            _click.echo(f"No logs found in {log_dir}", err=True)
-            raise SystemExit(1)
-        log_path = log_files[0]
-
-    if not log_path.exists():
-        _click.echo(f"Log file not found: {log_path}", err=True)
-        raise SystemExit(1)
+    log_path = _resolve_log_path(log_file, settings.logs_dir)
 
     # Read events
     events: list[dict[str, _typing.Any]] = []
@@ -2118,22 +2139,13 @@ def logs_raw(
         return
 
     # Determine which file to view
-    if log_file:
-        log_path = _pathlib.Path(log_file)
-        if not log_path.is_absolute():
-            log_path = log_dir / log_file
-    else:
-        # Find most recent raw log
-        raw_files = sorted(log_dir.glob("brynhild_raw_*.jsonl"), reverse=True)
-        if not raw_files:
-            _click.echo(f"No raw log files found in {log_dir}", err=True)
-            _click.echo("Use --raw-log flag when running brynhild chat to enable raw logging.", err=True)
-            raise SystemExit(1)
-        log_path = raw_files[0]
-
-    if not log_path.exists():
-        _click.echo(f"Raw log file not found: {log_path}", err=True)
-        raise SystemExit(1)
+    log_path = _resolve_log_path(
+        log_file,
+        log_dir,
+        pattern="brynhild_raw_*.jsonl",
+        exclude_prefix=None,
+        error_message="No raw log files found",
+    )
 
     # Read all records
     records: list[dict[str, _typing.Any]] = []
