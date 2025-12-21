@@ -215,6 +215,12 @@ def execute(ctx: _click.Context, dry_run: bool) -> None:
         _sys.exit(1)
 
     # Execute each commit
+    # TODO: Fix pre-staged files issue. If files are already staged before
+    # running execute, they all get committed in the first commit because
+    # `git commit` commits ALL staged changes, not just files staged in this
+    # iteration. Fix: add `_run_git(["reset", "HEAD"], src_repo, dry_run)`
+    # before the staging loop to unstage everything first.
+    # See: workflow/task-commit-helper-fix.md
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])

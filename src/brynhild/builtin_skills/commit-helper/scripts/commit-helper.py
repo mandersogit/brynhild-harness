@@ -177,6 +177,11 @@ def _execute_plan(plan_path: _pathlib.Path, dry_run: bool = False) -> None:
         _sys.exit(1)
 
     # Execute each commit
+    # TODO: Fix pre-staged files issue. If files are already staged before
+    # running execute, they all get committed in the first commit because
+    # `git commit` commits ALL staged changes, not just files staged in this
+    # iteration. Fix: add `_run_git(["reset", "HEAD"], repo_path, dry_run)`
+    # before the staging loop to unstage everything first.
     for i, commit in enumerate(commits, 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
