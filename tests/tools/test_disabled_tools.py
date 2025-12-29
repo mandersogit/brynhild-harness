@@ -1,9 +1,6 @@
 """Tests for tool disabling functionality."""
 
-import os as _os
-import unittest.mock as _mock
 
-import pytest as _pytest
 
 import brynhild.config as config
 import brynhild.config.types as types
