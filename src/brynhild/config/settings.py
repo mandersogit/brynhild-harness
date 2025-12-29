@@ -1,7 +1,18 @@
 """
 Settings configuration using pydantic-settings.
 
-Loads configuration from environment variables with BRYNHILD_ prefix.
+Loads configuration from:
+1. Constructor arguments (highest precedence)
+2. Environment variables with BRYNHILD_ prefix
+3. .env file (if present)
+4. Layered YAML config files via DeepChainMap:
+   - Project config: .brynhild/config.yaml (highest)
+   - User config: ~/.config/brynhild/config.yaml
+   - Built-in defaults: bundled defaults/config.yaml (lowest)
+
+Nested config uses double underscore delimiter:
+  BRYNHILD_BEHAVIOR__MAX_TOKENS=16384
+  BRYNHILD_SANDBOX__ENABLED=false
 """
 
 import getpass as _getpass
@@ -12,6 +23,9 @@ import typing as _typing
 
 import pydantic as _pydantic
 import pydantic_settings as _pydantic_settings
+
+import brynhild.config.types as types
+import brynhild.config.sources as sources
 
 
 def _get_env_file() -> str | None:
@@ -166,15 +180,52 @@ class Settings(_pydantic_settings.BaseSettings):
     Brynhild configuration settings.
 
     All settings can be overridden via environment variables with BRYNHILD_ prefix.
-    Example: BRYNHILD_PROVIDER=openrouter
+    For nested config, use double underscore: BRYNHILD_BEHAVIOR__MAX_TOKENS=16384
+
+    Config precedence (highest to lowest):
+    1. Constructor arguments
+    2. Environment variables (BRYNHILD_*)
+    3. .env file
+    4. Project config (.brynhild/config.yaml)
+    5. User config (~/.config/brynhild/config.yaml)
+    6. Built-in defaults
     """
 
     model_config = _pydantic_settings.SettingsConfigDict(
         env_prefix="BRYNHILD_",
         env_file=_get_env_file(),
         env_file_encoding="utf-8",
-        extra="ignore",
+        env_nested_delimiter="__",  # BRYNHILD_BEHAVIOR__MAX_TOKENS
+        extra="allow",  # Preserve unknown fields for strict validation mode
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[_pydantic_settings.BaseSettings],
+        init_settings: _pydantic_settings.PydanticBaseSettingsSource,
+        env_settings: _pydantic_settings.PydanticBaseSettingsSource,
+        dotenv_settings: _pydantic_settings.PydanticBaseSettingsSource,
+        file_secret_settings: _pydantic_settings.PydanticBaseSettingsSource,
+    ) -> tuple[_pydantic_settings.PydanticBaseSettingsSource, ...]:
+        """
+        Configure settings sources with precedence:
+        1. init_settings (constructor args) — highest
+        2. env_settings (BRYNHILD_* env vars)
+        3. dotenv_settings (.env file)
+        4. yaml_settings (config.yaml via DCM)
+        5. (defaults via Field definitions) — lowest
+        """
+        # Get project_root for project-level config
+        project_root = find_project_root(allow_wide_root=True)
+
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            sources.DeepChainMapSettingsSource(settings_cls, project_root),
+            file_secret_settings,
+        )
 
     @classmethod
     def construct_without_dotenv(cls, **kwargs: _typing.Any) -> "Settings":
@@ -187,16 +238,101 @@ class Settings(_pydantic_settings.BaseSettings):
         """
         return cls(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
-    # Provider settings
-    provider: str = _pydantic.Field(
-        default="openrouter",
-        description="LLM provider to use. Built-in: openrouter, ollama. Plugins can add more.",
-    )
+    @_pydantic.model_validator(mode="after")
+    def _check_legacy_env_vars(self) -> "Settings":
+        """
+        Detect legacy flat environment variables and emit migration error.
 
-    model: str = _pydantic.Field(
-        default="openai/gpt-oss-120b",
-        description="Model to use for completions (OpenRouter format)",
+        Per Q2 decision: hard break with detection. Old flat env vars like
+        BRYNHILD_MODEL are no longer supported. Users must migrate to nested
+        syntax: BRYNHILD_MODELS__DEFAULT.
+
+        Set BRYNHILD_SKIP_MIGRATION_CHECK=1 to bypass (for tests during migration).
+        """
+        # Allow bypassing for tests/migration
+        if _os.environ.get("BRYNHILD_SKIP_MIGRATION_CHECK"):
+            return self
+
+        # Map of legacy -> new env var names
+        legacy_mappings = {
+            "BRYNHILD_MODEL": "BRYNHILD_MODELS__DEFAULT",
+            "BRYNHILD_PROVIDER": "BRYNHILD_PROVIDERS__DEFAULT",
+            "BRYNHILD_VERBOSE": "BRYNHILD_BEHAVIOR__VERBOSE",
+            "BRYNHILD_MAX_TOKENS": "BRYNHILD_BEHAVIOR__MAX_TOKENS",
+            "BRYNHILD_OUTPUT_FORMAT": "BRYNHILD_BEHAVIOR__OUTPUT_FORMAT",
+            "BRYNHILD_SANDBOX_ENABLED": "BRYNHILD_SANDBOX__ENABLED",
+            "BRYNHILD_SANDBOX_ALLOW_NETWORK": "BRYNHILD_SANDBOX__ALLOW_NETWORK",
+            "BRYNHILD_LOG_CONVERSATIONS": "BRYNHILD_LOGGING__ENABLED",
+            "BRYNHILD_LOG_DIR": "BRYNHILD_LOGGING__DIR",
+            "BRYNHILD_LOG_DIR_PRIVATE": "BRYNHILD_LOGGING__PRIVATE",
+            "BRYNHILD_RAW_LOG": "BRYNHILD_LOGGING__RAW_PAYLOADS",
+            "BRYNHILD_DISABLED_TOOLS": "BRYNHILD_TOOLS__DISABLED (as dict)",
+            "BRYNHILD_DISABLE_BUILTIN_TOOLS": "BRYNHILD_TOOLS__DISABLED__BUILTIN (as dict)",
+        }
+
+        # Check for legacy env vars
+        detected = []
+        for legacy, new in legacy_mappings.items():
+            if _os.environ.get(legacy):
+                detected.append(f"  {legacy} -> {new}")
+
+        if detected:
+            raise ValueError(
+                "Legacy environment variables detected. Brynhild now uses nested "
+                "config syntax.\n\n"
+                "Please update the following environment variables:\n"
+                + "\n".join(detected)
+                + "\n\n"
+                "For more information, see: https://brynhild.dev/docs/config-migration"
+            )
+
+        return self
+
+    # =========================================================================
+    # Config version (for future migrations)
+    # =========================================================================
+
+    version: int = _pydantic.Field(default=1, description="Config schema version")
+
+    # =========================================================================
+    # Nested config sections
+    # =========================================================================
+
+    models: types.ModelsConfig = _pydantic.Field(default_factory=types.ModelsConfig)
+    """Model configuration (default model, registry in Phase 4)."""
+
+    providers: types.ProvidersConfig = _pydantic.Field(
+        default_factory=types.ProvidersConfig
     )
+    """Provider configuration (default provider, per-provider settings)."""
+
+    behavior: types.BehaviorConfig = _pydantic.Field(
+        default_factory=types.BehaviorConfig
+    )
+    """Behavior settings (max_tokens, verbose, output_format, etc.)."""
+
+    sandbox: types.SandboxConfig = _pydantic.Field(default_factory=types.SandboxConfig)
+    """Sandbox/security settings."""
+
+    logging: types.LoggingConfig = _pydantic.Field(default_factory=types.LoggingConfig)
+    """Logging settings."""
+
+    session: types.SessionConfig = _pydantic.Field(default_factory=types.SessionConfig)
+    """Session settings."""
+
+    plugins: types.PluginsConfig = _pydantic.Field(default_factory=types.PluginsConfig)
+    """Plugin settings."""
+
+    tools: types.ToolsConfig = _pydantic.Field(default_factory=types.ToolsConfig)
+    """Tool settings."""
+
+    # =========================================================================
+    # Fields NOT in nested config (remain flat)
+    # These are either:
+    # - API keys (special env var handling)
+    # - Dangerous flags (CLI only, never in config files)
+    # - Runtime overrides (log_file)
+    # =========================================================================
 
     # API Keys (loaded from env without BRYNHILD_ prefix for compatibility)
     openrouter_api_key: str | None = _pydantic.Field(
@@ -205,52 +341,10 @@ class Settings(_pydantic_settings.BaseSettings):
         validation_alias="OPENROUTER_API_KEY",
     )
 
-    # Output settings
-    output_format: _typing.Literal["text", "json", "stream"] = _pydantic.Field(
-        default="text",
-        description="Output format for non-interactive mode",
-    )
-
-    # Behavior settings
-    max_tokens: int = _pydantic.Field(
-        default=8192,
-        ge=1,
-        le=200000,
-        description="Maximum tokens for completions",
-    )
-
-    verbose: bool = _pydantic.Field(
-        default=False,
-        description="Enable verbose output",
-    )
-
-    # Reasoning format for conversation history
-    reasoning_format: _typing.Literal["reasoning_field", "thinking_tags", "none", "auto"] = _pydantic.Field(
-        default="auto",
-        description=(
-            "How to include model reasoning in conversation history. "
-            "'reasoning_field': separate field (OpenRouter convention), "
-            "'thinking_tags': wrap in <thinking> tags in content, "
-            "'none': don't include reasoning, "
-            "'auto': use provider's default"
-        ),
-    )
-
-    # Permission settings
+    # Permission settings (CLI only, dangerous)
     dangerously_skip_permissions: bool = _pydantic.Field(
         default=False,
         description="Skip all permission checks (dangerous!)",
-    )
-
-    # Sandbox settings
-    sandbox_enabled: bool = _pydantic.Field(
-        default=True,
-        description="Enable sandbox restrictions for tool execution",
-    )
-
-    sandbox_allow_network: bool = _pydantic.Field(
-        default=False,
-        description="Allow network access in sandboxed commands",
     )
 
     dangerously_skip_sandbox: bool = _pydantic.Field(
@@ -258,25 +352,10 @@ class Settings(_pydantic_settings.BaseSettings):
         description="Skip OS-level sandbox (DANGEROUS - for testing only)",
     )
 
-    allowed_paths: str = _pydantic.Field(
-        default="",
-        description="Additional paths where writes are allowed (comma-separated)",
-    )
-
+    # Runtime overrides
     allow_home_directory: bool = _pydantic.Field(
         default=False,
         description="Allow running from overly broad directories like ~ or /",
-    )
-
-    # Logging settings
-    log_conversations: bool = _pydantic.Field(
-        default=True,
-        description="Enable conversation logging to JSONL files",
-    )
-
-    log_dir: str = _pydantic.Field(
-        default="",  # Empty = use config_dir/logs (computed at runtime)
-        description="Directory for conversation log files (default: ~/.brynhild-{user}/logs)",
     )
 
     log_file: str | None = _pydantic.Field(
@@ -284,32 +363,167 @@ class Settings(_pydantic_settings.BaseSettings):
         description="Explicit log file path (overrides log_dir + auto filename)",
     )
 
-    log_dir_private: bool = _pydantic.Field(
-        default=True,
-        description="Lock down log directory to owner-only (drwx------). Set False for shared access.",
-    )
+    # =========================================================================
+    # Backward compatibility: Property aliases to nested config
+    # These allow existing code to use settings.model instead of settings.models.default
+    # =========================================================================
 
-    raw_log: bool = _pydantic.Field(
-        default=False,
-        description="Enable raw payload logging (full JSON request/response). Useful for debugging provider issues.",
-    )
+    @property
+    def model(self) -> str:
+        """Default model (alias to models.default)."""
+        return self.models.default
 
-    # Tool settings
-    disable_builtin_tools: bool = _pydantic.Field(
-        default=False,
-        description="Disable all builtin tools (use only plugin tools)",
-    )
+    @model.setter
+    def model(self, value: str) -> None:
+        """Set default model."""
+        self.models.default = value
 
-    disabled_tools: str = _pydantic.Field(
-        default="",
-        description="Comma-separated list of tool names to disable (e.g., 'Bash,Write')",
-    )
+    @property
+    def provider(self) -> str:
+        """Default provider (alias to providers.default)."""
+        return self.providers.default
 
+    @provider.setter
+    def provider(self, value: str) -> None:
+        """Set default provider."""
+        self.providers.default = value
+
+    @property
+    def max_tokens(self) -> int:
+        """Max tokens (alias to behavior.max_tokens)."""
+        return self.behavior.max_tokens
+
+    @max_tokens.setter
+    def max_tokens(self, value: int) -> None:
+        """Set max tokens."""
+        self.behavior.max_tokens = value
+
+    @property
+    def verbose(self) -> bool:
+        """Verbose mode (alias to behavior.verbose)."""
+        return self.behavior.verbose
+
+    @verbose.setter
+    def verbose(self, value: bool) -> None:
+        """Set verbose mode."""
+        self.behavior.verbose = value
+
+    @property
+    def output_format(self) -> _typing.Literal["text", "json", "stream"]:
+        """Output format (alias to behavior.output_format)."""
+        return self.behavior.output_format
+
+    @output_format.setter
+    def output_format(self, value: _typing.Literal["text", "json", "stream"]) -> None:
+        """Set output format."""
+        self.behavior.output_format = value
+
+    @property
+    def reasoning_format(
+        self,
+    ) -> _typing.Literal["reasoning_field", "thinking_tags", "none", "auto"]:
+        """Reasoning format (alias to behavior.reasoning_format)."""
+        return self.behavior.reasoning_format
+
+    @reasoning_format.setter
+    def reasoning_format(
+        self, value: _typing.Literal["reasoning_field", "thinking_tags", "none", "auto"]
+    ) -> None:
+        """Set reasoning format."""
+        self.behavior.reasoning_format = value
+
+    @property
+    def sandbox_enabled(self) -> bool:
+        """Sandbox enabled (alias to sandbox.enabled)."""
+        return self.sandbox.enabled
+
+    @sandbox_enabled.setter
+    def sandbox_enabled(self, value: bool) -> None:
+        """Set sandbox enabled."""
+        self.sandbox.enabled = value
+
+    @property
+    def sandbox_allow_network(self) -> bool:
+        """Sandbox allow network (alias to sandbox.allow_network)."""
+        return self.sandbox.allow_network
+
+    @sandbox_allow_network.setter
+    def sandbox_allow_network(self, value: bool) -> None:
+        """Set sandbox allow network."""
+        self.sandbox.allow_network = value
+
+    @property
+    def allowed_paths(self) -> str:
+        """Allowed paths as comma-separated string (for CLI compat)."""
+        return ",".join(self.sandbox.allowed_paths)
+
+    @allowed_paths.setter
+    def allowed_paths(self, value: str) -> None:
+        """Set allowed paths from comma-separated string."""
+        if value and value.strip():
+            self.sandbox.allowed_paths = [p.strip() for p in value.split(",") if p.strip()]
+        else:
+            self.sandbox.allowed_paths = []
+
+    @property
+    def log_conversations(self) -> bool:
+        """Log conversations enabled (alias to logging.enabled)."""
+        return self.logging.enabled
+
+    @log_conversations.setter
+    def log_conversations(self, value: bool) -> None:
+        """Set log conversations."""
+        self.logging.enabled = value
+
+    @property
+    def log_dir(self) -> str:
+        """Log directory (alias to logging.dir, with default handling)."""
+        return self.logging.dir or ""
+
+    @log_dir.setter
+    def log_dir(self, value: str) -> None:
+        """Set log directory."""
+        self.logging.dir = value if value else None
+
+    @property
+    def log_dir_private(self) -> bool:
+        """Log dir private mode (alias to logging.private)."""
+        return self.logging.private
+
+    @log_dir_private.setter
+    def log_dir_private(self, value: bool) -> None:
+        """Set log dir private."""
+        self.logging.private = value
+
+    @property
+    def raw_log(self) -> bool:
+        """Raw payload logging (alias to logging.raw_payloads)."""
+        return self.logging.raw_payloads
+
+    @raw_log.setter
+    def raw_log(self, value: bool) -> None:
+        """Set raw log."""
+        self.logging.raw_payloads = value
+
+    @property
+    def disable_builtin_tools(self) -> bool:
+        """Check if builtin tools disabled (computed from tools.disabled)."""
+        # This was a flat bool before; now we check for a special marker
+        return self.tools.disabled.get("__builtin__", False)
+
+    @property
+    def disabled_tools(self) -> str:
+        """Get disabled tools as comma-separated string (for CLI compat)."""
+        return ",".join(k for k, v in self.tools.disabled.items() if v and k != "__builtin__")
+
+    # =========================================================================
     # Directory settings (computed at runtime)
+    # =========================================================================
+
     @property
     def config_dir(self) -> _pathlib.Path:
-        """User configuration directory (~/.brynhild/)."""
-        return _pathlib.Path.home() / ".brynhild"
+        """User configuration directory (~/.config/brynhild/)."""
+        return sources.get_user_config_dir()
 
     @property
     def project_root(self) -> _pathlib.Path:
@@ -328,10 +542,14 @@ class Settings(_pydantic_settings.BaseSettings):
         Default: /tmp/brynhild-logs-{username}
         The username suffix prevents accidental log sharing in multi-user systems.
         """
-        if self.log_dir:
-            return _pathlib.Path(self.log_dir)
+        if self.logging.dir:
+            return _pathlib.Path(self.logging.dir)
         username = _get_username()
         return _pathlib.Path(f"/tmp/brynhild-logs-{username}")
+
+    # =========================================================================
+    # Helper methods
+    # =========================================================================
 
     def get_api_key(self) -> str | None:
         """Get the API key for the configured provider."""
@@ -341,14 +559,8 @@ class Settings(_pydantic_settings.BaseSettings):
 
     def get_allowed_paths(self) -> list[_pathlib.Path]:
         """Get additional allowed paths as Path objects."""
-        import os as _os
-
-        if not self.allowed_paths or not self.allowed_paths.strip():
-            return []
-
         paths = []
-        for p in self.allowed_paths.split(","):
-            p = p.strip()
+        for p in self.sandbox.allowed_paths:
             if p:
                 # Expand ~ and resolve
                 expanded = _os.path.expanduser(p)
@@ -357,20 +569,66 @@ class Settings(_pydantic_settings.BaseSettings):
 
     def get_disabled_tools(self) -> set[str]:
         """Get set of disabled tool names."""
-        if not self.disabled_tools or not self.disabled_tools.strip():
-            return set()
-
-        return {name.strip() for name in self.disabled_tools.split(",") if name.strip()}
+        return {
+            name for name, disabled in self.tools.disabled.items()
+            if disabled and name != "__builtin__"
+        }
 
     def is_tool_disabled(self, tool_name: str) -> bool:
         """Check if a specific tool is disabled."""
         if self.disable_builtin_tools:
             return True
-        return tool_name in self.get_disabled_tools()
+        return self.tools.is_tool_disabled(tool_name)
+
+    # =========================================================================
+    # Introspection (for strict validation mode)
+    # =========================================================================
+
+    def get_extra_fields(self) -> dict[str, _typing.Any]:
+        """
+        Get unknown fields at the top level of Settings.
+
+        Use this for strict validation / config auditing.
+        """
+        return dict(self.model_extra) if self.model_extra else {}
+
+    def collect_all_extra_fields(self) -> dict[str, _typing.Any]:
+        """
+        Recursively collect all extra fields from Settings and nested configs.
+
+        Returns a flat dict with dotted paths as keys, e.g.:
+            {"behavior.verboes": True, "providers.instances.openrouter.enabeld": True}
+
+        Use this for strict validation / config auditing.
+        """
+        result: dict[str, _typing.Any] = {}
+
+        # Top-level extra fields
+        for key, value in self.get_extra_fields().items():
+            result[key] = value
+
+        # Recurse into nested config sections
+        for field_name in ["models", "providers", "behavior", "sandbox",
+                          "logging", "session", "plugins", "tools"]:
+            nested = getattr(self, field_name, None)
+            if hasattr(nested, "collect_all_extra_fields"):
+                nested_extras = nested.collect_all_extra_fields(prefix=field_name)
+                result.update(nested_extras)
+
+        return result
+
+    def has_extra_fields(self) -> bool:
+        """Check if there are any unknown fields anywhere in the config."""
+        return bool(self.collect_all_extra_fields())
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
 
     def to_dict(self) -> dict[str, _typing.Any]:
         """Convert settings to dictionary (for JSON output)."""
         return {
+            "version": self.version,
             "provider": self.provider,
             "model": self.model,
             "output_format": self.output_format,

@@ -2,26 +2,86 @@
 # This file provides built-in defaults and is the lowest-precedence layer.
 # User config (~/.config/brynhild/config.yaml) and project config
 # (.brynhild/config.yaml) override these values.
+#
+# Environment variables override these values with double-underscore nesting:
+#   BRYNHILD_BEHAVIOR__MAX_TOKENS=16384
+#   BRYNHILD_MODELS__DEFAULT=my-model
+#   BRYNHILD_PROVIDERS__DEFAULT=ollama
 
 version: 1
 
+# =============================================================================
+# Models
+# =============================================================================
 models:
   default: anthropic/claude-sonnet-4
 
+# =============================================================================
+# Providers
+# =============================================================================
 providers:
   default: openrouter
+  # Provider-specific config can be added here:
+  # openrouter:
+  #   cache_ttl: 3600
+  # ollama:
+  #   base_url: http://localhost:11434
 
+# =============================================================================
+# Behavior
+# =============================================================================
 behavior:
   max_tokens: 8192
+  output_format: text
   verbose: false
   show_thinking: true
   show_cost: true
+  reasoning_format: auto
 
+# =============================================================================
+# Sandbox
+# =============================================================================
 sandbox:
   enabled: true
+  allow_network: false
+  allowed_paths: []
 
+# =============================================================================
+# Logging
+# =============================================================================
 logging:
+  enabled: true
+  dir: null  # null = use default (/tmp/brynhild-logs-{username})
   level: info
+  private: true
+  raw_payloads: false
 
+# =============================================================================
+# Session
+# =============================================================================
+session:
+  auto_save: true
+  history_limit: 100
 
+# =============================================================================
+# Plugins
+# =============================================================================
+plugins:
+  search_paths: []
+  enabled: {}
+  # Plugin-specific config can be added here:
+  # my-plugin:
+  #   enabled: true
+  #   timeout: 600
+
+# =============================================================================
+# Tools
+# =============================================================================
+tools:
+  disabled: {}
+  # Tool-specific config can be added here:
+  # bash:
+  #   require_approval: always
+  #   blocked_commands:
+  #     - rm -rf
 

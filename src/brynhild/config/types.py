@@ -210,6 +210,25 @@ class SessionConfig(ConfigBase):
 
 
 # =============================================================================
+# Models Settings
+# =============================================================================
+
+
+class ModelsConfig(ConfigBase):
+    """
+    Model-related configuration.
+
+    YAML section: models.*
+
+    Note: This is a minimal implementation for Phase 3.
+    Phase 4 will add full ModelIdentity and registry support.
+    """
+
+    default: str = "anthropic/claude-sonnet-4"
+    """Default model when not specified."""
+
+
+# =============================================================================
 # Provider Settings
 # =============================================================================
 
