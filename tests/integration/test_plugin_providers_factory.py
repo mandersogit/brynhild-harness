@@ -105,7 +105,7 @@ class TestPluginProvidersInFactory:
         # Note: Plugin providers may or may not appear depending on registry state
 
     def test_unknown_provider_error_mentions_plugin_providers(self) -> None:
-        """Error for unknown provider should mention available plugins."""
+        """Error for unknown provider should mention available types."""
         self._setup_plugin_providers()
 
         with _pytest.raises(ValueError) as exc_info:
@@ -116,8 +116,8 @@ class TestPluginProvidersInFactory:
 
         error_msg = str(exc_info.value)
         assert "Unknown provider" in error_msg
-        # Should list available providers
-        assert "Available:" in error_msg
+        # Should list available provider types
+        assert "Available types:" in error_msg
 
 
 class TestPluginProviderDiscovery:

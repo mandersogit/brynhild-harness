@@ -51,8 +51,8 @@ class TestProviderFactory:
             provider = api.get_default_provider()
             assert provider == "openrouter"
 
-    def test_get_default_provider_returns_none_without_keys(self) -> None:
-        """Without any API keys, get_default_provider should return None."""
+    def test_get_default_provider_from_config(self) -> None:
+        """Without env vars, get_default_provider should return config default."""
         clean_env = {
             k: v
             for k, v in _os.environ.items()
@@ -60,7 +60,8 @@ class TestProviderFactory:
         }
         with _mock.patch.dict(_os.environ, clean_env, clear=True):
             provider = api.get_default_provider()
-            assert provider is None
+            # Config file has providers.default: openrouter
+            assert provider == "openrouter"
 
     def test_create_provider_openrouter(self) -> None:
         """create_provider should create OpenRouterProvider for 'openrouter'."""
