@@ -206,11 +206,13 @@ def fire_plugin_init_sync(
         project_root: Project root directory.
     """
     try:
-        loop = _asyncio.get_running_loop()
-        # Already in async context - schedule as task
-        loop.create_task(fire_plugin_init(plugin, project_root=project_root))
+        _asyncio.get_running_loop()
+        # Already in async context - caller should use async version directly.
+        # Creating a fire-and-forget task causes orphaned tasks that block teardown.
+        _logger.debug("Skipping sync lifecycle hooks - already in async context")
+        return
     except RuntimeError:
-        # No event loop - create one
+        # No event loop - safe to create one
         _asyncio.run(fire_plugin_init(plugin, project_root=project_root))
 
 
@@ -225,10 +227,20 @@ def fire_plugin_init_for_all_sync(
     Args:
         plugins: List of plugins to initialize.
         project_root: Project root directory.
+    
+    Note:
+        When called from an async context (e.g., pytest-asyncio), this skips
+        hook firing to avoid orphaned tasks that cause 30s teardown delays.
+        Callers in async contexts should use fire_plugin_init_for_all() directly.
     """
     try:
-        loop = _asyncio.get_running_loop()
-        loop.create_task(fire_plugin_init_for_all(plugins, project_root=project_root))
+        _asyncio.get_running_loop()
+        # Already in async context - caller should use async version directly.
+        # Creating a fire-and-forget task here causes orphaned tasks that block
+        # event loop teardown for 30 seconds (the default hook timeout).
+        _logger.debug("Skipping sync lifecycle hooks - already in async context")
+        return
     except RuntimeError:
+        # No event loop - safe to create one
         _asyncio.run(fire_plugin_init_for_all(plugins, project_root=project_root))
 
