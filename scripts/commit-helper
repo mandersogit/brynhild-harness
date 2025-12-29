@@ -33,6 +33,17 @@ import yaml as _yaml
 DEFAULT_SOURCE_REPO = _pathlib.Path("/Users/manderso/git/github/brynhild")
 DEFAULT_PUBLIC_REPO = _pathlib.Path("/Users/manderso/git/github/brynhild-public")
 
+# TODO: Add branch validation for dual-repo workflow
+# The sync-public command should verify that both the source (private) repo and
+# the public repo are on the same branch before allowing commits. Currently,
+# if the repos are on different branches, commits will silently go to whatever
+# branch each repo happens to be on, which can cause history divergence.
+#
+# Suggested fix:
+# 1. In sync-public, get current branch of both repos via `git branch --show-current`
+# 2. If branches differ, abort with clear error message
+# 3. Consider also checking for uncommitted changes in the public repo
+
 
 def _run_git(
     args: list[str],
