@@ -24,8 +24,8 @@ import typing as _typing
 import pydantic as _pydantic
 import pydantic_settings as _pydantic_settings
 
-import brynhild.config.types as types
 import brynhild.config.sources as sources
+import brynhild.config.types as types
 
 
 def _get_env_file() -> str | None:
@@ -581,6 +581,121 @@ class Settings(_pydantic_settings.BaseSettings):
         return self.tools.is_tool_disabled(tool_name)
 
     # =========================================================================
+    # Model Identity helpers (Phase 5)
+    # =========================================================================
+
+    def resolve_model_alias(self, name: str) -> str:
+        """
+        Resolve a model name to its canonical ID.
+
+        If the name is an alias defined in models.aliases, returns the
+        canonical model ID. Otherwise returns the name unchanged.
+
+        Args:
+            name: Model name or alias to resolve.
+
+        Returns:
+            Canonical model ID.
+        """
+        return self.models.aliases.get(name, name)
+
+    def get_model_identity(self, canonical_id: str) -> types.ModelIdentity | None:
+        """
+        Get the ModelIdentity for a canonical model ID.
+
+        Args:
+            canonical_id: The canonical model identifier (e.g., "anthropic/claude-sonnet-4").
+
+        Returns:
+            ModelIdentity if found in registry, None otherwise.
+        """
+        return self.models.registry.get(canonical_id)
+
+    def get_model_binding(
+        self,
+        canonical_id: str,
+        provider: str | None = None,
+    ) -> types.ProviderBinding | None:
+        """
+        Get the ProviderBinding for a model at a specific provider.
+
+        Args:
+            canonical_id: The canonical model identifier.
+            provider: Provider name. Defaults to the configured default provider.
+
+        Returns:
+            ProviderBinding if found, None otherwise.
+        """
+        identity = self.get_model_identity(canonical_id)
+        if identity is None:
+            return None
+
+        effective_provider = provider or self.providers.default
+        return identity.get_binding(effective_provider)
+
+    def get_native_model_id(
+        self,
+        canonical_id: str,
+        provider: str | None = None,
+    ) -> str | None:
+        """
+        Get the provider-native model ID for a canonical model.
+
+        This is a convenience method that extracts just the model_id from
+        the binding.
+
+        Args:
+            canonical_id: The canonical model identifier.
+            provider: Provider name. Defaults to the configured default provider.
+
+        Returns:
+            Native model ID string if found, None otherwise.
+        """
+        binding = self.get_model_binding(canonical_id, provider)
+        return binding.model_id if binding else None
+
+    def get_effective_context(
+        self,
+        canonical_id: str,
+        provider: str | None = None,
+    ) -> int | None:
+        """
+        Get the effective context size for a model at a provider.
+
+        Returns the provider-specific limit if set, otherwise falls back
+        to the model's native context size from its descriptor.
+
+        Args:
+            canonical_id: The canonical model identifier.
+            provider: Provider name. Defaults to the configured default provider.
+
+        Returns:
+            Effective context size in tokens, or None if unknown.
+        """
+        identity = self.get_model_identity(canonical_id)
+        if identity is None:
+            return None
+
+        effective_provider = provider or self.providers.default
+        return identity.effective_context(effective_provider)
+
+    def get_favorites(self) -> list[str]:
+        """
+        Get list of favorite model canonical IDs.
+
+        Returns models marked as favorites (value is True or a dict with
+        truthy enabled status).
+
+        Returns:
+            List of canonical model IDs that are marked as favorites.
+        """
+        favorites = []
+        for model_id, value in self.models.favorites.items():
+            if isinstance(value, bool) and value or isinstance(value, dict) and value.get("enabled", True):
+                favorites.append(model_id)
+        return favorites
+
+    # =========================================================================
     # Introspection (for strict validation mode)
     # =========================================================================
 
@@ -611,7 +726,7 @@ class Settings(_pydantic_settings.BaseSettings):
         for field_name in ["models", "providers", "behavior", "sandbox",
                           "logging", "session", "plugins", "tools"]:
             nested = getattr(self, field_name, None)
-            if hasattr(nested, "collect_all_extra_fields"):
+            if nested is not None and hasattr(nested, "collect_all_extra_fields"):
                 nested_extras = nested.collect_all_extra_fields(prefix=field_name)
                 result.update(nested_extras)
 

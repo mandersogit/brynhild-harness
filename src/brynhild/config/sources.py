@@ -30,7 +30,6 @@ import yaml as _yaml
 
 import brynhild.utils as utils
 
-
 # Environment variable for overriding user config directory
 ENV_CONFIG_DIR = "BRYNHILD_CONFIG_DIR"
 
@@ -209,7 +208,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
 
     def get_field_value(
         self,
-        field: _pydantic_fields.FieldInfo,
+        field: _pydantic_fields.FieldInfo,  # noqa: ARG002 - required by pydantic-settings interface
         field_name: str,
     ) -> tuple[_typing.Any, str, bool]:
         """
