@@ -3,6 +3,10 @@
 import pytest as _pytest
 
 import brynhild.utils as utils
+import brynhild.utils.deep_chain_map._frozen as _frozen
+
+# Re-export for convenience in tests
+FrozenMapping = _frozen.FrozenMapping
 
 
 class TestDeepChainMapBasic:
@@ -303,8 +307,6 @@ class TestDeepChainMapLayers:
 
     def test_layers_property(self) -> None:
         """layers property returns frozen views of source data."""
-        from brynhild.utils.deep_chain_map._frozen import FrozenMapping
-
         layer0 = {"a": 1}
         layer1 = {"b": 2}
         dcm = utils.DeepChainMap(layer0, layer1)

@@ -15,6 +15,10 @@ import pytest as _pytest
 
 import brynhild.utils as utils
 import brynhild.utils.deep_chain_map as deep_chain_map
+import brynhild.utils.deep_chain_map._frozen as _frozen
+
+# Re-export for convenience in tests
+FrozenMapping = _frozen.FrozenMapping
 
 
 # =============================================================================
@@ -598,8 +602,6 @@ class TestLayerManipulationEdgeCases:
 
     def test_layers_property_returns_frozen_copy(self) -> None:
         """layers property returns frozen wrappers, mutations blocked."""
-        from brynhild.utils.deep_chain_map._frozen import FrozenMapping
-
         dcm = utils.DeepChainMap({"a": 1})
 
         layers = dcm.layers

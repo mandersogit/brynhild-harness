@@ -13,7 +13,7 @@ Example:
 
 from __future__ import annotations
 
-from collections import abc as _abc
+import collections.abc as _abc
 import typing as _typing
 
 if _typing.TYPE_CHECKING:

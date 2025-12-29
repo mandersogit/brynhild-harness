@@ -5,15 +5,17 @@ These wrappers provide read-only views of mutable containers to prevent
 accidental mutation of cached values and source layers.
 """
 
+import collections as _collections
 import typing as _typing
 
 import pytest as _pytest
 
-from brynhild.utils.deep_chain_map._frozen import (
-    FrozenMapping,
-    FrozenSequence,
-    freeze,
-)
+import brynhild.utils.deep_chain_map._frozen as _frozen
+
+# Re-export for convenience in tests
+FrozenMapping = _frozen.FrozenMapping
+FrozenSequence = _frozen.FrozenSequence
+freeze = _frozen.freeze
 
 
 class TestFrozenMapping:
@@ -156,8 +158,7 @@ class TestFrozenMapping:
 
     def test_converts_non_dict_mapping(self) -> None:
         """Non-dict Mappings are converted to dict."""
-        from collections import OrderedDict
-        od = OrderedDict([("a", 1), ("b", 2)])
+        od = _collections.OrderedDict([("a", 1), ("b", 2)])
         fm = FrozenMapping(od)
 
         # Converted to plain dict

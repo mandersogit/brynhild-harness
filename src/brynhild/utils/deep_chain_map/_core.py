@@ -451,7 +451,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             KeyError: If path doesn't exist.
             TypeError: If value at path is not a list.
         """
-        from collections import abc as _abc
+        import collections.abc as _abc
 
         # Get current merged value at path
         value = self._get_at_path(path)
@@ -604,7 +604,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         if not path:
             raise KeyError("Empty path")
 
-        from collections import abc as _abc
+        import collections.abc as _abc
 
         current: _typing.Any = self[path[0]]
         for key in path[1:]:

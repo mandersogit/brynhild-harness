@@ -13,10 +13,16 @@ import typing as _typing
 import pytest as _pytest
 
 import brynhild.utils as utils
-from brynhild.utils.deep_chain_map._core import _DELETED
-from brynhild.utils.deep_chain_map._frozen import FrozenSequence
-from brynhild.utils.deep_chain_map._proxy import MutableProxy
-from brynhild.utils.deep_chain_map import _operations
+import brynhild.utils.deep_chain_map._core as _core
+import brynhild.utils.deep_chain_map._frozen as _frozen
+import brynhild.utils.deep_chain_map._proxy as _proxy
+import brynhild.utils.deep_chain_map._operations as _operations
+
+# Re-export for convenience in tests
+_DELETED = _core._DELETED
+FrozenMapping = _frozen.FrozenMapping
+FrozenSequence = _frozen.FrozenSequence
+MutableProxy = _proxy.MutableProxy
 
 
 class TestPathHelpers:
@@ -296,7 +302,7 @@ class TestDeletedSentinel:
 
     def test_deleted_is_singleton(self) -> None:
         """_DELETED is same object when imported."""
-        from brynhild.utils.deep_chain_map._core import _DELETED as d2
+        d2 = _core._DELETED
         assert _DELETED is d2
 
 
@@ -1335,8 +1341,6 @@ class TestLayerManagementV2:
 
     def test_source_layers_property(self) -> None:
         """source_layers returns frozen wrappers of source data."""
-        from brynhild.utils.deep_chain_map._frozen import FrozenMapping
-
         layer0 = {"a": 1}
         layer1 = {"b": 2}
         dcm = utils.DeepChainMap(layer0, layer1)
