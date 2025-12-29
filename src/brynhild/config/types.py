@@ -30,7 +30,6 @@ import typing as _typing
 
 import pydantic as _pydantic
 
-
 # =============================================================================
 # Base class with introspection
 # =============================================================================
@@ -39,7 +38,7 @@ import pydantic as _pydantic
 class ConfigBase(_pydantic.BaseModel):
     """
     Base class for all config types.
-    
+
     Provides introspection for strict validation mode.
     All config types use `extra="allow"` so unknown fields are preserved
     rather than silently dropped. This enables auditing for typos.
@@ -50,10 +49,10 @@ class ConfigBase(_pydantic.BaseModel):
     def get_extra_fields(self) -> dict[str, _typing.Any]:
         """
         Return fields that were provided but not in the schema.
-        
+
         Use this for strict validation / config auditing. Unknown fields
         may indicate typos or outdated config keys.
-        
+
         Returns:
             Dict of field_name → value for all unrecognized fields.
         """
@@ -69,13 +68,13 @@ class ConfigBase(_pydantic.BaseModel):
     ) -> dict[str, _typing.Any]:
         """
         Recursively collect extra fields from this config and nested configs.
-        
+
         Returns a flat dict with dotted paths as keys, e.g.:
             {"behavior.verboes": True, "instances.my-plugin.enbaled": True}
-        
+
         Args:
             prefix: Dotted path prefix (used in recursion).
-        
+
         Returns:
             Flat dict of path → value for all unrecognized fields.
         """
@@ -483,12 +482,88 @@ class ModelsConfig(ConfigBase):
 
     YAML section: models.*
 
-    Note: This is a minimal implementation for Phase 3.
-    Phase 5 will add full registry support using ModelIdentity.
+    Architecture note:
+        DeepChainMap is used ONLY for merging YAML layers at load time.
+        After merging, Pydantic validates all data and stores typed objects.
+        This means:
+        - All validation errors surface at startup (fail-fast)
+        - No raw dicts stored; everything is typed
+        - DCM is a merge tool, not a storage layer
     """
 
-    default: str = "anthropic/claude-sonnet-4"
+    default: str = "openai/gpt-oss-120b"
     """Default model when not specified."""
+
+    favorites: dict[str, bool | dict[str, _typing.Any]] = _pydantic.Field(
+        default_factory=dict
+    )
+    """
+    Models to show in shortlists (e.g., `brynhild models list`).
+
+    Values can be:
+    - True/False: simple enable/disable
+    - Dict: enable with metadata (priority, tags, etc.)
+
+    Example:
+      {"anthropic/claude-sonnet-4": True,
+       "openai/gpt-4o": {"enabled": True, "priority": 1}}
+    """
+
+    aliases: dict[str, str] = _pydantic.Field(default_factory=dict)
+    """
+    User-defined shortcuts for model names.
+
+    Key is alias, value is canonical model ID.
+    Example: {"sonnet": "anthropic/claude-sonnet-4"}
+    """
+
+    registry: dict[str, ModelIdentity] = _pydantic.Field(default_factory=dict)
+    """
+    Full model identity registry — validated ModelIdentity objects.
+
+    Canonical ID → ModelIdentity. All entries are validated at config
+    load time. Invalid entries cause startup failure (fail-fast).
+
+    In YAML, this is specified as nested dicts; Pydantic converts to
+    ModelIdentity objects during validation.
+
+    Example (YAML):
+      registry:
+        meta-llama/llama-3.3-70b-instruct:
+          bindings:
+            ollama: llama3.3:70b
+          descriptor:
+            family: llama
+            series: "3.3"
+            size: 70b
+    """
+
+    @_pydantic.field_validator("registry", mode="before")
+    @classmethod
+    def _validate_registry(
+        cls,
+        v: dict[str, _typing.Any] | None,
+    ) -> dict[str, ModelIdentity]:
+        """Convert raw dicts to ModelIdentity, injecting canonical_id."""
+        if v is None:
+            return {}
+
+        result: dict[str, ModelIdentity] = {}
+        for canonical_id, data in v.items():
+            if isinstance(data, ModelIdentity):
+                result[canonical_id] = data
+            elif isinstance(data, dict):
+                # Inject canonical_id if not present
+                result[canonical_id] = ModelIdentity(
+                    canonical_id=canonical_id,
+                    **data,
+                )
+            else:
+                raise ValueError(
+                    f"Invalid registry entry for '{canonical_id}': "
+                    f"expected dict or ModelIdentity, got {type(data).__name__}"
+                )
+        return result
 
 
 # =============================================================================
@@ -500,19 +575,30 @@ class ProviderInstanceConfig(ConfigBase):
     """
     Configuration for a specific provider instance.
 
-    YAML section: providers.<name>.*
+    YAML section: providers.instances.<name>.*
+
+    Every provider instance MUST have a `type` field specifying the provider
+    implementation to use (e.g., "ollama", "openrouter", "vllm").
 
     Keys:
+        type: Provider type (required) - e.g., "ollama", "openrouter"
         enabled: Whether provider is enabled (bool)
         base_url: Override base URL (str, optional)
         cache_ttl: Model cache TTL in seconds (int)
+
+    ⚠️ TEMPORARY ARCHITECTURE: Provider-specific config is read from `model_extra`
+    via `extra="allow"`. Near-term follow-up will add typed per-provider schemas
+    (e.g., OllamaInstanceConfig, OpenRouterInstanceConfig) for full validation.
     """
+
+    type: str
+    """Provider type (required). One of: ollama, openrouter, vllm, lmstudio, openai, etc."""
 
     enabled: bool = True
     """Whether this provider is enabled."""
 
     base_url: str | None = None
-    """Override base URL (for self-hosted providers)."""
+    """Override base URL (for self-hosted providers like Ollama, vLLM)."""
 
     cache_ttl: int = _pydantic.Field(default=3600, ge=0)
     """Model list cache TTL in seconds."""
@@ -527,17 +613,20 @@ class ProvidersConfig(ConfigBase):
     YAML shape (users write):
         providers:
           default: openrouter
-          openrouter:
-            enabled: true
-            cache_ttl: 3600
-
-    Internal shape (after pre-validator):
-        providers:
-          default: openrouter
           instances:
-            openrouter: ProviderInstanceConfig(...)
+            openrouter:
+              type: openrouter
+              cache_ttl: 3600
+            ollama-server:
+              type: ollama
+              base_url: http://gpu-server:11434
 
-    This transformation enables full validation of provider configs at load time.
+    Each provider instance MUST have a `type` field specifying the provider
+    implementation (openrouter, ollama, openai, etc.). The instance name can
+    be anything (e.g., `ollama-server`, `ollama-local`).
+
+    Legacy format (without `instances:` wrapper or `type:` field) is detected
+    and raises an error with migration guidance.
     """
 
     default: str = "openrouter"
@@ -554,7 +643,11 @@ class ProvidersConfig(ConfigBase):
         cls,
         values: dict[str, _typing.Any],
     ) -> dict[str, _typing.Any]:
-        """Move dynamic provider keys into the typed instances dict."""
+        """Move dynamic provider keys into the typed instances dict.
+
+        Also detects legacy config format (without `type` field) and provides
+        helpful migration guidance.
+        """
         if not isinstance(values, dict):
             return values
 
@@ -562,18 +655,61 @@ class ProvidersConfig(ConfigBase):
         instances: dict[str, _typing.Any] = dict(values.pop("instances", {}) or {})
 
         # Move non-reserved keys to instances
+        # This supports the legacy format: providers.ollama.base_url: ...
+        legacy_keys: list[str] = []
         for key in list(values.keys()):
             if key not in reserved:
-                instances[key] = values.pop(key)
+                config = values.pop(key)
+                if isinstance(config, dict) and "type" not in config:
+                    # Legacy format detected - config has no type field
+                    legacy_keys.append(key)
+                instances[key] = config
+
+        # Check instances for missing type fields
+        for key, config in instances.items():
+            if isinstance(config, dict) and "type" not in config and key not in legacy_keys:
+                legacy_keys.append(key)
+
+        if legacy_keys:
+            # Provide helpful migration guidance
+            examples = []
+            for key in legacy_keys[:3]:  # Show up to 3 examples
+                examples.append(
+                    f"    {key}:\n"
+                    f"      type: {key}  # <-- Add this line\n"
+                    f"      # ... other config ..."
+                )
+            example_text = "\n".join(examples)
+
+            raise ValueError(
+                f"Legacy provider config detected: {', '.join(legacy_keys)}\n\n"
+                f"Provider instances now require an explicit 'type' field.\n\n"
+                f"Old format (no longer supported):\n"
+                f"  providers:\n"
+                f"    ollama:\n"
+                f"      base_url: http://localhost:11434\n\n"
+                f"New format (required):\n"
+                f"  providers:\n"
+                f"    instances:\n"
+                f"      ollama:\n"
+                f"        type: ollama  # <-- Required!\n"
+                f"        base_url: http://localhost:11434\n\n"
+                f"Fix your config:\n"
+                f"  providers:\n"
+                f"    instances:\n"
+                f"{example_text}\n"
+            )
 
         values["instances"] = instances
         return values
 
-    def get_provider_config(self, name: str) -> ProviderInstanceConfig:
-        """Get config for a specific provider."""
-        if name in self.instances:
-            return self.instances[name]
-        return ProviderInstanceConfig()
+    def get_provider_config(self, name: str) -> ProviderInstanceConfig | None:
+        """Get config for a specific provider.
+
+        Returns None if the provider is not configured. All provider instances
+        must be explicitly declared with a `type` field.
+        """
+        return self.instances.get(name)
 
 
 # =============================================================================

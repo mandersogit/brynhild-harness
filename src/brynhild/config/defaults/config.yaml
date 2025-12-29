@@ -14,18 +14,182 @@ version: 1
 # Models
 # =============================================================================
 models:
-  default: anthropic/claude-sonnet-4
+  default: openai/gpt-oss-120b
+
+  # User-defined shortcuts for model names
+  # Example: brynhild chat --model opus "hello"
+  aliases:
+    opus: anthropic/claude-opus-4.5
+    haiku: anthropic/claude-haiku-4.5
+    grok: x-ai/grok-4.1-fast
+    devstral: mistralai/devstral-2512
+    gemini: google/gemini-3-flash-preview
+    hermes: nousresearch/hermes-4-70b
+    glm: z-ai/glm-4.7
+
+  # Models to show in shortlists
+  favorites:
+    openai/gpt-oss-120b: true
+    x-ai/grok-4.1-fast: true
+    anthropic/claude-haiku-4.5: true
+    anthropic/claude-opus-4.5: true
+    mistralai/devstral-2512: true
+    z-ai/glm-4.7: true
+    nousresearch/hermes-4-70b: true
+    google/gemini-3-flash-preview: true
+
+  # Model identity registry - cross-provider model mappings
+  # Each entry maps a canonical ID to provider-specific bindings and metadata
+  registry:
+    # -------------------------------------------------------------------------
+    # OpenAI Models
+    # -------------------------------------------------------------------------
+    openai/gpt-oss-120b:
+      bindings:
+        openrouter: openai/gpt-oss-120b
+      descriptor:
+        family: gpt
+        series: oss
+        size: 117b
+        active_size: 5b
+        architecture: moe
+        context_size: 131072
+        extra:
+          open_weights: true
+          tool_use: true
+
+    # -------------------------------------------------------------------------
+    # xAI Models
+    # -------------------------------------------------------------------------
+    x-ai/grok-4.1-fast:
+      bindings:
+        openrouter: x-ai/grok-4.1-fast
+      descriptor:
+        family: grok
+        series: "4.1"
+        architecture: dense
+        context_size: 2000000
+        variant: fast
+        extra:
+          tool_use: true
+
+    # -------------------------------------------------------------------------
+    # Anthropic Models
+    # -------------------------------------------------------------------------
+    anthropic/claude-haiku-4.5:
+      bindings:
+        openrouter: anthropic/claude-haiku-4.5
+      descriptor:
+        family: claude
+        series: haiku-4.5
+        architecture: dense
+        context_size: 200000
+        extra:
+          tool_use: true
+
+    anthropic/claude-opus-4.5:
+      bindings:
+        openrouter: anthropic/claude-opus-4.5
+      descriptor:
+        family: claude
+        series: opus-4.5
+        architecture: dense
+        context_size: 200000
+        extra:
+          tool_use: true
+
+    # -------------------------------------------------------------------------
+    # Mistral Models
+    # -------------------------------------------------------------------------
+    mistralai/devstral-2512:
+      bindings:
+        openrouter: mistralai/devstral-2512
+      descriptor:
+        family: devstral
+        series: "2"
+        size: 123b
+        architecture: dense
+        context_size: 262144
+        variant: "2512"
+        extra:
+          tool_use: true
+          notes: "Coding specialist model"
+
+    # -------------------------------------------------------------------------
+    # Z.AI Models (MoE architecture)
+    # -------------------------------------------------------------------------
+    z-ai/glm-4.7:
+      bindings:
+        openrouter: z-ai/glm-4.7
+      descriptor:
+        family: glm
+        series: "4.7"
+        size: 355b
+        active_size: 32b
+        architecture: moe
+        context_size: 202752
+        extra:
+          tool_use: true
+
+    # -------------------------------------------------------------------------
+    # Nous Research Models
+    # -------------------------------------------------------------------------
+    nousresearch/hermes-4-70b:
+      bindings:
+        openrouter: nousresearch/hermes-4-70b
+      descriptor:
+        family: hermes
+        series: "4"
+        size: 70b
+        architecture: dense
+        context_size: 131072
+        extra:
+          open_weights: true
+          tool_use: true
+
+    # -------------------------------------------------------------------------
+    # Google Models
+    # -------------------------------------------------------------------------
+    google/gemini-3-flash-preview:
+      bindings:
+        openrouter: google/gemini-3-flash-preview
+      descriptor:
+        family: gemini
+        series: "3"
+        architecture: dense
+        context_size: 1048576
+        variant: flash-preview
+        extra:
+          tool_use: true
 
 # =============================================================================
 # Providers
 # =============================================================================
 providers:
+  # Default provider instance to use
   default: openrouter
-  # Provider-specific config can be added here:
-  # openrouter:
-  #   cache_ttl: 3600
-  # ollama:
-  #   base_url: http://localhost:11434
+
+  # Provider instances - each MUST have a `type` field
+  # Cloud providers (name = type, singleton):
+  #   openrouter, openai, anthropic
+  # Deployable providers (multiple instances per type):
+  #   ollama-local, ollama-server, vllm-prod, lmstudio, etc.
+  instances:
+    # Pre-declared cloud providers
+    openrouter:
+      type: openrouter
+      # api_key via OPENROUTER_API_KEY env var
+      # cache_ttl: 3600
+
+    ollama:
+      type: ollama
+      # base_url defaults to OLLAMA_HOST env var or localhost:11434
+      # base_url: http://localhost:11434
+
+    # Example: Add your own Ollama instance on a remote server
+    # ollama-server:
+    #   type: ollama
+    #   base_url: http://gpu-server:11434
 
 # =============================================================================
 # Behavior
