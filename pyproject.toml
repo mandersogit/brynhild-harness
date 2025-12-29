@@ -138,6 +138,12 @@ ignore = [
     "SIM108", # ternary operator suggestion - prefer explicit if/else for readability
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# ARG002: Test files use fixtures for side effects (e.g., clean_env)
+"tests/**/*.py" = ["ARG002"]
+# ARG002: Stub providers implement interface but don't use args
+"src/brynhild/api/providers/stubs/*.py" = ["ARG002"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["brynhild"]
 

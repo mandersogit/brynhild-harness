@@ -48,6 +48,29 @@ def test_find_root(self):
     assert result is not None  # Doesn't verify correctness
 ```
 
+#### Simple ≠ Trivial
+
+- **Trivial (BAD)**: Would pass regardless of correctness
+- **Simple (OK)**: Easy to understand but guards a specific requirement
+
+Valid simple test types:
+- **Invariant guards**: Catch accidental breakage (e.g., "registry must include ollama")
+- **Specification tests**: Encode requirements as code (e.g., "default config must have X")
+
+```python
+# ✅ GOOD - Specification test with required documentation
+def test_default_config_has_openrouter(self) -> None:
+    """Default config must include openrouter.
+
+    Requirement: OpenRouter is the default provider.
+    Fails if: openrouter accidentally removed from defaults.
+    """
+    openrouter = settings.providers.get_provider_config("openrouter")
+    assert openrouter is not None
+```
+
+Simple tests must document **Requirement** and **Fails if**.
+
 ### 3. Smoke Tests Disguised as Unit Tests
 
 If a test only verifies "doesn't crash", name it honestly:
