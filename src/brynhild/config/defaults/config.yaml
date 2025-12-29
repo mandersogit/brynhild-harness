@@ -1,0 +1,27 @@
+# Brynhild default configuration
+# This file provides built-in defaults and is the lowest-precedence layer.
+# User config (~/.config/brynhild/config.yaml) and project config
+# (.brynhild/config.yaml) override these values.
+
+version: 1
+
+models:
+  default: anthropic/claude-sonnet-4
+
+providers:
+  default: openrouter
+
+behavior:
+  max_tokens: 8192
+  verbose: false
+  show_thinking: true
+  show_cost: true
+
+sandbox:
+  enabled: true
+
+logging:
+  level: info
+
+
+
