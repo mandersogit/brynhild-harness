@@ -6,13 +6,11 @@ Phase 4 types:
 - ModelIdentity: complete identity with bindings and descriptor
 """
 
-import typing as _typing
 
 import pydantic as _pydantic
 import pytest as _pytest
 
 import brynhild.config.types as types
-
 
 # =============================================================================
 # ModelDescriptor Tests
