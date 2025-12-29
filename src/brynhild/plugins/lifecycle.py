@@ -227,7 +227,7 @@ def fire_plugin_init_for_all_sync(
     Args:
         plugins: List of plugins to initialize.
         project_root: Project root directory.
-    
+
     Note:
         When called from an async context (e.g., pytest-asyncio), this skips
         hook firing to avoid orphaned tasks that cause 30s teardown delays.
