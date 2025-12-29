@@ -44,7 +44,7 @@ class TestSettingsDefaults:
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
             settings = config.Settings.construct_without_dotenv()
             # Default from defaults/config.yaml
-            assert settings.model == "anthropic/claude-sonnet-4"
+            assert settings.model == "openai/gpt-oss-120b"
 
     def test_default_output_format_is_text(self) -> None:
         """Default output format should be 'text'."""

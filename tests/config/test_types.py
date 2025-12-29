@@ -3,13 +3,11 @@
 Tests for the Pydantic models in brynhild.config.types.
 """
 
-import typing as _typing
 
 import pydantic as _pydantic
 import pytest as _pytest
 
 import brynhild.config.types as types
-
 
 # =============================================================================
 # ConfigBase Introspection Tests
@@ -314,9 +312,16 @@ class TestSessionConfig:
 class TestProviderInstanceConfig:
     """Tests for ProviderInstanceConfig."""
 
+    def test_type_required(self) -> None:
+        """type field is required."""
+        with _pytest.raises(_pydantic.ValidationError) as exc_info:
+            types.ProviderInstanceConfig()
+        assert "type" in str(exc_info.value)
+
     def test_default_values(self) -> None:
-        """Should have sensible defaults."""
-        config = types.ProviderInstanceConfig()
+        """Should have sensible defaults for optional fields."""
+        config = types.ProviderInstanceConfig(type="ollama")
+        assert config.type == "ollama"
         assert config.enabled is True
         assert config.base_url is None
         assert config.cache_ttl == 3600
@@ -324,21 +329,24 @@ class TestProviderInstanceConfig:
     def test_cache_ttl_validation(self) -> None:
         """cache_ttl must be non-negative."""
         with _pytest.raises(_pydantic.ValidationError):
-            types.ProviderInstanceConfig(cache_ttl=-1)
+            types.ProviderInstanceConfig(type="ollama", cache_ttl=-1)
 
     def test_cache_ttl_zero_allowed(self) -> None:
         """cache_ttl=0 should be allowed (disable caching)."""
-        config = types.ProviderInstanceConfig(cache_ttl=0)
+        config = types.ProviderInstanceConfig(type="ollama", cache_ttl=0)
         assert config.cache_ttl == 0
 
     def test_custom_base_url(self) -> None:
         """base_url should accept a custom URL."""
-        config = types.ProviderInstanceConfig(base_url="http://localhost:11434")
+        config = types.ProviderInstanceConfig(
+            type="ollama", base_url="http://localhost:11434"
+        )
         assert config.base_url == "http://localhost:11434"
 
     def test_extra_fields_allowed(self) -> None:
         """Extra provider-specific fields should be allowed."""
         data = {
+            "type": "openrouter",
             "enabled": True,
             "api_version": "2024-01",
             "custom_setting": "value",
@@ -364,29 +372,46 @@ class TestProvidersConfig:
         assert config.default == "openrouter"
 
     def test_get_provider_config_missing(self) -> None:
-        """get_provider_config should return defaults for unknown provider."""
+        """get_provider_config should return None for unknown provider."""
         config = types.ProvidersConfig()
         provider_config = config.get_provider_config("unknown")
-        assert provider_config.enabled is True
-        assert provider_config.cache_ttl == 3600
+        assert provider_config is None
 
     def test_get_provider_config_from_dict(self) -> None:
-        """get_provider_config should parse nested dicts."""
+        """get_provider_config should parse nested dicts with type field."""
         data = {
             "default": "ollama",
-            "ollama": {
-                "enabled": True,
-                "base_url": "http://localhost:11434",
-                "cache_ttl": 1800,
+            "instances": {
+                "ollama": {
+                    "type": "ollama",
+                    "enabled": True,
+                    "base_url": "http://localhost:11434",
+                    "cache_ttl": 1800,
+                },
             },
         }
         config = types.ProvidersConfig.model_validate(data)
         assert config.default == "ollama"
-        
+
         provider_config = config.get_provider_config("ollama")
+        assert provider_config is not None
+        assert provider_config.type == "ollama"
         assert provider_config.enabled is True
         assert provider_config.base_url == "http://localhost:11434"
-        assert provider_config.cache_ttl == 1800
+
+    def test_legacy_config_format_detected(self) -> None:
+        """Legacy config without type field should raise helpful error."""
+        data = {
+            "default": "ollama",
+            "ollama": {  # Legacy: no instances wrapper, no type
+                "enabled": True,
+                "base_url": "http://localhost:11434",
+            },
+        }
+        with _pytest.raises(ValueError) as exc_info:
+            types.ProvidersConfig.model_validate(data)
+        assert "Legacy provider config detected" in str(exc_info.value)
+        assert "type" in str(exc_info.value)
 
 
 # =============================================================================
@@ -538,7 +563,7 @@ class TestToolsConfig:
             },
         }
         config = types.ToolsConfig.model_validate(data)
-        
+
         tool_config = config.get_tool_config("bash")
         assert tool_config.require_approval == "always"
         assert tool_config.blocked_commands == ["rm -rf /"]
@@ -560,12 +585,16 @@ class TestDynamicContainerIntrospection:
         """Provider instances should be validated as ProviderInstanceConfig."""
         data = {
             "default": "openrouter",
-            "openrouter": {
-                "enabled": True,
-                "cache_ttl": 7200,
-            },
-            "ollama": {
-                "base_url": "http://localhost:11434",
+            "instances": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "enabled": True,
+                    "cache_ttl": 7200,
+                },
+                "ollama": {
+                    "type": "ollama",
+                    "base_url": "http://localhost:11434",
+                },
             },
         }
         config = types.ProvidersConfig.model_validate(data)
@@ -573,16 +602,21 @@ class TestDynamicContainerIntrospection:
         # Instances should be typed, not raw dicts
         assert isinstance(config.instances.get("openrouter"), types.ProviderInstanceConfig)
         assert isinstance(config.instances.get("ollama"), types.ProviderInstanceConfig)
+        assert config.instances["openrouter"].type == "openrouter"
         assert config.instances["openrouter"].cache_ttl == 7200
+        assert config.instances["ollama"].type == "ollama"
         assert config.instances["ollama"].base_url == "http://localhost:11434"
 
     def test_providers_typo_detected_via_introspection(self) -> None:
         """Typos inside provider instances should be detected."""
         data = {
-            "openrouter": {
-                "enabled": True,
-                "enabeld": True,  # TYPO
-                "cache_ttl": 3600,
+            "instances": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "enabled": True,
+                    "enabeld": True,  # TYPO
+                    "cache_ttl": 3600,
+                },
             },
         }
         config = types.ProvidersConfig.model_validate(data)
@@ -660,12 +694,16 @@ class TestDynamicContainerIntrospection:
     def test_multiple_instances_with_multiple_typos(self) -> None:
         """Multiple typos across multiple instances should all be found."""
         data = {
-            "openrouter": {
-                "typo1": "value1",
-            },
-            "ollama": {
-                "typo2": "value2",
-                "typo3": "value3",
+            "instances": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "typo1": "value1",
+                },
+                "ollama": {
+                    "type": "ollama",
+                    "typo2": "value2",
+                    "typo3": "value3",
+                },
             },
         }
         config = types.ProvidersConfig.model_validate(data)
@@ -679,9 +717,12 @@ class TestDynamicContainerIntrospection:
         """Valid config with no typos should have no extra fields."""
         data = {
             "default": "openrouter",
-            "openrouter": {
-                "enabled": True,
-                "cache_ttl": 3600,
+            "instances": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "enabled": True,
+                    "cache_ttl": 3600,
+                },
             },
         }
         config = types.ProvidersConfig.model_validate(data)

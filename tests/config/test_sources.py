@@ -14,7 +14,6 @@ import typing as _typing
 import pydantic as _pydantic
 import pydantic_settings as _pydantic_settings
 import pytest as _pytest
-import yaml as _yaml
 
 import brynhild.config.sources as sources
 
@@ -133,7 +132,7 @@ class TestDeepChainMapSettingsSourceLoadFromSingleFile:
 
 class TestDeepChainMapSettingsSourceMergeOrder:
     """Tests for merging multiple config files.
-    
+
     These tests verify that higher-precedence layers OVERRIDE lower-precedence
     layers for scalar values. Precedence order: Project > User > Builtin.
     """
@@ -262,7 +261,7 @@ class TestDeepChainMapSettingsSourceMergeOrder:
 
 class TestDeepChainMapSettingsSourceNestedMerge:
     """Tests for nested dictionary merging via DCM.
-    
+
     These tests verify a CORE DESIGN GOAL: layered configs should merge deeply,
     not just override. The merged result should contain values from multiple
     layers that no single config file contains.
@@ -362,7 +361,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         # This result is IMPOSSIBLE from any single config file
         models = result.get("models", {})
         favorites = models.get("favorites", {})
-        
+
         # All three layers contributed a unique favorite
         assert favorites.get("from-builtin") is True
         assert favorites.get("from-user") is True
@@ -650,7 +649,7 @@ class TestDeepChainMapSettingsSourceErrorHandling:
         tmp_path: _pathlib.Path,
     ) -> None:
         """Missing builtin defaults should raise clear error, not fail silently.
-        
+
         Builtin defaults are bundled with the package. If they're missing,
         that indicates an installation problem that must be surfaced.
         """
@@ -670,7 +669,7 @@ class TestDeepChainMapSettingsSourceErrorHandling:
         tmp_path: _pathlib.Path,
     ) -> None:
         """Empty builtin defaults should raise clear error, not fail silently.
-        
+
         Builtin defaults must have content to provide base configuration.
         An empty file indicates an installation or packaging problem.
         """

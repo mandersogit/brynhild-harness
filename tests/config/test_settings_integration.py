@@ -384,30 +384,38 @@ class TestMigrationDetection:
     def test_detects_legacy_model_env_var(self) -> None:
         """BRYNHILD_MODEL triggers migration error."""
         env = self._env_without_skip({"BRYNHILD_MODEL": "some-model"})
-        with _mock.patch.dict(_os.environ, env, clear=True):
-            with _pytest.raises(ValueError, match="Legacy environment variables"):
-                config.Settings()
+        with (
+            _mock.patch.dict(_os.environ, env, clear=True),
+            _pytest.raises(ValueError, match="Legacy environment variables"),
+        ):
+            config.Settings()
 
     def test_detects_legacy_provider_env_var(self) -> None:
         """BRYNHILD_PROVIDER triggers migration error."""
         env = self._env_without_skip({"BRYNHILD_PROVIDER": "ollama"})
-        with _mock.patch.dict(_os.environ, env, clear=True):
-            with _pytest.raises(ValueError, match="Legacy environment variables"):
-                config.Settings()
+        with (
+            _mock.patch.dict(_os.environ, env, clear=True),
+            _pytest.raises(ValueError, match="Legacy environment variables"),
+        ):
+            config.Settings()
 
     def test_detects_legacy_verbose_env_var(self) -> None:
         """BRYNHILD_VERBOSE triggers migration error."""
         env = self._env_without_skip({"BRYNHILD_VERBOSE": "true"})
-        with _mock.patch.dict(_os.environ, env, clear=True):
-            with _pytest.raises(ValueError, match="Legacy environment variables"):
-                config.Settings()
+        with (
+            _mock.patch.dict(_os.environ, env, clear=True),
+            _pytest.raises(ValueError, match="Legacy environment variables"),
+        ):
+            config.Settings()
 
     def test_migration_error_includes_new_syntax(self) -> None:
         """Migration error message includes the new env var syntax."""
         env = self._env_without_skip({"BRYNHILD_MODEL": "some-model"})
-        with _mock.patch.dict(_os.environ, env, clear=True):
-            with _pytest.raises(ValueError) as exc_info:
-                config.Settings()
+        with (
+            _mock.patch.dict(_os.environ, env, clear=True),
+            _pytest.raises(ValueError) as exc_info,
+        ):
+            config.Settings()
 
         error_msg = str(exc_info.value)
         assert "BRYNHILD_MODEL" in error_msg
