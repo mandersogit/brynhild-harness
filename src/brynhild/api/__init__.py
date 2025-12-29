@@ -14,6 +14,8 @@ direct APIs from single-model-family labs (e.g., no direct Anthropic/OpenAI SDKs
 from brynhild.api.base import LLMProvider
 from brynhild.api.factory import (
     create_provider,
+    get_available_provider_names,
+    get_available_provider_types,
     get_available_providers,
     get_default_provider,
 )
@@ -34,6 +36,8 @@ __all__ = [
     # Factory
     "create_provider",
     "get_available_providers",
+    "get_available_provider_names",
+    "get_available_provider_types",
     "get_default_provider",
     # Exceptions
     "OpenRouterAPIError",
