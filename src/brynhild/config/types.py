@@ -16,11 +16,10 @@ Phase 2 types (basic sections):
 - ToolConfig: require_approval, allowed_commands, etc.
 - ToolsConfig: disabled dict, dynamic tools
 
-Phase 4 types (model identity - to be added):
-- ModelDescriptor
-- ProviderBinding
-- ModelIdentity
-- ModelsConfig
+Phase 4 types (model identity):
+- ModelDescriptor: structured model attributes (family, size, architecture, etc.)
+- ProviderBinding: provider-specific binding (model_id, max_context, alternatives)
+- ModelIdentity: complete identity with bindings, descriptor, aliases
 
 Design decision: All types use `extra="allow"` to preserve unknown fields.
 This enables strict validation mode where users can audit their config for
@@ -210,6 +209,270 @@ class SessionConfig(ConfigBase):
 
 
 # =============================================================================
+# Model Identity Types (Phase 4)
+# =============================================================================
+
+
+class ModelDescriptor(_pydantic.BaseModel):
+    """
+    Structured attributes of a model for deterministic matching.
+
+    Used to match models across providers even when naming conventions differ.
+    Example: Ollama "llama3.1:8b" → family="llama", series="3.1", size="8b"
+
+    For MoE (Mixture of Experts) models:
+    - size = total parameters (e.g., "235b" for qwen3-235b-a22b)
+    - active_size = active parameters per forward pass (e.g., "22b")
+    - architecture = "moe"
+
+    Active size is crucial for estimating inference speed - a 235b MoE with
+    22b active params runs closer to a 22b dense model than a 235b dense model.
+    """
+
+    model_config = _pydantic.ConfigDict(frozen=True)
+
+    family: str
+    """Model family: "llama", "qwen", "deepseek", "claude", "gpt", etc."""
+
+    series: str | None = None
+    """Version/series: "3.1", "2.5", "r1", "v3", "sonnet-4", etc."""
+
+    size: str | None = None
+    """
+    Total parameter size: "7b", "8b", "70b", "235b", etc.
+    For MoE models, this is the TOTAL parameter count.
+    """
+
+    active_size: str | None = None
+    """
+    Active parameters per forward pass (MoE models only).
+    Examples:
+      - "22b" for qwen3-235b-a22b (235b total, 22b active)
+      - "3b" for ernie-4.5-21b-a3b-thinking (21b total, 3b active)
+    None for dense models.
+    """
+
+    architecture: _typing.Literal["dense", "moe"] | None = None
+    """
+    Model architecture type.
+    - "dense": Standard dense transformer (all params active)
+    - "moe": Mixture of Experts (sparse activation)
+    - None: Unknown/unspecified
+    """
+
+    context_size: int | None = None
+    """
+    Native maximum context window in tokens.
+
+    This is the MODEL's native capability, not provider-specific limits.
+    Examples:
+      - 131072 for llama-3.1 (128K)
+      - 200000 for claude-sonnet-4
+      - 1048576 for gemini-2.5-pro (1M)
+
+    Provider-specific limits are in ProviderBinding.max_context.
+    """
+
+    variant: str | None = None
+    """Variant type: "instruct", "chat", "coder", "vl", "reasoner", "thinking", etc."""
+
+    extra: dict[str, _typing.Any] = _pydantic.Field(default_factory=dict)
+    """
+    Additional attributes not covered by standard fields.
+    Examples: quant="q4_K_M", multimodal=True, tool_use=True
+    """
+
+    @property
+    def effective_size(self) -> str | None:
+        """
+        Return the size most relevant for performance estimation.
+        For MoE: active_size. For dense: size.
+        """
+        if self.architecture == "moe" and self.active_size:
+            return self.active_size
+        return self.size
+
+
+class ProviderBinding(_pydantic.BaseModel):
+    """
+    Binding of a canonical model ID to a specific provider's native ID.
+
+    Contains provider-specific metadata that may differ from the model's
+    native capabilities (e.g., context limits, pricing tiers).
+    """
+
+    model_config = _pydantic.ConfigDict(frozen=True)
+
+    model_id: str
+    """
+    Provider-native model identifier.
+    Examples:
+      - OpenRouter: "meta-llama/llama-3.1-8b-instruct"
+      - Ollama: "llama3.1:8b-instruct-q4_K_M"
+      - HuggingFace: "meta-llama/Llama-3.1-8B-Instruct"
+    """
+
+    max_context: int | None = None
+    """
+    Provider-specific context limit (may be less than model's native limit).
+
+    Some providers limit context below the model's capability.
+    If None, assume model's native context_size applies.
+    """
+
+    pricing_tiers: dict[str, _typing.Any] | None = None
+    """
+    Provider-specific tiered pricing information.
+
+    For providers with context-based pricing tiers (e.g., different rates
+    above/below certain token thresholds).
+
+    Example for Opus 4.5 with 200K tier:
+      {"under_200k": {"input": 3.0, "output": 15.0},
+       "over_200k": {"input": 6.0, "output": 30.0}}
+
+    None if flat pricing or pricing not tracked.
+    """
+
+    alternatives: list[str] = _pydantic.Field(default_factory=list)
+    """
+    Alternative native IDs for this provider (e.g., different quants).
+
+    The primary model_id is the "canonical" choice; alternatives are
+    acceptable substitutes. Useful for Ollama where multiple quantizations
+    map to the same logical model.
+
+    Example: ["llama3.1:8b-instruct-q8_0", "llama3.1:8b-instruct-fp16"]
+    """
+
+    extra: dict[str, _typing.Any] = _pydantic.Field(default_factory=dict)
+    """Additional provider-specific metadata."""
+
+
+# Helper type for flexible binding specification in config files
+BindingValue: _typing.TypeAlias = ProviderBinding | str
+"""
+In YAML config, bindings can be specified as:
+  - Simple string: just the model_id (common case)
+  - Full object: ProviderBinding with max_context, alternatives, etc.
+
+Example YAML:
+  bindings:
+    openrouter: meta-llama/llama-3.1-8b-instruct     # Simple
+    ollama:                                           # Rich
+      model_id: llama3.1:8b-instruct-q4_K_M
+      max_context: 65536
+      alternatives:
+        - llama3.1:8b-instruct-q8_0
+"""
+
+
+class ModelIdentity(_pydantic.BaseModel):
+    """
+    Complete identity for a model with all known provider bindings.
+
+    The canonical_id is always OpenRouter-style (e.g., "meta-llama/llama-3.1-8b-instruct").
+    This is the single source of truth for referring to a model across all providers.
+
+    Key design decisions:
+    - bindings use dicts (not lists) for DCM mergeability
+    - aliases use dicts (not lists) for DCM mergeability
+    - confidence indicates how this identity was established
+    """
+
+    model_config = _pydantic.ConfigDict(frozen=True)
+
+    canonical_id: str
+    """
+    Always OR-style: "vendor/model-series-size-variant"
+    Examples:
+      - "meta-llama/llama-3.1-8b-instruct" (real OR model)
+      - "anthropic/claude-sonnet-4" (real OR model)
+      - "local/my-custom-model-7b" (synthetic for non-OR models)
+    """
+
+    bindings: dict[str, ProviderBinding | str] = _pydantic.Field(default_factory=dict)
+    """
+    Provider name → binding (ProviderBinding or simple model_id string).
+
+    Dict structure for DCM mergeability: user can override one provider
+    without replacing all bindings.
+
+    Simple form (just model_id):
+      {"openrouter": "meta-llama/llama-3.1-8b-instruct",
+       "ollama": "llama3.1:8b-instruct-q4_K_M"}
+
+    Rich form (with provider-specific metadata):
+      {"ollama": ProviderBinding(
+           model_id="llama3.1:8b-instruct-q4_K_M",
+           max_context=65536,
+           alternatives=["llama3.1:8b-instruct-q8_0"])}
+    """
+
+    descriptor: ModelDescriptor | None = None
+    """Structured attributes for deterministic cross-provider matching."""
+
+    aliases: dict[str, bool] = _pydantic.Field(default_factory=dict)
+    """
+    Alternative names that resolve to this model.
+
+    Dict (not list) for DCM mergeability: user can add/remove aliases
+    without replacing entire set.
+
+    Example:
+      {"llama3.1:8b": True,
+       "llama-3.1-8b": True,
+       "meta-llama/Llama-3.1-8B-Instruct": True,
+       "old-alias": False}  # Disabled alias
+    """
+
+    confidence: _typing.Literal["curated", "matched", "synthetic"] = "curated"
+    """
+    How this identity was established:
+    - "curated": Explicitly defined in registry (high confidence)
+    - "matched": Algorithmically matched to OR model (medium confidence)
+    - "synthetic": Generated for non-OR model (lower confidence)
+
+    Helps distinguish authoritative mappings from runtime-discovered ones.
+    """
+
+    notes: str | None = None
+    """Human-readable notes about this model identity."""
+
+    # -------------------------------------------------------------------------
+    # Helper methods
+    # -------------------------------------------------------------------------
+
+    def get_binding(self, provider: str) -> ProviderBinding | None:
+        """Get binding for a provider, normalizing string to ProviderBinding."""
+        value = self.bindings.get(provider)
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return ProviderBinding(model_id=value)
+        return value
+
+    def get_native_id(self, provider: str) -> str | None:
+        """Get native model ID for a provider (convenience method)."""
+        binding = self.get_binding(provider)
+        return binding.model_id if binding else None
+
+    def effective_context(self, provider: str) -> int | None:
+        """
+        Get effective context size for a provider.
+
+        Returns provider-specific max_context if set, otherwise
+        falls back to model's native context_size from descriptor.
+        """
+        binding = self.get_binding(provider)
+        if binding and binding.max_context is not None:
+            return binding.max_context
+        if self.descriptor:
+            return self.descriptor.context_size
+        return None
+
+
+# =============================================================================
 # Models Settings
 # =============================================================================
 
@@ -221,7 +484,7 @@ class ModelsConfig(ConfigBase):
     YAML section: models.*
 
     Note: This is a minimal implementation for Phase 3.
-    Phase 4 will add full ModelIdentity and registry support.
+    Phase 5 will add full registry support using ModelIdentity.
     """
 
     default: str = "anthropic/claude-sonnet-4"
