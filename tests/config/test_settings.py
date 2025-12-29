@@ -7,10 +7,17 @@ import unittest.mock as _mock
 import pytest as _pytest
 
 import brynhild.config as config
+import brynhild.config.types as types
 
 # Keys to clear from environment for isolated tests
+# Note: With nested config, env vars use __ delimiter (e.g., BRYNHILD_BEHAVIOR__VERBOSE)
 ENV_KEYS_TO_CLEAR = [
     "OPENROUTER_API_KEY",
+    "BRYNHILD_PROVIDERS__DEFAULT",
+    "BRYNHILD_MODELS__DEFAULT",
+    "BRYNHILD_BEHAVIOR__VERBOSE",
+    "BRYNHILD_BEHAVIOR__MAX_TOKENS",
+    # Legacy flat keys (no longer used but clear them for test isolation)
     "BRYNHILD_PROVIDER",
     "BRYNHILD_MODEL",
     "BRYNHILD_VERBOSE",
@@ -32,11 +39,12 @@ class TestSettingsDefaults:
             settings = config.Settings.construct_without_dotenv()
             assert settings.provider == "openrouter"
 
-    def test_default_model_is_gpt_oss(self) -> None:
-        """Default model should be openai/gpt-oss-120b when no env override."""
+    def test_default_model_from_builtin_config(self) -> None:
+        """Default model should come from built-in config.yaml."""
         with _mock.patch.dict(_os.environ, clean_env(), clear=True):
             settings = config.Settings.construct_without_dotenv()
-            assert settings.model == "openai/gpt-oss-120b"
+            # Default from defaults/config.yaml
+            assert settings.model == "anthropic/claude-sonnet-4"
 
     def test_default_output_format_is_text(self) -> None:
         """Default output format should be 'text'."""
@@ -71,7 +79,10 @@ class TestSettingsProviders:
         # Currently supported + planned providers
         valid_providers = ["openrouter", "ollama", "vllm", "vertex"]
         for provider in valid_providers:
-            settings = config.Settings.construct_without_dotenv(provider=provider)
+            # Must set via nested config structure
+            settings = config.Settings.construct_without_dotenv(
+                providers=types.ProvidersConfig(default=provider)
+            )
             assert settings.provider == provider
 
     def test_get_api_key_returns_openrouter_key(self) -> None:
@@ -92,17 +103,29 @@ class TestSettingsProviders:
 class TestSettingsEnvironmentOverride:
     """Test that environment variables properly override defaults."""
 
-    def test_brynhild_prefix_overrides_verbose(self) -> None:
-        """BRYNHILD_VERBOSE=true should set verbose to True."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_VERBOSE": "true"}, clear=False):
+    def test_nested_env_var_overrides_verbose(self) -> None:
+        """BRYNHILD_BEHAVIOR__VERBOSE=true should set verbose to True."""
+        with _mock.patch.dict(
+            _os.environ, {"BRYNHILD_BEHAVIOR__VERBOSE": "true"}, clear=False
+        ):
             settings = config.Settings.construct_without_dotenv()
             assert settings.verbose is True
 
-    def test_brynhild_prefix_overrides_provider(self) -> None:
-        """BRYNHILD_PROVIDER should override default provider."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_PROVIDER": "openrouter"}, clear=False):
+    def test_nested_env_var_overrides_provider(self) -> None:
+        """BRYNHILD_PROVIDERS__DEFAULT should override default provider."""
+        with _mock.patch.dict(
+            _os.environ, {"BRYNHILD_PROVIDERS__DEFAULT": "ollama"}, clear=False
+        ):
             settings = config.Settings.construct_without_dotenv()
-            assert settings.provider == "openrouter"
+            assert settings.provider == "ollama"
+
+    def test_nested_env_var_overrides_model(self) -> None:
+        """BRYNHILD_MODELS__DEFAULT should override default model."""
+        with _mock.patch.dict(
+            _os.environ, {"BRYNHILD_MODELS__DEFAULT": "my-custom/model"}, clear=False
+        ):
+            settings = config.Settings.construct_without_dotenv()
+            assert settings.model == "my-custom/model"
 
 
 class TestSettingsValidation:
@@ -111,17 +134,24 @@ class TestSettingsValidation:
     def test_max_tokens_rejects_zero(self) -> None:
         """max_tokens=0 should raise ValidationError."""
         with _pytest.raises(ValueError):
-            config.Settings.construct_without_dotenv(max_tokens=0)
+            # Must pass via nested config
+            config.Settings.construct_without_dotenv(
+                behavior=types.BehaviorConfig(max_tokens=0)
+            )
 
     def test_max_tokens_rejects_over_limit(self) -> None:
         """max_tokens over 200000 should raise ValidationError."""
         with _pytest.raises(ValueError):
-            config.Settings.construct_without_dotenv(max_tokens=300000)
+            config.Settings.construct_without_dotenv(
+                behavior=types.BehaviorConfig(max_tokens=300000)
+            )
 
     def test_max_tokens_accepts_valid_values(self) -> None:
         """Valid max_tokens values should be accepted."""
         for value in [1, 100, 8192, 200000]:
-            settings = config.Settings.construct_without_dotenv(max_tokens=value)
+            settings = config.Settings.construct_without_dotenv(
+                behavior=types.BehaviorConfig(max_tokens=value)
+            )
             assert settings.max_tokens == value
 
 
@@ -156,10 +186,12 @@ class TestSettingsSerialization:
 class TestSettingsDirectories:
     """Test directory-related settings properties."""
 
-    def test_config_dir_is_under_home(self) -> None:
-        """config_dir should be under the user's home directory."""
+    def test_config_dir_follows_xdg(self) -> None:
+        """config_dir should follow XDG standard (~/.config/brynhild)."""
         settings = config.Settings.construct_without_dotenv()
-        assert settings.config_dir.parent == _pathlib.Path.home()
+        # XDG: ~/.config/brynhild (parent is ~/.config, not ~)
+        expected = _pathlib.Path.home() / ".config" / "brynhild"
+        assert settings.config_dir == expected
 
     def test_sessions_dir_is_under_config_dir(self) -> None:
         """sessions_dir should be a subdirectory of config_dir."""

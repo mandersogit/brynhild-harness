@@ -26,7 +26,11 @@ import brynhild.tools.registry as tools_registry
 
 
 def pytest_configure(config: _pytest.Config) -> None:  # noqa: F811 - shadows import but pytest requires this name
-    """Print relevant configuration at test session start."""
+    """Configure test session."""
+    # Skip legacy env var migration check during tests
+    # This allows tests to run even if the user's .env has legacy vars
+    _os.environ["BRYNHILD_SKIP_MIGRATION_CHECK"] = "1"
+
     # Check if we're running ollama_local tests
     markexpr = config.getoption("-m", default="")
     if "ollama_local" in str(markexpr):

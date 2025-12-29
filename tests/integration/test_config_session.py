@@ -86,19 +86,19 @@ class TestConfigSessionIntegration:
 
     def test_env_override_takes_precedence(self) -> None:
         """Environment variables override default config values."""
-        # Setup: Set environment variables with valid provider
+        # Setup: Set environment variables with nested config syntax
         with _mock.patch.dict(
             _os.environ,
             {
-                "BRYNHILD_PROVIDER": "ollama",  # Must be valid provider
-                "BRYNHILD_MODEL": "custom-model",
+                "BRYNHILD_PROVIDERS__DEFAULT": "ollama",  # Nested: providers.default
+                "BRYNHILD_MODELS__DEFAULT": "custom-model",  # Nested: models.default
             },
             clear=False,
         ):
             # Load settings (without .env file)
             settings = config.Settings.construct_without_dotenv()
 
-            # Verify: Environment values used
+            # Verify: Environment values used (accessed via property aliases)
             assert settings.provider == "ollama"
             assert settings.model == "custom-model"
 

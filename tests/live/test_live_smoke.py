@@ -141,12 +141,12 @@ class TestLoggingPipeline:
 
     def test_chat_creates_log_file(self, temp_log_dir: _pathlib.Path) -> None:
         """Chat command creates a log file when logging enabled."""
-        # Run chat with custom log directory
+        # Run chat with custom log directory (nested config env vars)
         result = _run_brynhild(
             "chat", "-p", "Say hello",
             env_override={
-                "BRYNHILD_LOG_DIR": str(temp_log_dir),
-                "BRYNHILD_LOG_CONVERSATIONS": "true",
+                "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
+                "BRYNHILD_LOGGING__ENABLED": "true",
             },
             timeout=60,
         )
@@ -159,12 +159,12 @@ class TestLoggingPipeline:
 
     def test_log_file_has_expected_events(self, temp_log_dir: _pathlib.Path) -> None:
         """Log file contains expected event types."""
-        # Run chat
+        # Run chat (nested config env vars)
         result = _run_brynhild(
             "chat", "-p", "What is 2+2?",
             env_override={
-                "BRYNHILD_LOG_DIR": str(temp_log_dir),
-                "BRYNHILD_LOG_CONVERSATIONS": "true",
+                "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
+                "BRYNHILD_LOGGING__ENABLED": "true",
             },
             timeout=60,
         )
@@ -197,8 +197,8 @@ class TestLoggingPipeline:
         result = _run_brynhild(
             "chat", "-p", "Hello",
             env_override={
-                "BRYNHILD_LOG_DIR": str(temp_log_dir),
-                "BRYNHILD_LOG_CONVERSATIONS": "true",
+                "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
+                "BRYNHILD_LOGGING__ENABLED": "true",
             },
             timeout=60,
         )
@@ -207,7 +207,7 @@ class TestLoggingPipeline:
         # Now list logs
         result = _run_brynhild(
             "logs", "list",
-            env_override={"BRYNHILD_LOG_DIR": str(temp_log_dir)},
+            env_override={"BRYNHILD_LOGGING__DIR": str(temp_log_dir)},
             timeout=10,
         )
 
@@ -220,8 +220,8 @@ class TestLoggingPipeline:
         result = _run_brynhild(
             "chat", "-p", "Say test",
             env_override={
-                "BRYNHILD_LOG_DIR": str(temp_log_dir),
-                "BRYNHILD_LOG_CONVERSATIONS": "true",
+                "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
+                "BRYNHILD_LOGGING__ENABLED": "true",
             },
             timeout=60,
         )
@@ -230,7 +230,7 @@ class TestLoggingPipeline:
         # View the log (most recent)
         result = _run_brynhild(
             "logs", "view",
-            env_override={"BRYNHILD_LOG_DIR": str(temp_log_dir)},
+            env_override={"BRYNHILD_LOGGING__DIR": str(temp_log_dir)},
             timeout=10,
         )
 
@@ -253,8 +253,8 @@ class TestProfileAppliedInRealSession:
             "chat", "-p",
             "I told you earlier my name is Alice. What is my name?",
             env_override={
-                "BRYNHILD_LOG_DIR": str(log_dir),
-                "BRYNHILD_LOG_CONVERSATIONS": "true",
+                "BRYNHILD_LOGGING__DIR": str(log_dir),
+                "BRYNHILD_LOGGING__ENABLED": "true",
             },
             timeout=60,
         )

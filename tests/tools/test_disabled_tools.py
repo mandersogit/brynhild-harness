@@ -6,6 +6,7 @@ import unittest.mock as _mock
 import pytest as _pytest
 
 import brynhild.config as config
+import brynhild.config.types as types
 import brynhild.tools as tools
 
 
@@ -27,17 +28,19 @@ class TestDisabledToolsSettings:
         settings = config.Settings()
         assert settings.get_disabled_tools() == set()
 
-    def test_get_disabled_tools_parses_comma_separated(self) -> None:
-        """Should parse comma-separated tool names."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": "Bash,Write,Edit"}):
-            settings = config.Settings()
-            assert settings.get_disabled_tools() == {"Bash", "Write", "Edit"}
+    def test_get_disabled_tools_from_nested_config(self) -> None:
+        """Should get disabled tools from nested tools.disabled dict."""
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True, "Edit": True})
+        )
+        assert settings.get_disabled_tools() == {"Bash", "Write", "Edit"}
 
-    def test_get_disabled_tools_handles_whitespace(self) -> None:
-        """Should handle whitespace around tool names."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": " Bash , Write , Edit "}):
-            settings = config.Settings()
-            assert settings.get_disabled_tools() == {"Bash", "Write", "Edit"}
+    def test_get_disabled_tools_excludes_false_values(self) -> None:
+        """Should exclude tools marked as not disabled (False)."""
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": False, "Edit": True})
+        )
+        assert settings.get_disabled_tools() == {"Bash", "Edit"}
 
     def test_is_tool_disabled_returns_false_for_enabled_tool(self) -> None:
         """Should return False for tools not in disabled list."""
@@ -46,20 +49,23 @@ class TestDisabledToolsSettings:
 
     def test_is_tool_disabled_returns_true_for_disabled_tool(self) -> None:
         """Should return True for tools in disabled list."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": "Bash,Write"}):
-            settings = config.Settings()
-            assert settings.is_tool_disabled("Bash") is True
-            assert settings.is_tool_disabled("Write") is True
-            assert settings.is_tool_disabled("Read") is False
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
+        )
+        assert settings.is_tool_disabled("Bash") is True
+        assert settings.is_tool_disabled("Write") is True
+        assert settings.is_tool_disabled("Read") is False
 
     def test_is_tool_disabled_returns_true_when_all_builtins_disabled(self) -> None:
-        """Should return True for any tool when disable_builtin_tools is True."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLE_BUILTIN_TOOLS": "true"}):
-            settings = config.Settings()
-            assert settings.is_tool_disabled("Bash") is True
-            assert settings.is_tool_disabled("Read") is True
-            assert settings.is_tool_disabled("Write") is True
-            assert settings.is_tool_disabled("AnyTool") is True
+        """Should return True for any tool when __builtin__ marker is set."""
+        # The __builtin__ marker in disabled dict disables all builtin tools
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"__builtin__": True})
+        )
+        assert settings.is_tool_disabled("Bash") is True
+        assert settings.is_tool_disabled("Read") is True
+        assert settings.is_tool_disabled("Write") is True
+        assert settings.is_tool_disabled("AnyTool") is True
 
 
 class TestBuildRegistryWithDisabledTools:
@@ -76,47 +82,51 @@ class TestBuildRegistryWithDisabledTools:
 
     def test_registry_excludes_disabled_tools(self) -> None:
         """Disabled tools should not be in registry."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": "Bash,Write"}):
-            settings = config.Settings()
-            registry = tools.build_registry_from_settings(settings)
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
+        )
+        registry = tools.build_registry_from_settings(settings)
 
-            assert "Bash" not in registry
-            assert "Write" not in registry
-            assert "Read" in registry
-            assert "Edit" in registry
+        assert "Bash" not in registry
+        assert "Write" not in registry
+        assert "Read" in registry
+        assert "Edit" in registry
 
     def test_registry_is_empty_when_all_builtins_disabled(self) -> None:
-        """Registry should be empty when disable_builtin_tools is True."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLE_BUILTIN_TOOLS": "true"}):
-            settings = config.Settings()
-            registry = tools.build_registry_from_settings(settings)
+        """Registry should be empty when __builtin__ marker is set."""
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"__builtin__": True})
+        )
+        registry = tools.build_registry_from_settings(settings)
 
-            assert len(registry) == 0
+        assert len(registry) == 0
 
     def test_disable_single_tool(self) -> None:
         """Disabling a single tool should only remove that tool."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": "Bash"}):
-            settings = config.Settings()
-            registry = tools.build_registry_from_settings(settings)
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True})
+        )
+        registry = tools.build_registry_from_settings(settings)
 
-            assert "Bash" not in registry
-            # All other tools should be present
-            assert "Read" in registry
-            assert "Write" in registry
-            assert "Edit" in registry
-            assert "Grep" in registry
-            assert "Glob" in registry
+        assert "Bash" not in registry
+        # All other tools should be present
+        assert "Read" in registry
+        assert "Write" in registry
+        assert "Edit" in registry
+        assert "Grep" in registry
+        assert "Glob" in registry
 
     def test_disabled_tools_in_to_dict(self) -> None:
         """Settings.to_dict() should include disabled_tools info."""
-        with _mock.patch.dict(_os.environ, {"BRYNHILD_DISABLED_TOOLS": "Bash,Write"}):
-            settings = config.Settings()
-            d = settings.to_dict()
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
+        )
+        d = settings.to_dict()
 
-            assert "disable_builtin_tools" in d
-            assert d["disable_builtin_tools"] is False
-            assert "disabled_tools" in d
-            assert set(d["disabled_tools"]) == {"Bash", "Write"}
+        assert "disable_builtin_tools" in d
+        assert d["disable_builtin_tools"] is False
+        assert "disabled_tools" in d
+        assert set(d["disabled_tools"]) == {"Bash", "Write"}
 
 
 class TestSystemPromptWithDisabledTools:
@@ -125,10 +135,10 @@ class TestSystemPromptWithDisabledTools:
     def test_system_prompt_includes_all_tools_by_default(self) -> None:
         """System prompt includes all tools when none are disabled."""
         import brynhild.core.prompts as prompts
-        import brynhild.tools as tools
+        import brynhild.tools as tools_module
 
         settings = config.Settings()
-        registry = tools.build_registry_from_settings(settings)
+        registry = tools_module.build_registry_from_settings(settings)
 
         prompt = prompts.get_system_prompt("test-model", tool_registry=registry)
 
@@ -137,17 +147,15 @@ class TestSystemPromptWithDisabledTools:
         assert "- Read:" in prompt
         assert "- Grep:" in prompt
 
-    def test_system_prompt_excludes_disabled_tools(
-        self, monkeypatch: _pytest.MonkeyPatch
-    ) -> None:
+    def test_system_prompt_excludes_disabled_tools(self) -> None:
         """System prompt excludes disabled tools."""
         import brynhild.core.prompts as prompts
-        import brynhild.tools as tools
+        import brynhild.tools as tools_module
 
-        monkeypatch.setenv("BRYNHILD_DISABLED_TOOLS", "Bash,Grep")
-
-        settings = config.Settings()
-        registry = tools.build_registry_from_settings(settings)
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"Bash": True, "Grep": True})
+        )
+        registry = tools_module.build_registry_from_settings(settings)
 
         prompt = prompts.get_system_prompt("test-model", tool_registry=registry)
 
@@ -157,17 +165,15 @@ class TestSystemPromptWithDisabledTools:
         assert "- Read:" in prompt
         assert "- Write:" in prompt
 
-    def test_system_prompt_empty_tools_when_all_disabled(
-        self, monkeypatch: _pytest.MonkeyPatch
-    ) -> None:
+    def test_system_prompt_empty_tools_when_all_disabled(self) -> None:
         """System prompt says no tools when all are disabled."""
         import brynhild.core.prompts as prompts
-        import brynhild.tools as tools
+        import brynhild.tools as tools_module
 
-        monkeypatch.setenv("BRYNHILD_DISABLE_BUILTIN_TOOLS", "true")
-
-        settings = config.Settings()
-        registry = tools.build_registry_from_settings(settings)
+        settings = config.Settings(
+            tools=types.ToolsConfig(disabled={"__builtin__": True})
+        )
+        registry = tools_module.build_registry_from_settings(settings)
 
         prompt = prompts.get_system_prompt("test-model", tool_registry=registry)
 
