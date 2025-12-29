@@ -15,8 +15,8 @@ import pytest as _pytest
 import brynhild.utils as utils
 import brynhild.utils.deep_chain_map._core as _core
 import brynhild.utils.deep_chain_map._frozen as _frozen
-import brynhild.utils.deep_chain_map._proxy as _proxy
 import brynhild.utils.deep_chain_map._operations as _operations
+import brynhild.utils.deep_chain_map._proxy as _proxy
 
 # Re-export for convenience in tests
 _DELETED = _core._DELETED
@@ -476,9 +476,9 @@ class TestMutableProxy:
 
         # Comparison with non-Mapping should return NotImplemented
         # which Python interprets as inequality (unless reflected op succeeds)
-        assert not (proxy == "string")
-        assert not (proxy == 123)
-        assert not (proxy == [1, 2, 3])
+        assert proxy != "string"
+        assert proxy != 123
+        assert proxy != [1, 2, 3]
 
     def test_not_hashable(self) -> None:
         """MutableProxy is not hashable."""
@@ -1167,7 +1167,7 @@ class TestSetAfterDelete:
         """Setting after delete removes the delete marker."""
         dcm = utils.DeepChainMap({"a": 1})
         del dcm["a"]
-        assert ("a",) in [tuple([k]) for k in dcm._delete_layer.keys() if dcm._delete_layer[k] is _DELETED]
+        assert ("a",) in [(k,) for k in dcm._delete_layer if dcm._delete_layer[k] is _DELETED]
 
         dcm["a"] = "restored"
         assert "a" not in dcm._delete_layer or dcm._delete_layer.get("a") is not _DELETED

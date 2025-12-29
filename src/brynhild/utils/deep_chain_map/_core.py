@@ -29,7 +29,7 @@ import brynhild.utils.deep_chain_map._operations as _operations
 
 
 # Helper function to reconstruct _DELETED singleton during unpickle
-def _get_deleted_singleton() -> "_DeletedType":
+def _get_deleted_singleton() -> _DeletedType:
     """Return the _DELETED singleton. Called by pickle to reconstruct."""
     return _DELETED
 
@@ -43,7 +43,7 @@ class _DeletedType:
     def __repr__(self) -> str:
         return "<DELETED>"
 
-    def __reduce__(self) -> tuple[_typing.Callable[[], "_DeletedType"], tuple[()]]:
+    def __reduce__(self) -> tuple[_typing.Callable[[], _DeletedType], tuple[()]]:
         """Pickle support: ensure singleton is preserved."""
         return (_get_deleted_singleton, ())
 
@@ -78,29 +78,29 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     Note:
         **Source layer semantics:** Source layers are stored **by reference**,
         not copied. This means:
-        
+
         1. DeepChainMap will never modify your source dicts (writes go to
            ``front_layer``, deletes go to ``delete_layer``)
         2. If you modify source dicts externally, DCM won't see changes
            until you call ``reload()`` to clear the cache
         3. Multiple DeepChainMaps can share the same source layers
-        
+
         The ``layers`` and ``source_layers`` properties return FrozenMapping
         wrappers to prevent accidental mutation, but the underlying dicts
         remain accessible if you hold a reference to them.
-        
+
         If you need snapshot semantics (isolated from source changes),
         deep copy your dicts before passing them::
-        
+
             import copy
             dcm = DeepChainMap(copy.deepcopy(config))
 
         **Thread safety:** Not thread-safe for concurrent writes. Specifically:
-        
+
         - Multiple threads calling ``__setitem__`` concurrently: UNSAFE
         - One thread writing while another reads: UNSAFE
         - Multiple threads reading concurrently (no writes): SAFE
-        
+
         Use external synchronization (e.g., ``threading.Lock``) if concurrent
         write access is required.
 
@@ -119,7 +119,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self._layers: list[dict[str, _typing.Any]] = list(maps)
         self._track_provenance = track_provenance
         self._cache: dict[str, _typing.Any] = {}
-        self._provenance_cache: dict[str, dict[str, int]] = {}
+        self._provenance_cache: dict[str, dict[str, _typing.Any]] = {}
 
         # 2.0 data structures for user modifications
         self._front_layer: dict[str, _typing.Any] = {}
@@ -127,7 +127,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self._list_ops: dict[tuple[str, ...], list[_typing.Any]] = {}
 
     @property
-    def layers(self) -> list[_frozen.FrozenMapping[str, _typing.Any]]:
+    def layers(self) -> list[_frozen.FrozenMapping]:
         """Read-only access to source layers.
 
         DEPRECATED: Use source_layers instead.
@@ -139,7 +139,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         return [_frozen.FrozenMapping(layer) for layer in self._layers]
 
     @property
-    def source_layers(self) -> list[_frozen.FrozenMapping[str, _typing.Any]]:
+    def source_layers(self) -> list[_frozen.FrozenMapping]:
         """Read-only access to source layers (original data, frozen).
 
         Returns:
@@ -654,7 +654,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             result = _copy.deepcopy(self._front_layer[key])
             # Provenance: -1 indicates front_layer
             if isinstance(result, dict):
-                provenance: dict[str, int] = {k: -1 for k in result}
+                provenance: dict[str, int] = dict.fromkeys(result, -1)
             else:
                 provenance = {".": -1}
         elif len(values) == 1:
@@ -845,7 +845,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     def get_with_provenance(
         self,
         key: str,
-    ) -> tuple[_typing.Any, dict[str, int]]:
+    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
         """
         Get a merged value along with provenance information.
 
@@ -883,7 +883,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             result[key] = _copy.deepcopy(value)
         return result
 
-    def copy(self) -> "DeepChainMap":
+    def copy(self) -> DeepChainMap:
         """
         Return a shallow copy of this DeepChainMap.
 
@@ -929,7 +929,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     def _deep_merge_with_provenance(
         self,
         values: list[tuple[int, _typing.Any]],
-    ) -> tuple[_typing.Any, dict[str, int]]:
+    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
         """
         Deep merge values from multiple layers.
 
@@ -956,9 +956,12 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self,
         base: _typing.Any,
         override: _typing.Any,
-        provenance: dict[str, int],
+        # TODO: Define a proper recursive TypeAlias for provenance instead of Any.
+        # Provenance maps keys to either int (layer index) or nested provenance dict.
+        # Correct type: Provenance = dict[str, int | Provenance]
+        provenance: dict[str, _typing.Any],
         layer_idx: int,
-    ) -> tuple[_typing.Any, dict[str, int]]:
+    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
         """
         Merge override into base.
 
@@ -1034,7 +1037,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self,
         value: _typing.Any,
         layer_idx: int,
-    ) -> dict[str, int]:
+    ) -> dict[str, _typing.Any]:
         """
         Build initial provenance dict for a value from a single layer.
 
@@ -1046,13 +1049,13 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             Provenance dict.
         """
         if isinstance(value, dict):
-            return {k: layer_idx for k in value}
+            return dict.fromkeys(value, layer_idx)
         else:
             return {".": layer_idx}
 
     def _update_provenance_for_front(
         self,
-        provenance: dict[str, int],
+        provenance: dict[str, _typing.Any],
         front_value: dict[str, _typing.Any],
     ) -> None:
         """

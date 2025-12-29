@@ -102,7 +102,7 @@ class TestFrozenMapping:
         fm = FrozenMapping({"a": 1, "b": 2})
 
         assert fm == {"a": 1, "b": 2}
-        assert {"a": 1, "b": 2} == fm
+        assert fm == {"a": 1, "b": 2}
 
     def test_eq_with_frozen_mapping(self) -> None:
         """FrozenMapping equals another FrozenMapping with same content."""
@@ -254,7 +254,7 @@ class TestFrozenSequence:
         fs = FrozenSequence([1, 2, 3])
 
         assert fs == [1, 2, 3]
-        assert [1, 2, 3] == fs
+        assert fs == [1, 2, 3]
 
     def test_eq_with_frozen_sequence(self) -> None:
         """FrozenSequence equals another FrozenSequence with same content."""

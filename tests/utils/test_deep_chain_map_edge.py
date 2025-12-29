@@ -14,7 +14,6 @@ import typing as _typing
 import pytest as _pytest
 
 import brynhild.utils as utils
-import brynhild.utils.deep_chain_map as deep_chain_map
 import brynhild.utils.deep_chain_map._frozen as _frozen
 
 # Re-export for convenience in tests
