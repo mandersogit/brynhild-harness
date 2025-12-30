@@ -1038,7 +1038,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         value: _typing.Any,
         layer_idx: int,
         *,
-        _seen: _typing.Optional[set[int]] = None,
+        _seen: set[int] | None = None,
     ) -> dict[str, _typing.Any]:
         """
         Build initial provenance dict for a value from a single layer.

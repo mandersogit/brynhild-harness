@@ -1058,7 +1058,7 @@ def _print_config_with_provenance(
                     else:
                         lines.append((f"{indent}{key}:", prov_label))
                         # Create provenance for children - all from same layer
-                        child_prov = {k: dict_prov for k in value}
+                        child_prov = dict.fromkeys(value, dict_prov)
                         collect_lines(value, child_prov, depth + 1, key_path)
                 else:
                     # Not in provenance = Pydantic default
@@ -1157,8 +1157,7 @@ def _print_config_with_provenance(
             lines.append((f"{key}:", auto_code))
             if isinstance(config_data[key], dict):
                 collect_lines(
-                    config_data[key], {}, depth=1, fallback_code=auto_code,
-                    fallback_layer_idx=-1, path_prefix=key_path
+                    config_data[key], {}, depth=1, path_prefix=key_path
                 )
 
     # Calculate alignment column

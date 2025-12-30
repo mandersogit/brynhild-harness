@@ -51,8 +51,8 @@ class _LineTrackingLoader(_yaml.SafeLoader):
         self._line_registry: LineRegistry = {}
         self._path_stack: list[str] = []
 
-    def construct_mapping(
-        self, node: _yaml.MappingNode, deep: bool = False
+    def construct_mapping(  # type: ignore[override]
+        self, node: _yaml.MappingNode, _deep: bool = False
     ) -> dict[str, _typing.Any]:
         """Override to track line numbers for each key."""
         # Record root position if at top level
@@ -63,7 +63,7 @@ class _LineTrackingLoader(_yaml.SafeLoader):
         for key_node, value_node in node.value:
             # Construct the key (usually a string)
             # Use deep=True for immediate construction (not deferred)
-            key = self.construct_object(key_node, deep=True)
+            key = self.construct_object(key_node, deep=True)  # type: ignore[no-untyped-call]
 
             # Record line number for this key
             key_line = key_node.start_mark.line + 1
@@ -74,7 +74,7 @@ class _LineTrackingLoader(_yaml.SafeLoader):
 
             # Construct the value with deep=True so nested mappings are
             # constructed immediately while our path stack has the right prefix
-            value = self.construct_object(value_node, deep=True)
+            value = self.construct_object(value_node, deep=True)  # type: ignore[no-untyped-call]
 
             # Pop after value construction (including any nested mappings)
             self._path_stack.pop()
@@ -106,7 +106,7 @@ def _load_yaml_with_lines(
     try:
         data = loader.get_single_data()
     finally:
-        loader.dispose()
+        loader.dispose()  # type: ignore[no-untyped-call]
 
     return data, loader._line_registry
 
