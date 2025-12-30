@@ -88,25 +88,25 @@ Configuration management using pydantic-settings.
 class Settings(pydantic_settings.BaseSettings)
 ```
 
-Environment-based configuration. All settings can be overridden via environment variables with `BRYNHILD_` prefix.
+Layered configuration from YAML files and environment variables. Use double underscores (`__`) for nested paths.
 
-**Fields:**
+**Config File:** `~/.config/brynhild/config.yaml`
 
-| Field                          | Type           | Default                 | Env Var                               |
-|--------------------------------|----------------|-------------------------|---------------------------------------|
-| `provider`                     | `str`          | `"openrouter"`          | `BRYNHILD_PROVIDER`                   |
-| `model`                        | `str`          | `"openai/gpt-oss-120b"` | `BRYNHILD_MODEL`                      |
-| `openrouter_api_key`           | `str \| None`  | `None`                  | `OPENROUTER_API_KEY`                  |
-| `max_tokens`                   | `int`          | `8192`                  | `BRYNHILD_MAX_TOKENS`                 |
-| `verbose`                      | `bool`         | `False`                 | `BRYNHILD_VERBOSE`                    |
-| `sandbox_enabled`              | `bool`         | `True`                  | `BRYNHILD_SANDBOX_ENABLED`            |
-| `sandbox_allow_network`        | `bool`         | `False`                 | `BRYNHILD_SANDBOX_ALLOW_NETWORK`      |
-| `dangerously_skip_permissions` | `bool`         | `False`                 | `BRYNHILD_DANGEROUSLY_SKIP_PERMISSIONS` |
-| `dangerously_skip_sandbox`     | `bool`         | `False`                 | `BRYNHILD_DANGEROUSLY_SKIP_SANDBOX`   |
-| `allowed_paths`                | `str`          | `""`                    | `BRYNHILD_ALLOWED_PATHS`              |
-| `allow_home_directory`         | `bool`         | `False`                 | `BRYNHILD_ALLOW_HOME_DIRECTORY`       |
-| `log_conversations`            | `bool`         | `True`                  | `BRYNHILD_LOG_CONVERSATIONS`          |
-| `log_dir`                      | `str`          | `""`                    | `BRYNHILD_LOG_DIR`                    |
+**Key Settings:**
+
+| Setting Path | Type | Default | Env Var |
+|-------------|------|---------|---------|
+| `providers.default` | `str` | `"openrouter"` | `BRYNHILD_PROVIDERS__DEFAULT` |
+| `models.default` | `str` | `"openai/gpt-oss-120b"` | `BRYNHILD_MODELS__DEFAULT` |
+| `behavior.max_tokens` | `int` | `8192` | `BRYNHILD_BEHAVIOR__MAX_TOKENS` |
+| `behavior.verbose` | `bool` | `False` | `BRYNHILD_BEHAVIOR__VERBOSE` |
+| `sandbox.enabled` | `bool` | `True` | `BRYNHILD_SANDBOX__ENABLED` |
+| `sandbox.allow_network` | `bool` | `False` | `BRYNHILD_SANDBOX__ALLOW_NETWORK` |
+| `logging.enabled` | `bool` | `True` | `BRYNHILD_LOGGING__ENABLED` |
+
+**API Key:** `OPENROUTER_API_KEY` (unchanged)
+
+See `brynhild config show` to inspect effective configuration.
 | `disable_builtin_tools`        | `bool`         | `False`                 | `BRYNHILD_DISABLE_BUILTIN_TOOLS`      |
 | `disabled_tools`               | `str`          | `""`                    | `BRYNHILD_DISABLED_TOOLS`             |
 | `reasoning_format`             | `str`          | `"auto"`                | `BRYNHILD_REASONING_FORMAT`           |

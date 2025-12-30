@@ -538,24 +538,26 @@ bwrap \
 
 ### Settings (`brynhild.config.Settings`)
 
-Configuration uses pydantic-settings with environment variable support:
+Configuration uses layered YAML files with pydantic-settings validation.
+Environment variables use double underscores (`__`) for nested paths.
 
-| Setting                    | Env Var                             | Default               | Description    |
-|----------------------------|-------------------------------------|-----------------------|----------------|
-| `provider`                 | `BRYNHILD_PROVIDER`                 | `openrouter`          | LLM provider   |
-| `model`                    | `BRYNHILD_MODEL`                    | `openai/gpt-oss-120b` | Model name     |
-| `max_tokens`               | `BRYNHILD_MAX_TOKENS`               | `8192`                | Response limit |
-| `sandbox_enabled`          | `BRYNHILD_SANDBOX_ENABLED`          | `true`                | Enable sandbox |
-| `sandbox_allow_network`    | `BRYNHILD_SANDBOX_ALLOW_NETWORK`    | `false`               | Network access |
-| `dangerously_skip_sandbox` | `BRYNHILD_DANGEROUSLY_SKIP_SANDBOX` | `false`               | Bypass sandbox |
-| `log_conversations`        | `BRYNHILD_LOG_CONVERSATIONS`        | `true`                | JSONL logging  |
+| Setting | Env Var | Default | Description |
+|---------|---------|---------|-------------|
+| `providers.default` | `BRYNHILD_PROVIDERS__DEFAULT` | `openrouter` | LLM provider |
+| `models.default` | `BRYNHILD_MODELS__DEFAULT` | `openai/gpt-oss-120b` | Model name |
+| `behavior.max_tokens` | `BRYNHILD_BEHAVIOR__MAX_TOKENS` | `8192` | Response limit |
+| `sandbox.enabled` | `BRYNHILD_SANDBOX__ENABLED` | `true` | Enable sandbox |
+| `sandbox.allow_network` | `BRYNHILD_SANDBOX__ALLOW_NETWORK` | `false` | Network access |
+| `logging.enabled` | `BRYNHILD_LOGGING__ENABLED` | `true` | JSONL logging |
+
+**Config precedence:** Built-in defaults → User config → Project config → Env vars → CLI
 
 ### Directory Structure
 
 ```
-~/.brynhild/                    # User config directory
-├── sessions/                   # Session persistence (JSON)
-└── (other user data)
+~/.config/brynhild/             # XDG config directory
+├── config.yaml                 # User configuration
+└── sessions/                   # Session persistence (JSON)
 
 ~/.config/brynhild/             # System config directory
 ├── config.yaml                 # Main configuration

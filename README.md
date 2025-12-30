@@ -64,12 +64,39 @@ Set your API key:
 export OPENROUTER_API_KEY="sk-or-..."
 ```
 
-Optional settings:
+### Option 1: Config File (Recommended)
+
+Create `~/.config/brynhild/config.yaml`:
+
+```yaml
+models:
+  default: anthropic/claude-sonnet-4
+
+providers:
+  default: openrouter
+
+behavior:
+  max_tokens: 16384
+```
+
+### Option 2: Environment Variables
 
 ```bash
-export BRYNHILD_PROVIDER="openrouter"    # openrouter | ollama
-export BRYNHILD_MODEL="anthropic/claude-sonnet-4"
+export BRYNHILD_MODELS__DEFAULT="anthropic/claude-sonnet-4"
+export BRYNHILD_PROVIDERS__DEFAULT="openrouter"    # openrouter | ollama
 ```
+
+**Note:** Use double underscores (`__`) for nested settings.
+
+### Inspect Configuration
+
+```bash
+brynhild config show              # Show effective settings
+brynhild config show --provenance # Show where each value comes from
+brynhild config path              # Show config file locations
+```
+
+See [docs/migration-guide.md](docs/migration-guide.md) for details.
 
 ## Usage
 
