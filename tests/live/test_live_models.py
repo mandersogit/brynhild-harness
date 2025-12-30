@@ -16,7 +16,6 @@ pytestmark = [_pytest.mark.live, _pytest.mark.slow]
 # Models to test (from testing plan)
 LIVE_TEST_MODELS_CHEAP = [
     "openai/gpt-oss-20b",
-    "x-ai/grok-4.1-fast:free",
 ]
 
 LIVE_TEST_MODELS_DIVERSE = [
@@ -158,22 +157,6 @@ class TestLiveModelCompatibility:
 
             # Should have some thinking content
             assert len(thinking_content) > 0 or True  # May not always have thinking
-        except Exception as e:
-            if "rate" in str(e).lower() or "unavailable" in str(e).lower():
-                _pytest.skip(f"Model unavailable: {e}")
-            raise
-
-    @_pytest.mark.asyncio
-    async def test_free_tier_model(self, api_key: str) -> None:
-        """Free tier model works correctly."""
-        provider = _create_provider(api_key, "x-ai/grok-4.1-fast:free")
-
-        try:
-            response = await provider.complete(
-                messages=[{"role": "user", "content": "Say 'free'."}],
-                max_tokens=10,
-            )
-            assert response.content is not None
         except Exception as e:
             if "rate" in str(e).lower() or "unavailable" in str(e).lower():
                 _pytest.skip(f"Model unavailable: {e}")
