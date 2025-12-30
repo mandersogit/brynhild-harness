@@ -33,6 +33,83 @@ import brynhild.utils as utils
 # Environment variable for overriding user config directory
 ENV_CONFIG_DIR = "BRYNHILD_CONFIG_DIR"
 
+# Type alias for line registry: maps key paths to (line, column) tuples
+# Line numbers are 1-indexed to match editor conventions
+LineRegistry = dict[tuple[str, ...], tuple[int, int]]
+
+
+class _LineTrackingLoader(_yaml.SafeLoader):
+    """YAML loader that tracks line/column numbers for all keys and values.
+
+    This loader intercepts mapping construction to record line numbers for
+    each key, while delegating actual value construction to the parent class
+    to preserve proper type handling (int, bool, etc.).
+    """
+
+    def __init__(self, stream: _typing.Any) -> None:
+        super().__init__(stream)
+        self._line_registry: LineRegistry = {}
+        self._path_stack: list[str] = []
+
+    def construct_mapping(
+        self, node: _yaml.MappingNode, deep: bool = False
+    ) -> dict[str, _typing.Any]:
+        """Override to track line numbers for each key."""
+        # Record root position if at top level
+        if not self._path_stack:
+            self._line_registry[()] = (node.start_mark.line + 1, node.start_mark.column + 1)
+
+        result: dict[str, _typing.Any] = {}
+        for key_node, value_node in node.value:
+            # Construct the key (usually a string)
+            # Use deep=True for immediate construction (not deferred)
+            key = self.construct_object(key_node, deep=True)
+
+            # Record line number for this key
+            key_line = key_node.start_mark.line + 1
+            key_col = key_node.start_mark.column + 1
+            self._path_stack.append(str(key))
+            key_path = tuple(self._path_stack)
+            self._line_registry[key_path] = (key_line, key_col)
+
+            # Construct the value with deep=True so nested mappings are
+            # constructed immediately while our path stack has the right prefix
+            value = self.construct_object(value_node, deep=True)
+
+            # Pop after value construction (including any nested mappings)
+            self._path_stack.pop()
+
+            result[key] = value
+
+        return result
+
+
+def _load_yaml_with_lines(
+    content: str,
+) -> tuple[dict[str, _typing.Any] | None, LineRegistry]:
+    """
+    Load YAML content and track line numbers for all keys.
+
+    Args:
+        content: YAML string to parse.
+
+    Returns:
+        Tuple of (parsed_data, line_registry).
+        line_registry maps key paths (tuples) to (line, column) tuples.
+        Line and column are 1-indexed.
+
+    Raises:
+        yaml.YAMLError: If YAML is malformed.
+    """
+    loader = _LineTrackingLoader(content)
+
+    try:
+        data = loader.get_single_data()
+    finally:
+        loader.dispose()
+
+    return data, loader._line_registry
+
 
 class ConfigFileError(Exception):
     """Error loading or parsing a configuration file."""
@@ -87,6 +164,10 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         self._project_root = project_root
         self._user_config_path = user_config_path
         self._builtin_config_path = builtin_config_path
+        # Track which layers were actually loaded (in DCM order: highest first)
+        self._loaded_layers: list[tuple[str, _pathlib.Path]] = []
+        # Line number registries for each loaded layer, keyed by file path
+        self._line_registries: dict[_pathlib.Path, LineRegistry] = {}
         self._dcm = self._load_config_layers()
 
     def _load_config_layers(self) -> utils.DeepChainMap:
@@ -102,6 +183,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         """
         # Build layers in ascending precedence order
         layers: list[dict[str, _typing.Any]] = []
+        layer_info: list[tuple[str, _pathlib.Path]] = []
 
         # Layer 1: Built-in defaults (lowest precedence) — REQUIRED
         # Must exist AND have content. If missing or empty, this is an
@@ -119,6 +201,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
                 "built-in defaults file is empty (possible installation problem)",
             )
         layers.append(builtin_content)
+        layer_info.append(("built-in", builtin_path))
 
         # Layer 2: User config — OPTIONAL
         # Missing user config is normal (user hasn't created one yet).
@@ -127,6 +210,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
             content = self._load_yaml_file(user_path)
             if content:
                 layers.append(content)
+                layer_info.append(("user", user_path))
 
         # Layer 3: Project config — OPTIONAL
         # Missing project config is normal (project doesn't use brynhild config).
@@ -136,11 +220,88 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
                 content = self._load_yaml_file(project_path)
                 if content:
                     layers.append(content)
+                    layer_info.append(("project", project_path))
 
         # Reverse so highest precedence (project) is first
         # DCM: first map = highest priority
         layers.reverse()
-        return utils.DeepChainMap(*layers)
+        layer_info.reverse()
+
+        # Store loaded layer info for provenance display
+        self._loaded_layers = layer_info
+
+        # Enable provenance tracking for config show --provenance
+        return utils.DeepChainMap(*layers, track_provenance=True)
+
+    @property
+    def dcm(self) -> utils.DeepChainMap:
+        """Access the underlying DeepChainMap for provenance queries."""
+        return self._dcm
+
+    def get_loaded_layers(self) -> list[tuple[str, _pathlib.Path]]:
+        """
+        Get info about layers that were actually loaded into the DCM.
+
+        Returns:
+            List of (layer_name, path) tuples in DCM order (highest precedence first).
+            Index in this list matches DCM layer index for provenance mapping.
+        """
+        return list(self._loaded_layers)
+
+    def get_line_info(
+        self,
+        layer_path: _pathlib.Path,
+        key_path: tuple[str, ...],
+    ) -> tuple[int, int] | None:
+        """
+        Get line and column number for a key path in a specific layer file.
+
+        Args:
+            layer_path: Path to the config file.
+            key_path: Tuple of keys representing the path (e.g., ("models", "default")).
+
+        Returns:
+            Tuple of (line, column) (1-indexed) if found, None otherwise.
+        """
+        registry = self._line_registries.get(layer_path)
+        if registry is None:
+            return None
+        return registry.get(key_path)
+
+    def get_line_registries(self) -> dict[_pathlib.Path, LineRegistry]:
+        """
+        Get all line registries for loaded config files.
+
+        Returns:
+            Dict mapping file paths to their line registries.
+            Each registry maps key paths to (line, column) tuples.
+        """
+        return dict(self._line_registries)
+
+    def get_layer_paths(self) -> list[tuple[str, _pathlib.Path, bool]]:
+        """
+        Get info about all config layers.
+
+        Returns:
+            List of (layer_name, path, exists) tuples in precedence order
+            (highest first: project, user, builtin).
+        """
+        layers: list[tuple[str, _pathlib.Path, bool]] = []
+
+        # Project config (highest)
+        if self._project_root:
+            project_path = self._project_root / ".brynhild" / "config.yaml"
+            layers.append(("project", project_path, project_path.exists()))
+
+        # User config
+        user_path = self._get_user_config_path()
+        layers.append(("user", user_path, user_path.exists()))
+
+        # Built-in defaults (lowest)
+        builtin_path = self._get_builtin_config_path()
+        layers.append(("built-in", builtin_path, builtin_path.exists()))
+
+        return layers
 
     def _get_builtin_config_path(self) -> _pathlib.Path:
         """Get path to builtin defaults, respecting override."""
@@ -168,6 +329,9 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         """
         Load a YAML file and return its contents as a dict.
 
+        Also stores line number information in self._line_registries for
+        provenance display with line numbers.
+
         Args:
             path: Path to the YAML file.
 
@@ -186,11 +350,14 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         except OSError as e:
             raise ConfigFileError(path, f"cannot read file: {e}") from e
 
-        # Handle YAML parse errors
+        # Handle YAML parse errors with line tracking
         try:
-            parsed = _yaml.safe_load(content)
+            parsed, line_registry = _load_yaml_with_lines(content)
         except _yaml.YAMLError as e:
             raise ConfigFileError(path, f"invalid YAML: {e}") from e
+
+        # Store line registry for this file
+        self._line_registries[path] = line_registry
 
         # Handle empty file
         if parsed is None:
