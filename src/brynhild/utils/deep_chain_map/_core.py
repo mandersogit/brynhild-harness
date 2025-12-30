@@ -1037,6 +1037,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self,
         value: _typing.Any,
         layer_idx: int,
+        *,
+        _seen: _typing.Optional[set[int]] = None,
     ) -> dict[str, _typing.Any]:
         """
         Build initial provenance dict for a value from a single layer.
@@ -1047,16 +1049,25 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         Args:
             value: The value to build provenance for.
             layer_idx: The layer index it came from.
+            _seen: Internal set of seen object ids for cycle detection.
 
         Returns:
             Provenance dict mapping keys to layer indices (or nested dicts).
         """
         if isinstance(value, dict):
+            # Cycle detection: skip if we've seen this exact dict object
+            if _seen is None:
+                _seen = set()
+            value_id = id(value)
+            if value_id in _seen:
+                return {}  # Circular reference, stop recursion
+            _seen.add(value_id)
+
             result: dict[str, _typing.Any] = {}
             for k, v in value.items():
                 if isinstance(v, dict):
                     # Recursively build provenance for nested dicts
-                    result[k] = self._build_provenance(v, layer_idx)
+                    result[k] = self._build_provenance(v, layer_idx, _seen=_seen)
                 else:
                     result[k] = layer_idx
             return result
