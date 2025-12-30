@@ -184,6 +184,12 @@ class ConversationLogger:
             tool_id: Unique ID for this tool call.
             call_type: Type of call - "native" (from model's tool_calls) or
                        "recovered" (extracted from thinking text).
+
+        Note:
+            This logs only the base tool call fields. Provider-specific fields
+            (e.g., Gemini's thought_signature) that may be present in ToolUse
+            subclasses are not captured here. Those fields are preserved in
+            message history for model round-trips but not in conversation logs.
         """
         self._write_event(
             "tool_call",

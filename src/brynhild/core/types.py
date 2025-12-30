@@ -6,11 +6,13 @@ They contain no UI logic - just structured data.
 """
 
 import dataclasses as _dataclasses
-import json as _json
 import typing as _typing
 
 import brynhild.constants as _constants
 import brynhild.tools.base as tools_base
+
+if _typing.TYPE_CHECKING:
+    import brynhild.api.types as api_types
 
 
 @_dataclasses.dataclass
@@ -76,7 +78,7 @@ def format_tool_result_message(
 
 
 def format_assistant_tool_call(
-    tool_uses: list[_typing.Any],
+    tool_uses: "list[api_types.ToolUse]",
     content: str = "",
     *,
     thinking: str | None = None,
@@ -88,8 +90,13 @@ def format_assistant_tool_call(
     in OpenAI-compatible APIs. The tool_calls array allows the model to
     associate tool results with the calls it made.
 
+    Each ToolUse is serialized via its to_tool_call_dict() method, which
+    allows subclasses to include provider-specific fields in the output.
+    This is critical for features like Gemini's thought_signature which
+    must survive the round-trip through message history.
+
     Args:
-        tool_uses: List of ToolUse objects from the model's response.
+        tool_uses: List of ToolUse objects (or subclasses) from the model's response.
         content: Optional text content from the assistant (may be empty).
         thinking: Optional thinking/reasoning content to prepend to content.
             When provided, the model's thinking is included in the message
@@ -97,25 +104,22 @@ def format_assistant_tool_call(
 
     Returns:
         Assistant message dict with tool_calls array.
+
+    Raises:
+        TypeError: If tool_uses contains non-ToolUse objects.
     """
     # Import here to avoid circular imports
     import brynhild.api.types as api_types
 
     tool_calls = []
     for tool_use in tool_uses:
-        # Handle both ToolUse objects and raw dicts
-        if isinstance(tool_use, api_types.ToolUse):
-            tool_calls.append({
-                "id": tool_use.id,
-                "type": "function",
-                "function": {
-                    "name": tool_use.name,
-                    "arguments": _json.dumps(tool_use.input),
-                },
-            })
-        else:
-            # Already a dict (shouldn't happen but handle gracefully)
-            tool_calls.append(tool_use)
+        if not isinstance(tool_use, api_types.ToolUse):
+            raise TypeError(
+                f"tool_uses must contain ToolUse objects, got {type(tool_use).__name__}. "
+                "Raw dicts are not supported; wrap in ToolUse first."
+            )
+        # Delegate to ToolUse for serialization — allows subclass customization
+        tool_calls.append(tool_use.to_tool_call_dict())
 
     # Build the message with reasoning as a separate field.
     # The provider's _format_messages() will convert this to the appropriate

@@ -7,6 +7,7 @@ These types provide a provider-agnostic interface for working with LLM responses
 from __future__ import annotations
 
 import dataclasses as _dataclasses
+import json as _json
 import typing as _typing
 
 
@@ -66,11 +67,55 @@ class Usage:
 
 @_dataclasses.dataclass
 class ToolUse:
-    """A tool use request from the model."""
+    """A tool use request from the model.
+
+    Provider plugins can subclass this to add provider-specific fields
+    (e.g., Gemini's thought_signature) and override to_tool_call_dict()
+    to include them in the serialized message.
+    """
 
     id: str
     name: str
     input: dict[str, _typing.Any]
+
+    def to_tool_call_dict(self) -> dict[str, _typing.Any]:
+        """
+        Serialize to tool_call dict for message history.
+
+        This method is called by format_assistant_tool_call() to convert
+        ToolUse objects into the dict format stored in message history.
+
+        Subclasses can override to include provider-specific fields that
+        must survive the round-trip through message history. For example:
+
+            @dataclasses.dataclass
+            class GeminiToolUse(ToolUse):
+                thought_signature: str | None = None
+
+                def to_tool_call_dict(self) -> dict[str, Any]:
+                    d = super().to_tool_call_dict()
+                    if self.thought_signature:
+                        d["thought_signature"] = self.thought_signature
+                    return d
+
+        Note:
+            Provider-specific fields added here will appear in the message
+            history sent to the model, but are NOT captured in conversation
+            logs (JSONL/Markdown). The logging system only records the base
+            fields (tool_name, tool_input, tool_id). If you need to log
+            additional fields, extend the logging interface separately.
+
+        Returns:
+            Dict in OpenAI tool_call format with id, type, and function fields.
+        """
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "arguments": _json.dumps(self.input),
+            },
+        }
 
 
 @_dataclasses.dataclass
