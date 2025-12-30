@@ -770,16 +770,16 @@ def chat(
     )
 
 
-@cli.command()
-@_click.option("--json", "json_output", is_flag=True, help="JSON output")
+@cli.group(invoke_without_command=True)
 @_click.pass_context
-def config_cmd(ctx: _click.Context, json_output: bool) -> None:
-    """Show current configuration."""
-    settings: config.Settings = ctx.obj["settings"]
+def config_cmd(ctx: _click.Context) -> None:
+    """Configuration management commands.
 
-    if json_output:
-        _click.echo(_json.dumps(settings.to_dict(), indent=2))
-    else:
+    Without a subcommand, shows configuration overview.
+    """
+    if ctx.invoked_subcommand is None:
+        # Default behavior: show overview (backward compatible)
+        settings: config.Settings = ctx.obj["settings"]
         _click.echo("Brynhild Configuration:")
         _click.echo(f"  Provider: {settings.provider}")
         _click.echo(f"  Model: {settings.model}")
@@ -788,10 +788,466 @@ def config_cmd(ctx: _click.Context, json_output: bool) -> None:
         _click.echo(f"  Project Root: {settings.project_root}")
         _click.echo(f"  Config Dir: {settings.config_dir}")
         _click.echo(f"  Sessions Dir: {settings.sessions_dir}")
+        _click.echo("\nRun 'brynhild config show' for full configuration details.")
 
 
 # Register config_cmd with the name "config" to avoid shadowing the module
 cli.add_command(config_cmd, name="config")
+
+
+@config_cmd.command(name="show")
+@_click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@_click.option("--provenance", is_flag=True, help="Show where each value came from")
+@_click.option("--section", type=str, default=None, help="Show specific section only")
+@_click.option(
+    "--color/--no-color",
+    "use_color",
+    default=None,
+    help="Enable/disable syntax highlighting (default: auto-detect TTY)",
+)
+@_click.pass_context
+def config_show(
+    ctx: _click.Context,
+    as_json: bool,
+    provenance: bool,
+    section: str | None,
+    use_color: bool | None,
+) -> None:
+    """Show effective configuration from all sources.
+
+    Displays the merged configuration from built-in defaults, user config,
+    and project config. Use --provenance to see which file each value came from.
+
+    Color output is enabled by default when outputting to a terminal.
+    Override with --color/--no-color, NO_COLOR env var, or
+    BRYNHILD_CONFIG_SHOW_COLOR=0|1 env var.
+
+    Examples:
+        brynhild config show              # Show all config as YAML (colorized)
+        brynhild config show --json       # Show as JSON
+        brynhild config show --provenance # Show config with sources
+        brynhild config show --no-color   # Disable syntax highlighting
+        brynhild config show | less -R    # Pipe with color (use --color)
+    """
+    import yaml as _yaml
+
+    settings: config.Settings = ctx.obj["settings"]
+
+    # Determine color mode
+    color_enabled, force_color = _should_use_color(use_color)
+
+    # Get the full config dict
+    full_config = settings.model_dump(mode="json")
+
+    # Filter to section if requested
+    if section:
+        if section not in full_config:
+            raise _click.ClickException(f"Unknown section: {section}")
+        full_config = {section: full_config[section]}
+
+    if as_json:
+        _click.echo(_json.dumps(full_config, indent=2))
+    elif provenance:
+        _print_config_with_provenance(full_config, color=color_enabled, force_color=force_color)
+    else:
+        # Pretty YAML output
+        yaml_text = _yaml.dump(full_config, default_flow_style=False, sort_keys=False)
+        _print_yaml(yaml_text, color=color_enabled, force_color=force_color)
+
+
+def _should_use_color(cli_flag: bool | None) -> tuple[bool, bool]:
+    """Determine whether to use color output.
+
+    Priority:
+    1. CLI flag (--color / --no-color) if specified
+    2. BRYNHILD_CONFIG_SHOW_COLOR env var (1=on, 0=off)
+    3. NO_COLOR env var (if set, disable color) - standard convention
+    4. Auto-detect: color if stdout is a TTY
+
+    Args:
+        cli_flag: True for --color, False for --no-color, None for auto
+
+    Returns:
+        Tuple of (color_enabled, force_color).
+        force_color is True when color was explicitly requested (not auto-detected).
+    """
+    import os as _os_local
+    import sys as _sys_local
+
+    # CLI flag takes highest priority
+    if cli_flag is not None:
+        # Explicitly requested - force it even when piping
+        return (cli_flag, cli_flag)
+
+    # Check BRYNHILD_CONFIG_SHOW_COLOR env var
+    env_color = _os_local.environ.get("BRYNHILD_CONFIG_SHOW_COLOR")
+    if env_color is not None:
+        enabled = env_color.lower() in ("1", "true", "yes", "on")
+        # Env var is explicit - force it
+        return (enabled, enabled)
+
+    # Check NO_COLOR standard (https://no-color.org/)
+    if _os_local.environ.get("NO_COLOR") is not None:
+        return (False, False)
+
+    # Auto-detect: color if stdout is a TTY (don't force)
+    return (_sys_local.stdout.isatty(), False)
+
+
+def _print_yaml(yaml_text: str, *, color: bool = True, force_color: bool = False) -> None:
+    """Print YAML text, optionally with syntax highlighting.
+
+    Args:
+        yaml_text: The YAML text to print
+        color: Whether to use syntax highlighting
+        force_color: Force color even when not a TTY (for piping with --color)
+    """
+    if color:
+        try:
+            import rich.console as _rich_console
+            import rich.syntax as _rich_syntax
+
+            # When forcing color (explicit --color flag):
+            # - force_terminal=True: output color even when piped
+            # - no_color=False: override NO_COLOR env var
+            # - color_system='truecolor': override FORCE_COLOR=0 env var
+            console = _rich_console.Console(
+                force_terminal=force_color,
+                no_color=False if force_color else None,
+                color_system="truecolor" if force_color else "auto",
+            )
+            syntax = _rich_syntax.Syntax(
+                yaml_text,
+                "yaml",
+                theme="monokai",
+                background_color="default",
+            )
+            console.print(syntax)
+            return
+        except ImportError:
+            pass  # Fall back to plain output
+
+    _click.echo(yaml_text)
+
+
+def _print_config_with_provenance(
+    config_data: dict[str, _typing.Any],
+    *,
+    color: bool = True,
+    force_color: bool = False,
+) -> None:
+    """Print config with provenance information (where each value came from).
+
+    Args:
+        config_data: The config dict to print.
+        color: Whether to use syntax highlighting.
+        force_color: Force color even when not a TTY (for piping with --color).
+    """
+    import brynhild.config.sources as config_sources
+
+    # Create a fresh DCM source to query provenance
+    project_root = config.find_git_root()
+    source = config_sources.DeepChainMapSettingsSource(
+        config.Settings,
+        project_root,
+    )
+
+    # Build layer codes and legend from loaded layers
+    # Codes are up to 8 chars for readability
+    loaded_layers = source.get_loaded_layers()
+    layer_codes: dict[int, str] = {-1: "runtime"}
+    layer_paths: dict[int, _pathlib.Path] = {}  # For line number lookups
+    legend_lines: list[str] = []
+
+    # Assign readable codes (up to 8 chars)
+    code_map = {"built-in": "builtin", "user": "user", "project": "project"}
+    for i, (name, path) in enumerate(loaded_layers):
+        code = code_map.get(name, name[:8])
+        layer_codes[i] = code
+        layer_paths[i] = path
+        legend_lines.append(f"# [{code}] {path}")
+
+    # Special codes for non-DCM sources
+    env_code = "env"  # Environment variables
+    auto_code = "auto"  # Automatic values (Pydantic defaults, computed fields)
+
+    # Get line registries for line number lookups
+    line_registries = source.get_line_registries()
+
+    def get_line_suffix(layer_idx: int, key_path: tuple[str, ...]) -> str:
+        """Get line number suffix for a key, if available."""
+        if layer_idx < 0:  # runtime/front_layer has no line numbers
+            return ""
+        path = layer_paths.get(layer_idx)
+        if path is None:
+            return ""
+        registry = line_registries.get(path)
+        if registry is None:
+            return ""
+        line_info = registry.get(key_path)
+        if line_info is None:
+            return ""
+        line, _col = line_info
+        return f":{line}"
+
+    # Collect all lines first to calculate alignment column
+    lines: list[tuple[str, str]] = []  # (content, provenance_code_with_line)
+
+    # Default layer is the last one (lowest priority = built-in)
+    default_layer_idx = len(loaded_layers) - 1 if loaded_layers else 0
+    builtin_code = layer_codes.get(default_layer_idx, "builtin")
+
+    def get_prov_code_with_line(
+        prov: dict[str, _typing.Any],
+        key: str,
+        key_path: tuple[str, ...],
+    ) -> str:
+        """Get the layer code with line number for a specific key.
+
+        If the key doesn't exist in provenance, it's a Pydantic default.
+        """
+        if key in prov:
+            layer_idx = prov[key]
+            if isinstance(layer_idx, int):
+                code = layer_codes.get(layer_idx, builtin_code)
+                line_suffix = get_line_suffix(layer_idx, key_path)
+                return f"{code}{line_suffix}"
+            # Nested dict means it's a merged section
+            return "merged"
+        # Not in provenance = Pydantic default
+        return auto_code
+
+    def collect_lines(
+        data: dict[str, _typing.Any],
+        prov: dict[str, _typing.Any],
+        depth: int = 0,
+        path_prefix: tuple[str, ...] = (),
+    ) -> None:
+        """Recursively collect lines with provenance codes and line numbers."""
+        indent = "  " * depth
+        for key, value in data.items():
+            key_path = path_prefix + (key,)
+            if isinstance(value, dict):
+                # Dict - check provenance structure
+                dict_prov = prov.get(key)
+                if isinstance(dict_prov, dict):
+                    # Has per-key provenance (merged or tracked nested dict)
+                    # Check if all immediate children have same source
+                    child_sources = {v for v in dict_prov.values() if isinstance(v, int)}
+                    if len(child_sources) == 1:
+                        # All from same layer - show that layer
+                        layer_idx = next(iter(child_sources))
+                        code = layer_codes.get(layer_idx, builtin_code)
+                        line_suffix = get_line_suffix(layer_idx, key_path)
+                        prov_label = f"{code}{line_suffix}"
+                    else:
+                        # Mixed sources or nested dicts - show merged
+                        prov_label = "merged"
+                    if not value:
+                        lines.append((f"{indent}{key}: {{}}", prov_label))
+                    else:
+                        lines.append((f"{indent}{key}:", prov_label))
+                        collect_lines(value, dict_prov, depth + 1, key_path)
+                elif isinstance(dict_prov, int):
+                    # Whole dict from one layer (not merged)
+                    code = layer_codes.get(dict_prov, builtin_code)
+                    line_suffix = get_line_suffix(dict_prov, key_path)
+                    prov_label = f"{code}{line_suffix}"
+                    if not value:
+                        lines.append((f"{indent}{key}: {{}}", prov_label))
+                    else:
+                        lines.append((f"{indent}{key}:", prov_label))
+                        # Create provenance for children - all from same layer
+                        child_prov = {k: dict_prov for k in value}
+                        collect_lines(value, child_prov, depth + 1, key_path)
+                else:
+                    # Not in provenance = Pydantic default
+                    if not value:
+                        lines.append((f"{indent}{key}: {{}}", auto_code))
+                    else:
+                        lines.append((f"{indent}{key}:", auto_code))
+                        collect_lines(value, {}, depth + 1, key_path)
+            elif isinstance(value, list):
+                # List - show the list marker with provenance, items inherit
+                prov_code = get_prov_code_with_line(prov, key, key_path)
+                if not value:
+                    # Empty list - render inline
+                    lines.append((f"{indent}{key}: []", prov_code))
+                else:
+                    lines.append((f"{indent}{key}:", prov_code))
+                    for item in value:
+                        if isinstance(item, str):
+                            lines.append((f"{indent}  - \"{item}\"", prov_code))
+                        elif item is None:
+                            lines.append((f"{indent}  - null", prov_code))
+                        else:
+                            lines.append((f"{indent}  - {item}", prov_code))
+            else:
+                # Scalar value
+                if isinstance(value, str):
+                    formatted = f'"{value}"'
+                elif value is None:
+                    formatted = "null"
+                else:
+                    formatted = str(value)
+                prov_code = get_prov_code_with_line(prov, key, key_path)
+                lines.append((f"{indent}{key}: {formatted}", prov_code))
+
+    # Collect lines for each top-level key
+    dcm = source.dcm
+    for key in config_data:
+        key_path = (key,)
+        if key not in dcm:
+            # Key not in DCM - from env vars or pydantic defaults
+            # Use "env" for keys that look like they came from environment
+            is_env_key = key.startswith("brynhild_") or key.endswith("_api_key")
+            fallback = env_code if is_env_key else auto_code
+
+            if isinstance(config_data[key], dict):
+                lines.append((f"{key}:", fallback))
+                collect_lines(config_data[key], {}, depth=1, path_prefix=key_path)
+            else:
+                val = config_data[key]
+                if isinstance(val, str):
+                    lines.append((f"{key}: \"{val}\"", fallback))
+                elif val is None:
+                    lines.append((f"{key}: null", fallback))
+                else:
+                    lines.append((f"{key}: {val}", fallback))
+            continue
+
+        try:
+            _, prov = dcm.get_with_provenance(key)
+            if isinstance(config_data[key], dict):
+                # Check provenance structure for top-level label
+                if "." in prov:
+                    # Scalar-like provenance
+                    layer_idx = prov["."]
+                    top_code = layer_codes.get(layer_idx, builtin_code)
+                    line_suffix = get_line_suffix(layer_idx, key_path)
+                    top_code_with_line = f"{top_code}{line_suffix}"
+                elif prov:
+                    # Has per-key provenance - check if all from same layer
+                    child_sources = {v for v in prov.values() if isinstance(v, int)}
+                    if len(child_sources) == 1:
+                        layer_idx = next(iter(child_sources))
+                        top_code = layer_codes.get(layer_idx, builtin_code)
+                        line_suffix = get_line_suffix(layer_idx, key_path)
+                        top_code_with_line = f"{top_code}{line_suffix}"
+                    else:
+                        top_code_with_line = "merged"
+                else:
+                    top_code_with_line = auto_code
+                lines.append((f"{key}:", top_code_with_line))
+                collect_lines(config_data[key], prov, depth=1, path_prefix=key_path)
+            else:
+                # Top-level scalar
+                val = config_data[key]
+                layer_idx = prov.get(".", default_layer_idx)
+                code = layer_codes.get(layer_idx, builtin_code)
+                line_suffix = get_line_suffix(layer_idx, key_path)
+                code_with_line = f"{code}{line_suffix}"
+                if isinstance(val, str):
+                    lines.append((f"{key}: \"{val}\"", code_with_line))
+                elif val is None:
+                    lines.append((f"{key}: null", code_with_line))
+                else:
+                    lines.append((f"{key}: {val}", code_with_line))
+        except (KeyError, RuntimeError):
+            lines.append((f"{key}:", auto_code))
+            if isinstance(config_data[key], dict):
+                collect_lines(
+                    config_data[key], {}, depth=1, fallback_code=auto_code,
+                    fallback_layer_idx=-1, path_prefix=key_path
+                )
+
+    # Calculate alignment column
+    # Reserve space for " # [nickname]" suffix (~15 chars)
+    # Default based on terminal width, or env var override
+    import os as _os_local
+    import shutil as _shutil
+    import sys as _sys_local
+
+    env_width = _os_local.environ.get("BRYNHILD_CONFIG_SHOW_WIDTH")
+    if env_width:
+        try:
+            align_cap = int(env_width)
+        except ValueError:
+            align_cap = 70  # Fallback if invalid
+    else:
+        # Detect terminal width
+        # When piping (e.g., to less), stdout is not a TTY but stderr usually is
+        # Try stderr first, then stdout, then fallback
+        term_width = 100  # Default fallback
+        try:
+            if _sys_local.stderr.isatty():
+                # stderr is still connected to terminal (common when piping)
+                term_width = _os_local.get_terminal_size(_sys_local.stderr.fileno()).columns
+            elif _sys_local.stdout.isatty():
+                term_width = _shutil.get_terminal_size().columns
+        except (AttributeError, ValueError, OSError):
+            pass  # Use fallback
+
+        # Reserve ~15 chars for " # [nickname]" suffix
+        align_cap = max(50, term_width - 15)
+
+    max_width = max(len(content) for content, _ in lines) if lines else 0
+    align_col = min(max_width + 2, align_cap)
+
+    # Build output text
+    output_lines: list[str] = []
+
+    # Legend
+    output_lines.append("# Configuration with provenance")
+    output_lines.append("#")
+    output_lines.append("# Sources:")
+    output_lines.extend(legend_lines)
+    output_lines.append(f"# [{env_code}] environment variables")
+    output_lines.append(f"# [{auto_code}] automatic (code defaults, computed values)")
+    output_lines.append("# [merged] values from multiple sources")
+    output_lines.append("#")
+    output_lines.append("")
+
+    # Config lines with aligned provenance
+    for content, code in lines:
+        padding = " " * max(1, align_col - len(content))
+        output_lines.append(f"{content}{padding}# [{code}]")
+
+    # Print with optional color
+    output_text = "\n".join(output_lines)
+    _print_yaml(output_text, color=color, force_color=force_color)
+
+
+@config_cmd.command(name="path")
+@_click.option("--all", "show_all", is_flag=True, help="Show all paths even if not found")
+def config_path(show_all: bool) -> None:
+    """Show configuration file paths and their status.
+
+    Lists all configuration file locations and whether they exist.
+
+    Examples:
+        brynhild config path        # Show existing config files
+        brynhild config path --all  # Show all possible paths
+    """
+    import brynhild.config.sources as config_sources
+
+    paths = [
+        ("Built-in defaults", config_sources.get_builtin_defaults_path()),
+        ("User config", config_sources.get_user_config_path()),
+    ]
+
+    # Add project config if we can detect a project root
+    project_root = config.find_git_root()
+    if project_root:
+        paths.append(
+            ("Project config", config_sources.get_project_config_path(project_root))
+        )
+
+    for name, path in paths:
+        exists = path.exists()
+        if exists or show_all:
+            status = "✓" if exists else "✗"
+            _click.echo(f"{status} {name}: {path}")
 
 
 @cli.group()
