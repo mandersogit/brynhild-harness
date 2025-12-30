@@ -45,35 +45,80 @@ class TestCLIBasics:
         for field in required_fields:
             assert field in result.output, f"Field '{field}' missing from config output"
 
-    def test_config_json_contains_required_keys(self) -> None:
-        """Config JSON output should contain all required keys."""
-        result = self.runner.invoke(cli.cli, ["config", "--json"])
+    def test_config_show_outputs_yaml(self) -> None:
+        """Config show command should output full config as YAML."""
+        result = self.runner.invoke(cli.cli, ["config", "show"])
+        assert result.exit_code == 0
+        # Should contain main config sections
+        assert "models:" in result.output
+        assert "providers:" in result.output
+        assert "behavior:" in result.output
+
+    def test_config_show_json_contains_all_sections(self) -> None:
+        """Config show --json should output full config as JSON."""
+        result = self.runner.invoke(cli.cli, ["config", "show", "--json"])
         assert result.exit_code == 0
         data = _json.loads(result.output)
-        required_keys = [
-            "provider",
-            "model",
-            "has_api_key",
-            "project_root",
-            "config_dir",
-            "sessions_dir",
-        ]
-        for key in required_keys:
-            assert key in data, f"Key '{key}' missing from config JSON"
+        # Should contain main config sections
+        assert "models" in data
+        assert "providers" in data
+        assert "behavior" in data
+
+    def test_config_show_section_filters_output(self) -> None:
+        """Config show --section should filter to specific section."""
+        result = self.runner.invoke(cli.cli, ["config", "show", "--section", "models"])
+        assert result.exit_code == 0
+        assert "models:" in result.output
+        # Should NOT contain other sections
+        assert "providers:" not in result.output
+
+    def test_config_show_invalid_section_fails(self) -> None:
+        """Config show with invalid section should fail with clear error."""
+        result = self.runner.invoke(cli.cli, ["config", "show", "--section", "nonexistent"])
+        assert result.exit_code != 0
+        assert "Unknown section" in result.output
+
+    def test_config_show_provenance_outputs_sources(self) -> None:
+        """Config show --provenance should include source information."""
+        result = self.runner.invoke(cli.cli, ["config", "show", "--provenance"])
+        assert result.exit_code == 0
+        # Should have the legend header
+        assert "# Sources:" in result.output
+        assert "[builtin]" in result.output
+        # Should have provenance codes on values (builtin, env, default)
+        assert "# [builtin]" in result.output
+        # Should show env/auto sources in legend
+        assert "[env]" in result.output
+        assert "[auto]" in result.output
+
+    def test_config_path_shows_files(self) -> None:
+        """Config path command should list configuration file locations."""
+        result = self.runner.invoke(cli.cli, ["config", "path"])
+        assert result.exit_code == 0
+        # Should show built-in defaults (always exists)
+        assert "Built-in defaults" in result.output
+        assert "✓" in result.output  # At least built-in should exist
+
+    def test_config_path_all_shows_missing_files(self) -> None:
+        """Config path --all should show all paths even if not found."""
+        result = self.runner.invoke(cli.cli, ["config", "path", "--all"])
+        assert result.exit_code == 0
+        # Should show user config (may or may not exist)
+        assert "User config" in result.output
 
     def test_provider_option_overrides_default(self) -> None:
         """--provider option should override the default provider."""
-        result = self.runner.invoke(cli.cli, ["--provider", "openrouter", "config", "--json"])
+        result = self.runner.invoke(cli.cli, ["--provider", "openrouter", "config", "show", "--json"])
         assert result.exit_code == 0
         data = _json.loads(result.output)
-        assert data["provider"] == "openrouter"
+        assert data["providers"]["default"] == "openrouter"
 
     def test_model_option_overrides_default(self) -> None:
         """--model option should override the default model."""
-        result = self.runner.invoke(cli.cli, ["--model", "custom-model", "config", "--json"])
+        result = self.runner.invoke(cli.cli, ["--model", "custom-model", "config", "show", "--json"])
         assert result.exit_code == 0
         data = _json.loads(result.output)
-        assert data["model"] == "custom-model"
+        assert data["models"]["default"] == "custom-model"
 
     def test_chat_without_prompt_fails_with_clear_error(self) -> None:
         """Chat command without prompt should fail with helpful error message."""
