@@ -1041,15 +1041,25 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         """
         Build initial provenance dict for a value from a single layer.
 
+        Recursively builds provenance for nested dicts so that all keys
+        at all levels are tracked.
+
         Args:
             value: The value to build provenance for.
             layer_idx: The layer index it came from.
 
         Returns:
-            Provenance dict.
+            Provenance dict mapping keys to layer indices (or nested dicts).
         """
         if isinstance(value, dict):
-            return dict.fromkeys(value, layer_idx)
+            result: dict[str, _typing.Any] = {}
+            for k, v in value.items():
+                if isinstance(v, dict):
+                    # Recursively build provenance for nested dicts
+                    result[k] = self._build_provenance(v, layer_idx)
+                else:
+                    result[k] = layer_idx
+            return result
         else:
             return {".": layer_idx}
 
