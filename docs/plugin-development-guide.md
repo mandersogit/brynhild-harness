@@ -142,17 +142,21 @@ skills:
 
 ## Plugin Discovery
 
-Brynhild discovers plugins from these locations (in order):
+Brynhild discovers plugins from these locations (highest priority first):
 
-1. **Environment Variable**: `BRYNHILD_PLUGIN_PATH`
-   - Colon-separated list of plugin paths
-   - Example: `/path/to/plugin1:/path/to/plugin2`
+1. **Entry Points** (pip-installed packages)
+   - Plugins registered via `pyproject.toml` entry points
+   - Highest priority — override directory plugins with same name
 
 2. **Project Plugins**: `<project>/.brynhild/plugins/`
    - Plugins in the current project's plugins directory
 
-3. **Global Plugins**: `~/.config/brynhild/plugins/`
-   - User-wide plugins
+3. **Environment Variable**: `BRYNHILD_PLUGIN_PATH`
+   - Colon-separated list of plugin paths
+   - Example: `/path/to/plugin1:/path/to/plugin2`
+
+4. **Global Plugins**: `~/.config/brynhild/plugins/`
+   - User-wide plugins (lowest priority)
 
 ### Checking Plugin Discovery
 
@@ -162,6 +166,176 @@ brynhild plugins list
 
 # Show search paths
 brynhild plugins paths
+```
+
+---
+
+## Packaged Plugins (Entry Points)
+
+For distributable plugins, you can create a pip-installable package that registers via Python entry points. This enables users to install your plugin with a simple `pip install`.
+
+### Benefits
+
+- **One-command installation**: `pip install brynhild-my-plugin`
+- **Dependency management**: pip handles transitive dependencies
+- **Version management**: semantic versioning, upgrade paths
+- **No path configuration**: entry points are discovered automatically
+
+### Creating a Packaged Plugin
+
+#### 1. Project Structure
+
+```
+brynhild-my-plugin/
+├── pyproject.toml
+├── README.md
+└── src/
+    └── brynhild_my_plugin/
+        ├── __init__.py
+        ├── tools/
+        │   └── my_tool.py
+        └── providers/
+            └── my_provider.py
+```
+
+#### 2. pyproject.toml
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brynhild-my-plugin"
+version = "1.0.0"
+description = "My awesome Brynhild plugin"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "brynhild>=0.2.0",
+    # Add your plugin's dependencies here
+]
+
+# Register the plugin via entry points
+[project.entry-points."brynhild.plugins"]
+my-plugin = "brynhild_my_plugin:register"
+
+# Optional: Register individual tools directly
+[project.entry-points."brynhild.tools"]
+MyTool = "brynhild_my_plugin.tools.my_tool:Tool"
+
+# Optional: Register individual providers directly
+[project.entry-points."brynhild.providers"]
+my-provider = "brynhild_my_plugin.providers.my_provider:Provider"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brynhild_my_plugin"]
+```
+
+#### 3. Register Function
+
+```python
+# src/brynhild_my_plugin/__init__.py
+import brynhild.plugins.manifest as manifest
+
+def register() -> manifest.PluginManifest:
+    """Register this plugin with Brynhild."""
+    return manifest.PluginManifest(
+        name="my-plugin",
+        version="1.0.0",
+        description="My awesome Brynhild plugin",
+        tools=["MyTool"],
+        providers=["my-provider"],
+    )
+```
+
+#### 4. Install and Test
+
+```bash
+# Install in development mode
+cd brynhild-my-plugin/
+pip install -e .
+
+# Verify it's discovered
+brynhild plugins list
+# Should show: my-plugin  1.0.0  entry_point  brynhild-my-plugin  enabled
+
+# Test the plugin
+brynhild chat "Use MyTool to do something"
+```
+
+### Entry Point Groups
+
+| Group | Purpose | Value Format |
+|-------|---------|--------------|
+| `brynhild.plugins` | Full plugin registration | `module:register_function` |
+| `brynhild.tools` | Individual tool class | `module.path:ToolClass` |
+| `brynhild.providers` | Individual provider class | `module.path:ProviderClass` |
+
+### Full Plugin vs Individual Components
+
+**Full Plugin** (`brynhild.plugins`):
+- Use when you have multiple tools, providers, commands, or skills
+- Provides a `PluginManifest` with all metadata
+- Single entry point for the entire plugin
+
+**Individual Components** (`brynhild.tools`, `brynhild.providers`):
+- Use for simple single-tool or single-provider packages
+- No manifest required — just register the class directly
+- Lighter weight for simple use cases
+
+### Example: Minimal Tool-Only Package
+
+```toml
+# pyproject.toml for a single-tool package
+[project]
+name = "brynhild-calculator"
+version = "1.0.0"
+dependencies = ["brynhild>=0.2.0"]
+
+[project.entry-points."brynhild.tools"]
+Calculator = "brynhild_calculator:Calculator"
+```
+
+```python
+# brynhild_calculator.py
+class Calculator:
+    name = "Calculator"
+    description = "Evaluates mathematical expressions"
+    
+    @property
+    def input_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "Math expression"}
+            },
+            "required": ["expression"]
+        }
+    
+    async def execute(self, input):
+        from brynhild.tools.base import ToolResult
+        try:
+            result = eval(input["expression"])  # Use a safe evaluator in production!
+            return ToolResult(success=True, output=str(result))
+        except Exception as e:
+            return ToolResult(success=False, output="", error=str(e))
+```
+
+### Publishing to PyPI
+
+```bash
+# Build the package
+pip install build
+python -m build
+
+# Upload to PyPI (requires account)
+pip install twine
+twine upload dist/*
+
+# Users can now install with:
+pip install brynhild-my-plugin
 ```
 
 ## Implementing Components
