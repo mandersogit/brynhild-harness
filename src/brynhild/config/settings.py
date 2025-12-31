@@ -433,6 +433,16 @@ class Settings(_pydantic_settings.BaseSettings):
         self.behavior.reasoning_format = value
 
     @property
+    def reasoning_level(self) -> str:
+        """Reasoning level (alias to behavior.reasoning_level)."""
+        return self.behavior.reasoning_level
+
+    @reasoning_level.setter
+    def reasoning_level(self, value: str) -> None:
+        """Set reasoning level."""
+        self.behavior.reasoning_level = value
+
+    @property
     def sandbox_enabled(self) -> bool:
         """Sandbox enabled (alias to sandbox.enabled)."""
         return self.sandbox.enabled

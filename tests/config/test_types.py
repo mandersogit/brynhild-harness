@@ -147,6 +147,7 @@ class TestBehaviorConfig:
         assert config.show_thinking is False
         assert config.show_cost is False
         assert config.reasoning_format == "auto"
+        assert config.reasoning_level == "auto"
 
     def test_max_tokens_validation_minimum(self) -> None:
         """max_tokens must be at least 1."""
@@ -182,6 +183,24 @@ class TestBehaviorConfig:
         """reasoning_format must be one of the allowed values."""
         with _pytest.raises(_pydantic.ValidationError):
             types.BehaviorConfig(reasoning_format="invalid")  # type: ignore
+
+    def test_reasoning_level_accepts_standard_values(self) -> None:
+        """reasoning_level should accept all standard values."""
+        standard_levels = ("auto", "off", "minimal", "low", "medium", "high", "maximum")
+        for level in standard_levels:
+            config = types.BehaviorConfig(reasoning_level=level)
+            assert config.reasoning_level == level
+
+    def test_reasoning_level_accepts_custom_values(self) -> None:
+        """reasoning_level should accept custom values (string type)."""
+        # Custom values are allowed - warning happens at runtime, not validation
+        config = types.BehaviorConfig(reasoning_level="custom-value")
+        assert config.reasoning_level == "custom-value"
+
+    def test_reasoning_level_accepts_raw_prefix(self) -> None:
+        """reasoning_level should accept raw: prefixed values."""
+        config = types.BehaviorConfig(reasoning_level="raw:thinking_budget=65536")
+        assert config.reasoning_level == "raw:thinking_budget=65536"
 
     def test_from_dict(self) -> None:
         """Should load from dict (as would come from YAML)."""

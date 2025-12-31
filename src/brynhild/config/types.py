@@ -135,6 +135,35 @@ class BehaviorConfig(ConfigBase):
     ] = "auto"
     """How to include reasoning in conversation history."""
 
+    reasoning_level: str = "auto"
+    """
+    How much reasoning/thinking to request from the model.
+
+    This controls the depth of internal reasoning for models that support it.
+
+    Standard levels (recommended):
+    - "auto": Let the model/provider decide (default)
+    - "off": Disable extended thinking entirely
+    - "minimal": Very brief reasoning
+    - "low": Light reasoning
+    - "medium": Moderate reasoning
+    - "high": Deep reasoning
+    - "maximum": Maximum reasoning depth
+
+    Custom/provider-specific values:
+    - Use "raw:<value>" prefix to pass through without warning
+    - Example: "raw:thinking_budget=65536" for Gemini token budget
+    - Example: "raw:effort_high" for provider-specific level names
+
+    Unknown values without "raw:" prefix will log a warning but still work.
+
+    Providers translate this to their native format:
+    - Gemini 3: thinking_level (minimal/low/medium/high)
+    - Gemini 2.5: thinking_budget (token count)
+    - Claude: Extended thinking on/off
+    - Others: Best effort or ignore
+    """
+
 
 # =============================================================================
 # Sandbox Settings

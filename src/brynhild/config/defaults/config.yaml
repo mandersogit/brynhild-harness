@@ -201,6 +201,7 @@ behavior:
   show_thinking: true
   show_cost: true
   reasoning_format: auto
+  reasoning_level: auto  # off/minimal/low/medium/high/maximum
 
 # =============================================================================
 # Sandbox

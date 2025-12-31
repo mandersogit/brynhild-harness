@@ -6,6 +6,7 @@ import unittest.mock as _mock
 import pytest as _pytest
 
 import brynhild.api as api
+import brynhild.api.base as base
 
 
 class TestProviderFactory:
@@ -170,6 +171,129 @@ class TestCompletionResponse:
             usage=api.Usage(input_tokens=10, output_tokens=5),
         )
         assert response.has_tool_use is False
+
+
+class TestReasoningLevelBase:
+    """Tests for ReasoningLevel type and LLMProvider helper methods."""
+
+    def test_known_reasoning_levels_constant(self) -> None:
+        """KNOWN_REASONING_LEVELS should include all standard values."""
+        expected = frozenset({"auto", "off", "minimal", "low", "medium", "high", "maximum"})
+        assert expected == base.KNOWN_REASONING_LEVELS
+
+    def test_parse_reasoning_level_standard(self) -> None:
+        """parse_reasoning_level should return (value, False) for standard values."""
+        level, is_raw = base.parse_reasoning_level("high")
+        assert level == "high"
+        assert is_raw is False
+
+    def test_parse_reasoning_level_raw_prefix(self) -> None:
+        """parse_reasoning_level should strip raw: prefix and return True."""
+        level, is_raw = base.parse_reasoning_level("raw:thinking_budget=65536")
+        assert level == "thinking_budget=65536"
+        assert is_raw is True
+
+    def test_parse_reasoning_level_raw_prefix_simple(self) -> None:
+        """parse_reasoning_level should work with simple raw values."""
+        level, is_raw = base.parse_reasoning_level("raw:effort_high")
+        assert level == "effort_high"
+        assert is_raw is True
+
+    def test_provider_default_reasoning_level(self) -> None:
+        """LLMProvider.default_reasoning_level should return 'auto' by default."""
+        with _mock.patch.dict(_os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+            provider = api.create_provider(provider="openrouter")
+            assert provider.default_reasoning_level == "auto"
+
+    def test_provider_get_reasoning_level_default(self) -> None:
+        """get_reasoning_level should return default when config is 'auto'."""
+        with _mock.patch.dict(_os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+            provider = api.create_provider(provider="openrouter")
+            level = provider.get_reasoning_level()
+            assert level == provider.default_reasoning_level
+
+    def test_provider_get_reasoning_level_from_config(self) -> None:
+        """get_reasoning_level should use config value when not 'auto'."""
+        with _mock.patch.dict(
+            _os.environ,
+            {
+                "OPENROUTER_API_KEY": "test-key",
+                "BRYNHILD_BEHAVIOR__REASONING_LEVEL": "high",
+            },
+            clear=False,
+        ):
+            provider = api.create_provider(provider="openrouter")
+            level = provider.get_reasoning_level()
+            assert level == "high"
+
+    def test_provider_get_reasoning_level_off(self) -> None:
+        """get_reasoning_level should return 'off' when configured."""
+        with _mock.patch.dict(
+            _os.environ,
+            {
+                "OPENROUTER_API_KEY": "test-key",
+                "BRYNHILD_BEHAVIOR__REASONING_LEVEL": "off",
+            },
+            clear=False,
+        ):
+            provider = api.create_provider(provider="openrouter")
+            level = provider.get_reasoning_level()
+            assert level == "off"
+
+    def test_provider_get_reasoning_level_raw_strips_prefix(self) -> None:
+        """get_reasoning_level should strip raw: prefix from custom values."""
+        with _mock.patch.dict(
+            _os.environ,
+            {
+                "OPENROUTER_API_KEY": "test-key",
+                "BRYNHILD_BEHAVIOR__REASONING_LEVEL": "raw:vertex-ultra",
+            },
+            clear=False,
+        ):
+            provider = api.create_provider(provider="openrouter")
+            level = provider.get_reasoning_level()
+            assert level == "vertex-ultra"
+
+    def test_provider_get_reasoning_level_unknown_warns(self) -> None:
+        """get_reasoning_level should warn on unknown values without raw: prefix."""
+        with _mock.patch.dict(
+            _os.environ,
+            {
+                "OPENROUTER_API_KEY": "test-key",
+                "BRYNHILD_BEHAVIOR__REASONING_LEVEL": "typo-value",
+            },
+            clear=False,
+        ):
+            provider = api.create_provider(provider="openrouter")
+            with _mock.patch.object(base._logger, "warning") as mock_warn:
+                level = provider.get_reasoning_level()
+                assert level == "typo-value"
+                mock_warn.assert_called_once()
+                assert "typo-value" in str(mock_warn.call_args)
+                assert "raw:" in str(mock_warn.call_args)
+
+    def test_provider_get_reasoning_level_raw_no_warning(self) -> None:
+        """get_reasoning_level should NOT warn on raw: prefixed values."""
+        with _mock.patch.dict(
+            _os.environ,
+            {
+                "OPENROUTER_API_KEY": "test-key",
+                "BRYNHILD_BEHAVIOR__REASONING_LEVEL": "raw:custom-value",
+            },
+            clear=False,
+        ):
+            provider = api.create_provider(provider="openrouter")
+            with _mock.patch.object(base._logger, "warning") as mock_warn:
+                level = provider.get_reasoning_level()
+                assert level == "custom-value"
+                mock_warn.assert_not_called()
+
+    def test_provider_translate_reasoning_level_base_returns_empty(self) -> None:
+        """Base translate_reasoning_level should return empty dict."""
+        with _mock.patch.dict(_os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+            provider = api.create_provider(provider="openrouter")
+            params = provider.translate_reasoning_level("high")
+            assert params == {}
 
 
 # Mark live tests that require actual API keys

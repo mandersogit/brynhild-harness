@@ -7,10 +7,13 @@ All providers (Anthropic, OpenRouter, Bedrock, Vertex) implement this interface.
 from __future__ import annotations
 
 import abc as _abc
+import logging as _logging
 import typing as _typing
 
 import brynhild.api.types as types
 import brynhild.constants as _constants
+
+_logger = _logging.getLogger(__name__)
 
 if _typing.TYPE_CHECKING:
     import brynhild.profiles.types as profile_types
@@ -32,6 +35,61 @@ Options for how reasoning is included in conversation history:
 - "none": Don't include reasoning in history at all. Simplest but the model
   loses context about its reasoning between tool calls.
 """
+
+# How much reasoning/thinking depth to request from the model
+# Using str instead of Literal to allow provider-specific values with "raw:" prefix
+ReasoningLevel = str
+"""
+Type alias for reasoning level values.
+
+Standard levels: "auto", "off", "minimal", "low", "medium", "high", "maximum"
+
+Custom values can be passed with "raw:" prefix to suppress unknown-level warnings:
+- "raw:thinking_budget=65536" — provider interprets literally
+- "raw:effort_high" — provider-specific level name
+"""
+
+# Known standard reasoning levels
+KNOWN_REASONING_LEVELS: frozenset[str] = frozenset({
+    "auto", "off", "minimal", "low", "medium", "high", "maximum"
+})
+"""
+Standard reasoning levels that are recognized without warning.
+
+- "auto": Let the model/provider decide (default)
+- "off": Disable extended thinking entirely
+- "minimal": Very brief reasoning
+- "low": Light reasoning
+- "medium": Moderate reasoning
+- "high": Deep reasoning
+- "maximum": Maximum reasoning depth
+
+Providers translate these to their native format. Common mappings:
+- Gemini 3: thinking_level (minimal/low/medium/high)
+- Gemini 2.5: thinking_budget (token count)
+- Claude: Extended thinking on/off
+- OpenAI o1/o3: reasoning effort
+"""
+
+# Prefix for raw/passthrough reasoning level values
+RAW_REASONING_PREFIX: str = "raw:"
+
+
+def parse_reasoning_level(value: str) -> tuple[str, bool]:
+    """
+    Parse a reasoning level value, detecting raw prefix.
+
+    Args:
+        value: The reasoning level string from config
+
+    Returns:
+        Tuple of (level, is_raw) where:
+        - level: The actual level value (prefix stripped if raw)
+        - is_raw: True if "raw:" prefix was present
+    """
+    if value.startswith(RAW_REASONING_PREFIX):
+        return value[len(RAW_REASONING_PREFIX):], True
+    return value, False
 
 
 class LLMProvider(_abc.ABC):
@@ -130,6 +188,84 @@ class LLMProvider(_abc.ABC):
     def supports_reasoning(self) -> bool:
         """Whether this provider/model supports extended thinking/reasoning."""
         return False
+
+    @property
+    def default_reasoning_level(self) -> ReasoningLevel:
+        """
+        Default reasoning level for this provider/model.
+
+        Providers can override this to specify their preferred default.
+        Users can also override via BRYNHILD_BEHAVIOR__REASONING_LEVEL setting.
+
+        Returns:
+            The provider's default reasoning level.
+        """
+        return "auto"  # Safe default - let provider/model decide
+
+    def get_reasoning_level(self) -> ReasoningLevel:
+        """
+        Get the effective reasoning level, checking user override first.
+
+        Checks:
+        1. User config (behavior.reasoning_level)
+        2. Falls back to provider's default_reasoning_level
+
+        Parses "raw:" prefix for custom values. Warns on unknown levels
+        that don't have the "raw:" prefix.
+
+        Returns:
+            The reasoning level to use for requests (prefix stripped if raw).
+        """
+        try:
+            import brynhild.config as config
+
+            settings = config.Settings()
+            if settings.reasoning_level != "auto":
+                # User has explicitly set a level - parse it
+                level, is_raw = parse_reasoning_level(settings.reasoning_level)
+
+                # Warn on unknown levels without raw: prefix
+                if not is_raw and level not in KNOWN_REASONING_LEVELS:
+                    _logger.warning(
+                        "Unknown reasoning_level '%s' — use 'raw:%s' to suppress this warning",
+                        level,
+                        level,
+                    )
+
+                return level
+        except Exception:
+            pass  # Fall back to provider default if settings unavailable
+
+        return self.default_reasoning_level
+
+    def translate_reasoning_level(
+        self,
+        level: ReasoningLevel | None = None,  # noqa: ARG002 - subclasses use this
+    ) -> dict[str, _typing.Any]:
+        """
+        Translate unified reasoning level to provider-specific parameters.
+
+        Override this in provider subclasses to return the appropriate
+        native parameters for your provider's API.
+
+        Args:
+            level: Reasoning level to translate. If None, uses get_reasoning_level().
+
+        Returns:
+            Dict of provider-specific parameters to include in API requests.
+            Empty dict if reasoning level doesn't affect this provider.
+
+        Example implementation for Gemini 3:
+            if level in ("minimal", "low", "medium", "high"):
+                return {"thinking_level": level}
+            return {}
+
+        Example implementation for Gemini 2.5:
+            budget_map = {"minimal": 1024, "low": 4096, "medium": 16384, "high": 65536}
+            return {"thinking_budget": budget_map.get(level, 8192)}
+        """
+        # Base implementation returns empty dict - providers override as needed
+        return {}
 
     @property
     def default_reasoning_format(self) -> ReasoningFormat:
