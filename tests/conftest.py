@@ -5,8 +5,11 @@ This file is automatically loaded by pytest. Fixtures defined here are
 available to all test files without explicit imports.
 """
 
+import importlib as _importlib
 import os as _os
 import pathlib as _pathlib
+import site as _site
+import sys as _sys
 import typing as _typing
 import unittest.mock as _mock
 
@@ -783,3 +786,65 @@ def create_stream_events_for_response(
     )
 
     return events
+
+
+# =============================================================================
+# Entry Point Plugin Fixture
+# =============================================================================
+
+# Permanent fixture directory containing the test plugin with dist-info
+_TEST_PLUGIN_SITE_PACKAGES = _pathlib.Path(__file__).parent / "fixtures" / "site-packages"
+
+
+@_pytest.fixture
+def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
+    """
+    Fixture that makes the test plugin discoverable via entry points.
+
+    Uses a permanent fixture directory (tests/fixtures/site-packages/) that
+    contains a pre-built package with .dist-info. The fixture simply adds
+    this directory as a site-packages location and invalidates caches.
+
+    This approach:
+    - Uses site.addsitedir() for proper site-packages semantics
+    - Doesn't copy files - uses permanent fixtures
+    - Is fast and doesn't pollute temp directories
+
+    Usage:
+        def test_entry_points(installed_test_plugin):
+            import importlib.metadata as meta
+            eps = meta.entry_points(group='brynhild.plugins')
+            assert 'test-plugin' in [ep.name for ep in eps]
+
+    Yields:
+        Path to the fixture site-packages directory.
+    """
+    site_packages = _TEST_PLUGIN_SITE_PACKAGES
+    site_packages_str = str(site_packages)
+
+    # Add as a site-packages directory (processes .pth files if any exist)
+    _site.addsitedir(site_packages_str)
+
+    # Invalidate import caches so importlib.metadata rediscovers distributions
+    _importlib.invalidate_caches()
+
+    # Remove any cached modules from previous test runs
+    for mod_name in list(_sys.modules.keys()):
+        if mod_name.startswith("brynhild_test_plugin"):
+            del _sys.modules[mod_name]
+
+    try:
+        yield site_packages
+    finally:
+        # Cleanup: remove from sys.path
+        # site.addsitedir adds to sys.path, so we remove from there
+        if site_packages_str in _sys.path:
+            _sys.path.remove(site_packages_str)
+
+        # Invalidate caches again so subsequent tests don't see the plugin
+        _importlib.invalidate_caches()
+
+        # Remove cached modules
+        for mod_name in list(_sys.modules.keys()):
+            if mod_name.startswith("brynhild_test_plugin"):
+                del _sys.modules[mod_name]

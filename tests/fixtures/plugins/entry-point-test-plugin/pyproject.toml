@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brynhild-test-plugin"
+version = "0.0.1"
+description = "Test plugin for entry point discovery integration tests"
+requires-python = ">=3.11"
+dependencies = []
+
+# Register the plugin via entry points
+[project.entry-points."brynhild.plugins"]
+test-plugin = "brynhild_test_plugin:register"
+
+# Register the tool via entry points (REQUIRED for entry point plugins)
+[project.entry-points."brynhild.tools"]
+TestCalculator = "brynhild_test_plugin.tools:Tool"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brynhild_test_plugin"]
+
