@@ -297,8 +297,10 @@ def _create_provider_by_type(
         return provider_cls()  # Will raise NotImplementedError
 
     else:
-        # Try plugin providers
-        plugin_provider = _create_plugin_provider(provider_type, model, api_key)
+        # Try plugin providers (pass instance_config for plugin-specific settings)
+        plugin_provider = _create_plugin_provider(
+            provider_type, model, api_key, instance_config
+        )
         if plugin_provider is not None:
             return plugin_provider
 
@@ -313,6 +315,7 @@ def _create_plugin_provider(
     provider_type: str,
     model: str | None,
     api_key: str | None,
+    instance_config: dict[str, _typing.Any] | None = None,
 ) -> base.LLMProvider | None:
     """
     Try to create a provider from loaded plugins.
@@ -321,6 +324,7 @@ def _create_plugin_provider(
         provider_type: Provider type name.
         model: Model to use.
         api_key: API key.
+        instance_config: Extra config from ProviderInstanceConfig (passed as kwargs).
 
     Returns:
         LLMProvider instance or None if not found.
@@ -337,18 +341,28 @@ def _create_plugin_provider(
             "BRYNHILD_MODELS__DEFAULT", _os.environ.get("BRYNHILD_MODEL")
         )
 
-        # Try to instantiate with common argument patterns
-        # Plugin providers should accept at least model and optional api_key
+        # Build kwargs from instance_config
+        kwargs: dict[str, _typing.Any] = dict(instance_config) if instance_config else {}
+        if resolved_model:
+            kwargs["model"] = resolved_model
+        if api_key:
+            kwargs["api_key"] = api_key
+
+        # Try to instantiate with all kwargs (instance config + model + api_key)
         try:
-            if api_key:
-                return provider_cls(model=resolved_model, api_key=api_key)  # type: ignore[no-any-return]
-            elif resolved_model:
-                return provider_cls(model=resolved_model)  # type: ignore[no-any-return]
-            else:
-                return provider_cls()  # type: ignore[no-any-return]
+            return provider_cls(**kwargs)  # type: ignore[no-any-return]
         except TypeError:
-            # Fall back to no-args construction
-            return provider_cls()  # type: ignore[no-any-return]
+            # Fall back to simpler signatures for backwards compatibility
+            try:
+                if api_key and resolved_model:
+                    return provider_cls(model=resolved_model, api_key=api_key)  # type: ignore[no-any-return]
+                elif resolved_model:
+                    return provider_cls(model=resolved_model)  # type: ignore[no-any-return]
+                else:
+                    return provider_cls()  # type: ignore[no-any-return]
+            except TypeError:
+                # Final fallback to no-args construction
+                return provider_cls()  # type: ignore[no-any-return]
 
     except Exception as e:
         _logger.warning("Failed to create plugin provider %s: %s", provider_type, e)
@@ -359,13 +373,22 @@ def _attach_profile(llm_provider: base.LLMProvider, provider_name: str) -> None:
     """
     Attach a model profile to a provider if one is available.
 
+    Profiles are loaded from:
+    1. Builtin profiles (from brynhild.profiles.builtin)
+    2. Plugin profiles (from plugin profiles/ directories)
+    3. User profiles are NOT loaded here (runtime auto-attach uses builtins + plugins)
+
     Args:
         llm_provider: The provider to attach the profile to
         provider_name: Name of the provider (for resolution context)
     """
     import brynhild.profiles as profiles
 
-    manager = profiles.ProfileManager(load_user_profiles=False)
+    # Load builtin + plugin profiles, but not user profiles
+    manager = profiles.ProfileManager(
+        load_user_profiles=False,
+        load_plugin_profiles=True,
+    )
     profile = manager.resolve(llm_provider.model, provider=provider_name)
 
     # Only attach if we got a non-default profile

@@ -17,12 +17,18 @@ class ProfileManager:
     1. Exact match by profile name
     2. Family match (model name prefix)
     3. Default profile
+
+    Profile loading priority (later sources override earlier):
+    1. Builtin profiles (from brynhild.profiles.builtin)
+    2. Plugin profiles (from plugin profiles/ directories)
+    3. User profiles (from ~/.config/brynhild/profiles/)
     """
 
     def __init__(
         self,
         config_dir: _pathlib.Path | None = None,
         load_user_profiles: bool = True,
+        load_plugin_profiles: bool = True,
     ) -> None:
         """
         Initialize the profile manager.
@@ -30,14 +36,20 @@ class ProfileManager:
         Args:
             config_dir: Directory for user profiles. Defaults to ~/.config/brynhild.
             load_user_profiles: Whether to load user-defined profiles from config_dir.
+            load_plugin_profiles: Whether to load profiles from discovered plugins.
         """
         self._config_dir = config_dir or _pathlib.Path.home() / ".config" / "brynhild"
         self._profiles: dict[str, types.ModelProfile] = {}
 
-        # Load builtin profiles first
+        # Load in priority order (later sources override earlier)
+        # 1. Builtin profiles (lowest priority)
         self._load_builtin_profiles()
 
-        # Then load user profiles (can override builtins)
+        # 2. Plugin profiles (can override builtins)
+        if load_plugin_profiles:
+            self._load_plugin_profiles()
+
+        # 3. User profiles (highest priority)
         if load_user_profiles:
             self._load_user_profiles()
 
@@ -47,6 +59,20 @@ class ProfileManager:
 
         for profile in builtin.get_all_profiles():
             self._profiles[profile.name] = profile
+
+    def _load_plugin_profiles(self) -> None:
+        """Load profiles from discovered plugin directories."""
+        try:
+            import brynhild.plugins.profiles as plugin_profiles
+
+            loaded = plugin_profiles.load_all_plugin_profiles()
+            self._profiles.update(loaded)
+        except ImportError:
+            # Plugin system not available (minimal install)
+            pass
+        except Exception:
+            # Don't fail profile manager if plugin loading fails
+            pass
 
     def _load_user_profiles(self) -> None:
         """Load user-defined profiles from YAML files."""
