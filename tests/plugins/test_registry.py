@@ -49,8 +49,11 @@ version: {version}
 
         plugins = reg.list_plugins()
 
-        assert len(plugins) == 2
-        names = {p.name for p in plugins}
+        # Filter to directory-sourced plugins (ignore any globally installed entry point plugins)
+        dir_plugins = [p for p in plugins if p.source == "directory"]
+
+        assert len(dir_plugins) == 2
+        names = {p.name for p in dir_plugins}
         assert names == {"plugin-a", "plugin-b"}
 
     def test_get_plugin_by_name(self, tmp_path: _pathlib.Path) -> None:
@@ -270,4 +273,3 @@ version: {version}
         reg._plugins = None
 
         assert reg.is_enabled("nonexistent") is False
-
