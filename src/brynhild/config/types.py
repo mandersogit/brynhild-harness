@@ -141,11 +141,60 @@ class BehaviorConfig(ConfigBase):
 # =============================================================================
 
 
+def _parse_colon_or_json_list(v: _typing.Any) -> list[str]:
+    """
+    Parse a value as a list of strings, accepting multiple formats.
+
+    Supports:
+    - List: passed through unchanged
+    - JSON array string: '["path1", "path2"]'
+    - Colon-delimited string (Unix convention): "/path1:/path2"
+    - Single path string: "/path1"
+
+    This allows environment variables to use the familiar Unix convention:
+        BRYNHILD_SANDBOX__ALLOWED_PATHS="/Users/me/git:/tmp"
+
+    Instead of requiring JSON:
+        BRYNHILD_SANDBOX__ALLOWED_PATHS='["/Users/me/git", "/tmp"]'
+    """
+    if isinstance(v, list):
+        return [str(item) for item in v]
+    if isinstance(v, str):
+        s: str = v.strip()
+        if not s:
+            return []
+        # Try JSON first (for backwards compatibility and complex cases)
+        if s.startswith("["):
+            import json as _json
+
+            try:
+                result = _json.loads(s)
+                if isinstance(result, list):
+                    return [str(item) for item in result]
+            except _json.JSONDecodeError:
+                pass  # Fall through to colon-delimited parsing
+        # Colon-delimited (Unix convention) or single path
+        if ":" in s:
+            return s.split(":")
+        return [s]
+    raise ValueError(f"Expected string or list, got {type(v).__name__}")
+
+
 class SandboxConfig(ConfigBase):
     """
     Sandbox/security settings.
 
     YAML section: sandbox.*
+
+    Environment variable format for allowed_paths:
+        # Colon-delimited (Unix convention, recommended):
+        BRYNHILD_SANDBOX__ALLOWED_PATHS="/Users/me/git:/tmp"
+
+        # JSON array (also supported):
+        BRYNHILD_SANDBOX__ALLOWED_PATHS='["/Users/me/git", "/tmp"]'
+
+        # Single path:
+        BRYNHILD_SANDBOX__ALLOWED_PATHS="/Users/me/git"
     """
 
     enabled: bool = True
@@ -158,6 +207,12 @@ class SandboxConfig(ConfigBase):
     """Additional paths where writes are allowed."""
 
     # Note: dangerously_skip_* are NOT in config - CLI only
+
+    @_pydantic.field_validator("allowed_paths", mode="before")
+    @classmethod
+    def _parse_allowed_paths(cls, v: _typing.Any) -> list[str]:
+        """Parse allowed_paths from colon-delimited string or JSON array."""
+        return _parse_colon_or_json_list(v)
 
 
 # =============================================================================
