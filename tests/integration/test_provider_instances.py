@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os as _os
 import tempfile as _tempfile
+import typing as _typing
 import unittest.mock as _mock
 
 import pydantic as _pydantic
@@ -562,4 +563,127 @@ models:
 
                 native_id_or = settings.get_native_model_id("test/model", "openrouter")
                 assert native_id_or == "test/model-on-openrouter"
+
+
+class TestPluginProviderInstanceConfig:
+    """Tests for passing instance config to plugin providers."""
+
+    def test_plugin_provider_receives_instance_config(self) -> None:
+        """Plugin provider should receive instance_config kwargs.
+
+        Requirement: Plugin providers should be able to read provider-specific
+        settings from YAML config, not just environment variables.
+        """
+        import brynhild.api.factory as factory
+
+        # Mock plugin provider that captures its kwargs
+        captured_kwargs: dict[str, _typing.Any] = {}
+
+        class MockPluginProvider:
+            PROVIDER_NAME = "mock-plugin"
+            name = "mock-plugin"
+            model = "test-model"
+
+            def __init__(self, **kwargs: _typing.Any) -> None:
+                captured_kwargs.update(kwargs)
+                self.model = kwargs.get("model", "default-model")
+
+            def complete(self) -> None:
+                pass
+
+        # Register the mock plugin provider
+        with _mock.patch(
+            "brynhild.plugins.providers.get_plugin_provider",
+            return_value=MockPluginProvider,
+        ):
+            # Call _create_plugin_provider with instance_config
+            instance_config = {
+                "project": "my-project",
+                "location": "us-central1",
+                "thinking_level": "high",
+            }
+            result = factory._create_plugin_provider(
+                provider_type="mock-plugin",
+                model="test-model",
+                api_key="test-key",
+                instance_config=instance_config,
+            )
+
+            assert result is not None
+            # Plugin should have received the config kwargs
+            assert captured_kwargs.get("project") == "my-project"
+            assert captured_kwargs.get("location") == "us-central1"
+            assert captured_kwargs.get("thinking_level") == "high"
+            assert captured_kwargs.get("model") == "test-model"
+            assert captured_kwargs.get("api_key") == "test-key"
+
+    def test_plugin_provider_fallback_without_kwargs(self) -> None:
+        """Plugin provider without **kwargs should fall back to simpler signature.
+
+        Requirement: Backwards compatibility with providers that don't accept
+        arbitrary kwargs.
+        """
+        import brynhild.api.factory as factory
+
+        # Mock plugin provider that only accepts model and api_key
+        class SimplePluginProvider:
+            PROVIDER_NAME = "simple-plugin"
+            name = "simple-plugin"
+
+            def __init__(self, model: str, api_key: str | None = None) -> None:
+                self.model = model
+                self.api_key = api_key
+
+            def complete(self) -> None:
+                pass
+
+        with _mock.patch(
+            "brynhild.plugins.providers.get_plugin_provider",
+            return_value=SimplePluginProvider,
+        ):
+            # Call with instance_config that provider can't accept
+            instance_config = {"extra_setting": "value"}
+            result = factory._create_plugin_provider(
+                provider_type="simple-plugin",
+                model="test-model",
+                api_key="test-key",
+                instance_config=instance_config,
+            )
+
+            # Should still succeed via fallback
+            assert result is not None
+            assert result.model == "test-model"
+            assert result.api_key == "test-key"
+
+    def test_plugin_provider_no_instance_config(self) -> None:
+        """Plugin provider should work when instance_config is None.
+
+        Requirement: Backwards compatibility - providers created without
+        instance config should still work.
+        """
+        import brynhild.api.factory as factory
+
+        class BasicProvider:
+            PROVIDER_NAME = "basic"
+            name = "basic"
+
+            def __init__(self, model: str | None = None) -> None:
+                self.model = model or "default"
+
+            def complete(self) -> None:
+                pass
+
+        with _mock.patch(
+            "brynhild.plugins.providers.get_plugin_provider",
+            return_value=BasicProvider,
+        ):
+            result = factory._create_plugin_provider(
+                provider_type="basic",
+                model="my-model",
+                api_key=None,
+                instance_config=None,
+            )
+
+            assert result is not None
+            assert result.model == "my-model"
 
