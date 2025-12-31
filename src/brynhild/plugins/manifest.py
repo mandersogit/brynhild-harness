@@ -98,6 +98,10 @@ class PluginManifest(_pydantic.BaseModel):
     )
 
 
+# Type alias for plugin source
+PluginSource = _typing.Literal["directory", "entry_point"]
+
+
 @_dataclasses.dataclass
 class Plugin:
     """
@@ -105,16 +109,30 @@ class Plugin:
 
     This is the runtime representation of a plugin, combining
     the parsed manifest with the filesystem location.
+
+    Plugins can be loaded from two sources:
+    - "directory": Traditional file-based plugins from plugin directories
+    - "entry_point": Pip-installed plugins registered via setuptools entry points
     """
 
     manifest: PluginManifest
     """Parsed plugin.yaml manifest."""
 
     path: _pathlib.Path
-    """Path to plugin directory."""
+    """Path to plugin directory (or synthetic path for entry point plugins)."""
 
     enabled: bool = True
     """Whether the plugin is enabled."""
+
+    # Entry point metadata (for pip-installed plugins)
+    source: PluginSource = "directory"
+    """How the plugin was discovered: 'directory' or 'entry_point'."""
+
+    package_name: str | None = None
+    """Pip package name if loaded from entry point (e.g., 'brynhild-vertex-ai')."""
+
+    package_version: str | None = None
+    """Pip package version if loaded from entry point (e.g., '1.2.0')."""
 
     @property
     def name(self) -> str:
@@ -185,6 +203,11 @@ class Plugin:
         """Whether plugin declares rules."""
         return bool(self.manifest.rules)
 
+    @property
+    def is_packaged(self) -> bool:
+        """Whether this plugin was loaded from a pip package (entry point)."""
+        return self.source == "entry_point"
+
     def to_dict(self) -> dict[str, _typing.Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -193,6 +216,9 @@ class Plugin:
             "description": self.description,
             "path": str(self.path),
             "enabled": self.enabled,
+            "source": self.source,
+            "package_name": self.package_name,
+            "package_version": self.package_version,
             "commands": self.manifest.commands,
             "tools": self.manifest.tools,
             "hooks": self.manifest.hooks,

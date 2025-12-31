@@ -1,12 +1,14 @@
 """
-Custom tool loading from plugin directories.
+Custom tool loading from plugin directories and entry points.
 
 Tools are Python modules in a plugin's tools/ directory that define
-a Tool class implementing the Tool interface.
+a Tool class implementing the Tool interface. Tools can also be
+registered directly via the 'brynhild.tools' entry point group.
 """
 
 from __future__ import annotations
 
+import importlib.metadata as _meta
 import importlib.util as _importlib_util
 import logging as _logging
 import pathlib as _pathlib
@@ -237,4 +239,55 @@ class ToolLoader:
     def get_loaded_tools(self) -> dict[str, ToolClass]:
         """Get all tools loaded so far."""
         return dict(self._loaded_tools)
+
+
+def discover_tools_from_entry_points() -> dict[str, ToolClass]:
+    """
+    Discover individual tools registered via entry points.
+
+    These are tools registered without a full plugin manifest,
+    using the 'brynhild.tools' entry point group. This is useful
+    for simple single-tool packages.
+
+    Entry point format in pyproject.toml:
+        [project.entry-points."brynhild.tools"]
+        MyTool = "my_package.tools:MyTool"
+
+    Returns:
+        Dict mapping tool name to Tool class.
+    """
+    tools: dict[str, ToolClass] = {}
+
+    # Python 3.10+ supports the group= keyword argument
+    eps = _meta.entry_points(group="brynhild.tools")
+
+    for ep in eps:
+        try:
+            tool_cls = ep.load()
+
+            if not _is_tool_class(tool_cls):
+                _logger.warning(
+                    "Entry point '%s' is not a valid Tool class "
+                    "(must have 'name' attribute and 'execute' method)",
+                    ep.name,
+                )
+                continue
+
+            tool_name = _get_tool_name(tool_cls, ep.name)
+            tools[tool_name] = tool_cls
+
+            _logger.debug(
+                "Discovered tool '%s' from entry point '%s' (package: %s)",
+                tool_name,
+                ep.name,
+                getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+            )
+        except Exception as e:
+            _logger.warning(
+                "Failed to load tool from entry point '%s': %s",
+                ep.name,
+                e,
+            )
+
+    return tools
 

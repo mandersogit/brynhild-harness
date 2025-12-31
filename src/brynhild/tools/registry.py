@@ -312,11 +312,16 @@ def _load_plugin_tools(
     plugins: list[_typing.Any],  # list[brynhild.plugins.manifest.Plugin]
 ) -> None:
     """
-    Load tools from enabled plugins and register them.
+    Load tools from enabled plugins and entry points, then register them.
 
     This uses a fail-soft approach: errors loading plugins don't prevent
     built-in tools from working, and errors loading individual tools
     don't prevent other tools from loading.
+
+    Loading order:
+    1. Directory-based plugins (from manifest)
+    2. Entry point tools (brynhild.tools) - highest priority
+    3. Verify entry point plugins' declared tools were loaded
 
     Args:
         registry: Tool registry to add plugin tools to.
@@ -325,9 +330,20 @@ def _load_plugin_tools(
     try:
         import brynhild.plugins.tools as plugin_tools
 
-        # Load tools from each enabled plugin
+        # Track tools declared by entry point plugins for verification
+        entry_point_plugin_tools: dict[str, list[str]] = {}
+
+        # 1. Load tools from directory-based plugins
         tool_loader = plugin_tools.ToolLoader()
         for plugin in plugins:
+            # For entry point plugins, record declared tools for later verification
+            if plugin.source == "entry_point":
+                if plugin.has_tools():
+                    entry_point_plugin_tools[plugin.name] = list(
+                        plugin.manifest.tools
+                    )
+                continue
+
             if not plugin.has_tools():
                 continue
 
@@ -387,9 +403,113 @@ def _load_plugin_tools(
                     plugin.name,
                     e,
                 )
+
+        # 2. Load tools from entry points (highest priority)
+        _load_entry_point_tools(registry)
+
+        # 3. Verify entry point plugins' declared tools were actually loaded
+        _verify_entry_point_plugin_tools(registry, entry_point_plugin_tools)
+
     except Exception as e:
         # Log but don't fail - builtin tools still work
         _logger.warning("Plugin tool loading failed: %s", e)
+
+
+def _verify_entry_point_plugin_tools(
+    registry: ToolRegistry,
+    entry_point_plugin_tools: dict[str, list[str]],
+) -> None:
+    """
+    Verify that tools declared by entry point plugins were actually loaded.
+
+    Entry point plugins cannot use filesystem-based tool loading (no tools/
+    directory). Their tools must be registered via 'brynhild.tools' entry
+    points. This function checks that declared tools exist in the registry
+    and errors loudly if they don't.
+
+    Args:
+        registry: Tool registry to check.
+        entry_point_plugin_tools: Map of plugin name to declared tool names.
+    """
+    for plugin_name, declared_tools in entry_point_plugin_tools.items():
+        missing_tools = [t for t in declared_tools if t not in registry]
+
+        if missing_tools:
+            _logger.error(
+                "Entry point plugin '%s' declares tools that were NOT loaded: %s\n\n"
+                "  Entry point plugins cannot load tools from a tools/ directory.\n"
+                "  You must ALSO register tools via 'brynhild.tools' entry points.\n\n"
+                "  Add this to your pyproject.toml:\n\n"
+                "    [project.entry-points.\"brynhild.tools\"]\n"
+                "    %s = \"your_package.tools:ToolClass\"\n\n"
+                "  See: docs/plugin-development-guide.md#packaged-plugins-entry-points",
+                plugin_name,
+                missing_tools,
+                missing_tools[0] if missing_tools else "YourTool",
+            )
+
+
+def _load_entry_point_tools(registry: ToolRegistry) -> None:
+    """
+    Load tools registered via the 'brynhild.tools' entry point group.
+
+    Entry point tools take precedence over directory-based plugin tools.
+    If an entry point tool has the same name as an already-registered tool,
+    it will be skipped with a debug log (entry points are loaded last,
+    so directory plugins can be intentionally overridden by adjusting
+    load order).
+
+    Args:
+        registry: Tool registry to add entry point tools to.
+    """
+    try:
+        import brynhild.plugins.tools as plugin_tools
+
+        entry_point_tools = plugin_tools.discover_tools_from_entry_points()
+
+        for tool_name, tool_cls in entry_point_tools.items():
+            # Skip if already registered (builtins or directory plugins)
+            if tool_name in registry:
+                _logger.debug(
+                    "Skipping entry point tool '%s' - already registered",
+                    tool_name,
+                )
+                continue
+
+            try:
+                tool_instance = tool_cls()
+                registry.register(tool_instance)
+                _logger.debug(
+                    "Loaded tool '%s' from entry point",
+                    tool_name,
+                )
+            except AttributeError as e:
+                _logger.error(
+                    "Failed to load entry point tool '%s':\n"
+                    "  %s\n\n"
+                    "  This usually means the tool doesn't implement the required interface.\n"
+                    "  Required: @property name, @property description, @property input_schema, execute()\n\n"
+                    "  See: docs/plugin-tool-interface.md",
+                    tool_name,
+                    e,
+                )
+            except TypeError as e:
+                _logger.error(
+                    "Failed to instantiate entry point tool '%s':\n"
+                    "  %s\n\n"
+                    "  Check that the Tool class has a no-argument __init__ or compatible signature.\n\n"
+                    "  See: docs/plugin-tool-interface.md",
+                    tool_name,
+                    e,
+                )
+            except Exception as e:
+                _logger.error(
+                    "Failed to load entry point tool '%s': %s",
+                    tool_name,
+                    e,
+                )
+    except Exception as e:
+        _logger.warning("Entry point tool loading failed: %s", e)
 
 
 # Builtin tool names for reference

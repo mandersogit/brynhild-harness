@@ -1,12 +1,14 @@
 """
-Custom LLM provider loading from plugin directories.
+Custom LLM provider loading from plugin directories and entry points.
 
 Providers are Python modules in a plugin's providers/ directory that define
-a Provider class implementing the LLMProvider interface.
+a Provider class implementing the LLMProvider interface. Providers can also be
+registered directly via the 'brynhild.providers' entry point group.
 """
 
 from __future__ import annotations
 
+import importlib.metadata as _meta
 import importlib.util as _importlib_util
 import logging as _logging
 import pathlib as _pathlib
@@ -260,8 +262,9 @@ def load_all_plugin_providers() -> dict[str, ProviderClass]:
     """
     Discover and load all plugin providers.
 
-    Searches plugin paths and loads providers from any plugin
-    that declares them in its manifest.
+    Searches plugin paths and entry points, loading providers from:
+    1. Plugins that declare providers in their manifest
+    2. Individual providers registered via 'brynhild.providers' entry points
 
     Returns:
         Dict mapping provider name to Provider class.
@@ -300,5 +303,62 @@ def load_all_plugin_providers() -> dict[str, ProviderClass]:
             except Exception as e:
                 _logger.warning("Failed to load plugin providers from %s: %s", plugin_dir, e)
 
+    # Also load providers from entry points (highest priority)
+    entry_point_providers = discover_providers_from_entry_points()
+    for name, cls in entry_point_providers.items():
+        register_plugin_provider(name, cls)
+
     return get_all_plugin_providers()
+
+
+def discover_providers_from_entry_points() -> dict[str, ProviderClass]:
+    """
+    Discover individual providers registered via entry points.
+
+    These are providers registered without a full plugin manifest,
+    using the 'brynhild.providers' entry point group.
+
+    Entry point format in pyproject.toml:
+        [project.entry-points."brynhild.providers"]
+        my-provider = "my_package.providers:MyProvider"
+
+    Returns:
+        Dict mapping provider name to Provider class.
+    """
+    providers: dict[str, ProviderClass] = {}
+
+    # Python 3.10+ supports the group= keyword argument
+    eps = _meta.entry_points(group="brynhild.providers")
+
+    for ep in eps:
+        try:
+            provider_cls = ep.load()
+
+            # Validate it looks like a provider
+            if not _is_provider_class(provider_cls):
+                _logger.warning(
+                    "Entry point '%s' doesn't appear to be a Provider class "
+                    "(must have 'name', 'model' attributes and 'complete'/'stream' method)",
+                    ep.name,
+                )
+                continue
+
+            # Get provider name from class or entry point name
+            provider_name = getattr(provider_cls, "PROVIDER_NAME", ep.name)
+            providers[provider_name] = provider_cls
+
+            _logger.debug(
+                "Discovered provider '%s' from entry point '%s' (package: %s)",
+                provider_name,
+                ep.name,
+                getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+            )
+        except Exception as e:
+            _logger.warning(
+                "Failed to load provider from entry point '%s': %s",
+                ep.name,
+                e,
+            )
+
+    return providers
 
