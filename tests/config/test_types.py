@@ -243,6 +243,85 @@ class TestSandboxConfig:
         assert config.allowed_paths == ["/custom/path"]
 
 
+class TestSandboxConfigPathParsing:
+    """Tests for allowed_paths colon-delimited parsing (Unix convention)."""
+
+    def test_colon_delimited_string(self) -> None:
+        """Should parse colon-delimited string like Unix PATH."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "/Users/me/git:/tmp:/var/data",
+        })
+        assert config.allowed_paths == ["/Users/me/git", "/tmp", "/var/data"]
+
+    def test_single_path_string(self) -> None:
+        """Should accept a single path as string."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "/Users/me/git",
+        })
+        assert config.allowed_paths == ["/Users/me/git"]
+
+    def test_json_array_string(self) -> None:
+        """Should accept JSON array for backwards compatibility."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": '["/Users/me/git", "/tmp"]',
+        })
+        assert config.allowed_paths == ["/Users/me/git", "/tmp"]
+
+    def test_list_passthrough(self) -> None:
+        """Should pass through lists unchanged."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": ["/path1", "/path2"],
+        })
+        assert config.allowed_paths == ["/path1", "/path2"]
+
+    def test_empty_string(self) -> None:
+        """Should handle empty string as empty list."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "",
+        })
+        assert config.allowed_paths == []
+
+    def test_whitespace_string(self) -> None:
+        """Should handle whitespace-only string as empty list."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "   ",
+        })
+        assert config.allowed_paths == []
+
+    def test_json_empty_array(self) -> None:
+        """Should handle JSON empty array."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "[]",
+        })
+        assert config.allowed_paths == []
+
+    def test_colon_delimited_with_whitespace(self) -> None:
+        """Whitespace around colons is NOT trimmed (paths can have spaces)."""
+        # Note: we don't trim because paths might legitimately have spaces
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "/path one:/path two",
+        })
+        assert config.allowed_paths == ["/path one", "/path two"]
+
+    def test_malformed_json_falls_through_to_colon(self) -> None:
+        """Malformed JSON starting with [ falls through to colon parsing."""
+        config = types.SandboxConfig.model_validate({
+            "allowed_paths": "[not valid json",
+        })
+        # Falls through to colon parsing, no colon so single path
+        assert config.allowed_paths == ["[not valid json"]
+
+    def test_direct_construction_with_list(self) -> None:
+        """Direct construction with list should work."""
+        config = types.SandboxConfig(allowed_paths=["/a", "/b"])
+        assert config.allowed_paths == ["/a", "/b"]
+
+    def test_direct_construction_with_string(self) -> None:
+        """Direct construction with colon-delimited string should work."""
+        config = types.SandboxConfig(allowed_paths="/a:/b")  # type: ignore[arg-type]
+        assert config.allowed_paths == ["/a", "/b"]
+
+
 # =============================================================================
 # LoggingConfig Tests
 # =============================================================================
