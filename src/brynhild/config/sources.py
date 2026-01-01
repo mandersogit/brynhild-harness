@@ -29,6 +29,7 @@ import pydantic_settings as _pydantic_settings
 import yaml as _yaml
 
 import brynhild.utils as utils
+import brynhild.utils.deep_chain_map._yaml as _dcm_yaml
 
 # Environment variable for overriding user config directory
 ENV_CONFIG_DIR = "BRYNHILD_CONFIG_DIR"
@@ -41,6 +42,10 @@ LineRegistry = dict[tuple[str, ...], tuple[int, int]]
 class _LineTrackingLoader(_yaml.SafeLoader):
     """YAML loader that tracks line/column numbers for all keys and values.
 
+    Inherits !delete and !replace tag support from DcmLoader but produces
+    plain dicts (not DcmMapping) to support line number tracking for
+    config validation errors.
+
     This loader intercepts mapping construction to record line numbers for
     each key, while delegating actual value construction to the parent class
     to preserve proper type handling (int, bool, etc.).
@@ -52,7 +57,7 @@ class _LineTrackingLoader(_yaml.SafeLoader):
         self._path_stack: list[str] = []
 
     def construct_mapping(  # type: ignore[override]
-        self, node: _yaml.MappingNode, _deep: bool = False
+        self, node: _yaml.MappingNode, deep: bool = False  # noqa: ARG002 - required by parent API
     ) -> dict[str, _typing.Any]:
         """Override to track line numbers for each key."""
         # Record root position if at top level
@@ -82,6 +87,11 @@ class _LineTrackingLoader(_yaml.SafeLoader):
             result[key] = value
 
         return result
+
+
+# Register !delete and !replace constructors for _LineTrackingLoader
+_LineTrackingLoader.add_constructor("!delete", _dcm_yaml._delete_constructor)
+_LineTrackingLoader.add_constructor("!replace", _dcm_yaml._replace_constructor)
 
 
 def _load_yaml_with_lines(
