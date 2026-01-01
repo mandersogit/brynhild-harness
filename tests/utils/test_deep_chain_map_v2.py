@@ -8,21 +8,22 @@ These tests verify the new immutability and mutation semantics:
 - MutableProxy for natural dict syntax
 """
 
-import typing as _typing
 
 import pytest as _pytest
 
 import brynhild.utils as utils
-import brynhild.utils.deep_chain_map._core as _core
 import brynhild.utils.deep_chain_map._frozen as _frozen
 import brynhild.utils.deep_chain_map._operations as _operations
 import brynhild.utils.deep_chain_map._proxy as _proxy
+import brynhild.utils.deep_chain_map._yaml as _yaml
 
 # Re-export for convenience in tests
-_DELETED = _core._DELETED
+DELETE = _yaml.DELETE  # New name (was _DELETED)
+_DELETED = DELETE  # Alias for backward compat in tests
 FrozenMapping = _frozen.FrozenMapping
 FrozenSequence = _frozen.FrozenSequence
 MutableProxy = _proxy.MutableProxy
+DcmMapping = _yaml.DcmMapping
 
 
 class TestPathHelpers:
@@ -55,33 +56,35 @@ class TestPathHelpers:
     def test_set_at_path_merges_dicts_by_default(self) -> None:
         """_set_at_path deep merges dicts when merge=True (default)."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": {"existing": 1, "b": {"old": "value"}}}
+        dcm._front_layer._raw_data().update({"a": {"existing": 1, "b": {"old": "value"}}})
 
         dcm._set_at_path(("a",), {"b": {"new": "added"}, "c": 2})
 
-        assert dcm._front_layer["a"]["existing"] == 1
-        assert dcm._front_layer["a"]["b"]["old"] == "value"
-        assert dcm._front_layer["a"]["b"]["new"] == "added"
-        assert dcm._front_layer["a"]["c"] == 2
+        raw = dcm._front_layer._raw_data()
+        assert raw["a"]["existing"] == 1
+        assert raw["a"]["b"]["old"] == "value"
+        assert raw["a"]["b"]["new"] == "added"
+        assert raw["a"]["c"] == 2
 
     def test_set_at_path_replaces_when_merge_false(self) -> None:
         """_set_at_path replaces entirely when merge=False."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": {"existing": 1, "b": 2}}
+        dcm._front_layer._raw_data().update({"a": {"existing": 1, "b": 2}})
 
         dcm._set_at_path(("a",), {"new": "only"}, merge=False)
 
-        assert dcm._front_layer["a"] == {"new": "only"}
+        raw = dcm._front_layer._raw_data()
+        assert raw["a"] == {"new": "only"}
 
-    def test_set_at_path_clears_deletion_marker(self) -> None:
-        """_set_at_path removes deletion marker for the path."""
+    def test_set_at_path_overwrites_deletion_marker(self) -> None:
+        """_set_at_path overwrites DELETE marker with value."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": {"b": _DELETED}}
+        dcm._front_layer._raw_data().update({"a": {"b": DELETE}})
 
         dcm._set_at_path(("a", "b"), "restored")
 
-        assert "b" not in dcm._delete_layer.get("a", {})
-        assert dcm._front_layer["a"]["b"] == "restored"
+        raw = dcm._front_layer._raw_data()
+        assert raw["a"]["b"] == "restored"
 
     def test_set_at_path_clears_cache(self) -> None:
         """_set_at_path clears the cache."""
@@ -96,23 +99,25 @@ class TestPathHelpers:
     def test_set_at_path_overwrites_non_dict_intermediate(self) -> None:
         """_set_at_path overwrites scalar with dict when path requires it."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": "scalar"}
+        dcm._front_layer._raw_data().update({"a": "scalar"})
 
         dcm._set_at_path(("a", "b"), "value")
 
-        assert dcm._front_layer == {"a": {"b": "value"}}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"a": {"b": "value"}}
 
 
 class TestDeleteAtPath:
     """Tests for _delete_at_path."""
 
     def test_delete_at_path_creates_marker(self) -> None:
-        """_delete_at_path creates _DELETED marker in delete_layer."""
+        """_delete_at_path creates DELETE marker in front_layer."""
         dcm = utils.DeepChainMap({"a": {"b": 1}})
 
         dcm._delete_at_path(("a", "b"))
 
-        assert dcm._delete_layer == {"a": {"b": _DELETED}}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"a": {"b": DELETE}}
 
     def test_delete_at_path_single_key(self) -> None:
         """_delete_at_path with single key deletes at top level."""
@@ -120,7 +125,8 @@ class TestDeleteAtPath:
 
         dcm._delete_at_path(("a",))
 
-        assert dcm._delete_layer == {"a": _DELETED}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"a": DELETE}
 
     def test_delete_at_path_empty_does_nothing(self) -> None:
         """_delete_at_path with empty path is a no-op."""
@@ -128,17 +134,19 @@ class TestDeleteAtPath:
 
         dcm._delete_at_path(())
 
-        assert dcm._delete_layer == {}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {}
 
-    def test_delete_at_path_clears_front_layer_value(self) -> None:
-        """_delete_at_path removes value from front_layer."""
+    def test_delete_at_path_overwrites_existing_value(self) -> None:
+        """_delete_at_path overwrites existing value in front_layer."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": {"b": "override"}}
+        dcm._front_layer._raw_data()["a"] = {"b": "override"}
 
         dcm._delete_at_path(("a", "b"))
 
-        assert "b" not in dcm._front_layer.get("a", {})
-        assert dcm._delete_layer == {"a": {"b": _DELETED}}
+        raw = dcm._front_layer._raw_data()
+        # Now a.b is DELETE
+        assert raw == {"a": {"b": DELETE}}
 
     def test_delete_at_path_clears_list_ops(self) -> None:
         """_delete_at_path removes list_ops for deleted path and sub-paths."""
@@ -166,82 +174,46 @@ class TestDeleteAtPath:
         assert dcm._cache == {}
 
 
-class TestIsPathDeleted:
-    """Tests for _is_path_deleted."""
+class TestIsDeletedInFrontLayer:
+    """Tests for _is_deleted_in_front_layer."""
 
     def test_path_not_deleted(self) -> None:
         """Returns False when path is not deleted."""
         dcm = utils.DeepChainMap({"a": {"b": 1}})
 
-        assert dcm._is_path_deleted(("a", "b")) is False
+        assert dcm._is_deleted_in_front_layer(("a", "b")) is False
 
     def test_path_deleted_exact(self) -> None:
         """Returns True when exact path is deleted."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": {"b": _DELETED}}
+        dcm._front_layer._raw_data()["a"] = {"b": DELETE}
 
-        assert dcm._is_path_deleted(("a", "b")) is True
+        assert dcm._is_deleted_in_front_layer(("a", "b")) is True
 
     def test_path_deleted_ancestor(self) -> None:
         """Returns True when ancestor is deleted."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": _DELETED}
+        dcm._front_layer._raw_data()["a"] = DELETE
 
-        assert dcm._is_path_deleted(("a", "b", "c")) is True
+        assert dcm._is_deleted_in_front_layer(("a", "b", "c")) is True
 
     def test_path_partial_no_match(self) -> None:
-        """Returns False when delete_layer has different path."""
+        """Returns False when front_layer has different path deleted."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": {"x": _DELETED}}
+        dcm._front_layer._raw_data()["a"] = {"x": DELETE}
 
-        assert dcm._is_path_deleted(("a", "b")) is False
+        assert dcm._is_deleted_in_front_layer(("a", "b")) is False
 
     def test_empty_path_not_deleted(self) -> None:
         """Empty path is never deleted."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": _DELETED}
+        dcm._front_layer._raw_data()["a"] = DELETE
 
-        assert dcm._is_path_deleted(()) is False
+        assert dcm._is_deleted_in_front_layer(()) is False
 
 
-class TestClearPathIn:
-    """Tests for _clear_path_in."""
-
-    def test_clears_existing_path(self) -> None:
-        """_clear_path_in removes existing path."""
-        dcm = utils.DeepChainMap()
-        target: dict[str, _typing.Any] = {"a": {"b": {"c": 1}}}
-
-        dcm._clear_path_in(target, ("a", "b", "c"))
-
-        assert target == {"a": {"b": {}}}
-
-    def test_clears_single_key(self) -> None:
-        """_clear_path_in clears single-key path."""
-        dcm = utils.DeepChainMap()
-        target: dict[str, _typing.Any] = {"a": 1, "b": 2}
-
-        dcm._clear_path_in(target, ("a",))
-
-        assert target == {"b": 2}
-
-    def test_noop_if_path_missing(self) -> None:
-        """_clear_path_in is no-op if path doesn't exist."""
-        dcm = utils.DeepChainMap()
-        target: dict[str, _typing.Any] = {"a": 1}
-
-        dcm._clear_path_in(target, ("x", "y", "z"))
-
-        assert target == {"a": 1}
-
-    def test_empty_path_does_nothing(self) -> None:
-        """_clear_path_in with empty path is no-op."""
-        dcm = utils.DeepChainMap()
-        target: dict[str, _typing.Any] = {"a": 1}
-
-        dcm._clear_path_in(target, ())
-
-        assert target == {"a": 1}
+# Note: _clear_path_in was removed in the refactor to use DcmMapping
+# DELETE markers in front_layer are overwritten by _set_at_path
 
 
 class TestDeepMergeDicts:
@@ -293,17 +265,17 @@ class TestDeepMergeDicts:
         assert override == {"a": {"c": 2}}
 
 
-class TestDeletedSentinel:
-    """Tests for _DELETED sentinel."""
+class TestDeleteSentinel:
+    """Tests for DELETE sentinel."""
 
-    def test_deleted_repr(self) -> None:
-        """_DELETED has readable repr."""
-        assert repr(_DELETED) == "<DELETED>"
+    def test_delete_repr(self) -> None:
+        """DELETE has readable repr."""
+        assert repr(DELETE) == "DELETE"
 
-    def test_deleted_is_singleton(self) -> None:
-        """_DELETED is same object when imported."""
-        d2 = _core._DELETED
-        assert _DELETED is d2
+    def test_delete_is_singleton(self) -> None:
+        """DELETE is same object when imported."""
+        d2 = _yaml.DELETE
+        assert DELETE is d2
 
 
 class TestMutableProxy:
@@ -328,7 +300,7 @@ class TestMutableProxy:
     def test_getitem_deleted_raises(self) -> None:
         """Deleted key raises KeyError."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": _DELETED}
+        dcm._front_layer._raw_data()["a"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1})
 
         with _pytest.raises(KeyError):
@@ -372,14 +344,15 @@ class TestMutableProxy:
 
         assert dcm._front_layer == {"a": {"b": {"new": "deep"}}}
 
-    def test_delitem_routes_to_delete_layer(self) -> None:
-        """Deleting marks key in delete_layer."""
+    def test_delitem_routes_to_front_layer(self) -> None:
+        """Deleting marks key with DELETE in front_layer."""
         dcm = utils.DeepChainMap()
         proxy = MutableProxy(dcm, ("config",), {"key": 1})
 
         del proxy["key"]
 
-        assert dcm._delete_layer == {"config": {"key": _DELETED}}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"config": {"key": DELETE}}
 
     def test_delitem_missing_raises(self) -> None:
         """Deleting missing key raises KeyError."""
@@ -392,7 +365,7 @@ class TestMutableProxy:
     def test_delitem_already_deleted_raises(self) -> None:
         """Deleting already-deleted key raises KeyError."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": _DELETED}
+        dcm._front_layer._raw_data()["a"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1})
 
         with _pytest.raises(KeyError):
@@ -401,7 +374,7 @@ class TestMutableProxy:
     def test_iter_excludes_deleted(self) -> None:
         """Iteration skips deleted keys."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"b": _DELETED}
+        dcm._front_layer._raw_data()["b"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1, "b": 2, "c": 3})
 
         keys = list(proxy)
@@ -411,7 +384,7 @@ class TestMutableProxy:
     def test_len_excludes_deleted(self) -> None:
         """Length excludes deleted keys."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"b": _DELETED}
+        dcm._front_layer._raw_data()["b"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1, "b": 2, "c": 3})
 
         assert len(proxy) == 2
@@ -419,7 +392,7 @@ class TestMutableProxy:
     def test_contains_respects_deletion(self) -> None:
         """'in' operator respects deletion."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"b": _DELETED}
+        dcm._front_layer._raw_data()["b"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1, "b": 2})
 
         assert "a" in proxy
@@ -456,7 +429,7 @@ class TestMutableProxy:
     def test_eq_with_dict(self) -> None:
         """MutableProxy equals dict with same visible content."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"b": _DELETED}
+        dcm._front_layer._raw_data()["b"] = DELETE
         proxy = MutableProxy(dcm, (), {"a": 1, "b": 2})
 
         assert proxy == {"a": 1}
@@ -546,7 +519,7 @@ class TestNestedProxyOperations:
     def test_nested_set_creates_path(self) -> None:
         """Setting nested value on empty DCM creates full path."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": {"b": {}}}
+        dcm._front_layer._raw_data().update({"a": {"b": {}}})
 
         # Access via proxy and set
         dcm["a"]["b"]["c"] = "value"
@@ -959,14 +932,15 @@ class TestReprV2:
         assert "front=" in result
         assert "'b'" in result
 
-    def test_repr_shows_delete_layer(self) -> None:
-        """repr includes delete_layer when non-empty."""
+    def test_repr_shows_front_layer_deletions(self) -> None:
+        """repr includes front_layer when it has DELETE markers."""
         dcm = utils.DeepChainMap({"a": 1})
-        del dcm["a"]  # Delete to delete_layer
+        del dcm["a"]  # Delete places DELETE marker in front_layer
 
         result = repr(dcm)
 
-        assert "deleted=" in result
+        # DELETE markers are now in front_layer
+        assert "front=" in result or "DELETE" in result
 
     def test_repr_shows_list_ops(self) -> None:
         """repr shows list_ops count when non-empty."""
@@ -1023,10 +997,10 @@ class TestIsPathDeletedEdgeCases:
     def test_non_dict_intermediate(self) -> None:
         """Non-dict value in path returns False."""
         dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": "not_a_dict"}
+        dcm._front_layer._raw_data()["a"] = "not_a_dict"
 
         # "a" contains a string, not a dict, so path a.b cannot be checked
-        assert dcm._is_path_deleted(("a", "b")) is False
+        assert dcm._is_deleted_in_front_layer(("a", "b")) is False
 
 
 class TestGetMutable:
@@ -1123,31 +1097,33 @@ class TestDeleteAndAddLayer:
         # Still deleted because delete_layer takes precedence
         assert "a" not in dcm
 
-    def test_delete_then_clear_delete_layer_then_add(self) -> None:
-        """After clearing delete_layer, added layer is visible."""
+    def test_delete_then_clear_front_layer_then_add(self) -> None:
+        """After clearing front_layer, added layer is visible."""
         dcm = utils.DeepChainMap({"a": 1})
         del dcm["a"]
-        dcm.clear_delete_layer()
+        dcm.clear_front_layer()  # Clears DELETE marker
         dcm.add_layer({"a": "resurrected"})
 
         assert dcm["a"] == "resurrected"
 
     def test_delete_nested_overwrites_intermediate_marker(self) -> None:
-        """Deleting nested path overwrites intermediate _DELETED marker with dict."""
+        """Deleting nested path overwrites intermediate DELETE marker with dict."""
         dcm = utils.DeepChainMap({"a": {"b": {"c": 1}}})
 
-        # First delete "a.b" - creates {"a": {"b": _DELETED}}
+        # First delete "a.b" - creates {"a": {"b": DELETE}} in front_layer
         del dcm["a"]["b"]
-        assert dcm._delete_layer == {"a": {"b": _DELETED}}
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"a": {"b": DELETE}}
 
-        # Now delete "a.b.c" - should replace _DELETED with dict
+        # Now delete "a.b.c" - should replace DELETE with dict
         dcm._delete_at_path(("a", "b", "c"))
 
-        # "a.b" now points to dict, not _DELETED
-        assert dcm._delete_layer == {"a": {"b": {"c": _DELETED}}}
+        # "a.b" now points to dict, not DELETE
+        raw = dcm._front_layer._raw_data()
+        assert raw == {"a": {"b": {"c": DELETE}}}
         # But "a.b" itself is no longer marked deleted
-        assert not dcm._is_path_deleted(("a", "b"))
-        assert dcm._is_path_deleted(("a", "b", "c"))
+        assert not dcm._is_deleted_in_front_layer(("a", "b"))
+        assert dcm._is_deleted_in_front_layer(("a", "b", "c"))
 
 
 class TestSetAfterDelete:
@@ -1164,13 +1140,16 @@ class TestSetAfterDelete:
         assert dcm["a"] == "new_value"
 
     def test_set_after_delete_clears_delete_marker(self) -> None:
-        """Setting after delete removes the delete marker."""
+        """Setting after delete overwrites the DELETE marker."""
         dcm = utils.DeepChainMap({"a": 1})
         del dcm["a"]
-        assert ("a",) in [(k,) for k in dcm._delete_layer if dcm._delete_layer[k] is _DELETED]
+        raw = dcm._front_layer._raw_data()
+        assert raw.get("a") is DELETE
 
         dcm["a"] = "restored"
-        assert "a" not in dcm._delete_layer or dcm._delete_layer.get("a") is not _DELETED
+        raw = dcm._front_layer._raw_data()
+        # Setting a value overwrites the DELETE marker
+        assert raw["a"] == "restored"
 
 
 class TestListOpsOnRead:
@@ -1353,18 +1332,22 @@ class TestLayerManagementV2:
         assert dcm.source_layers[1] == layer1
 
     def test_front_layer_property(self) -> None:
-        """front_layer returns the front layer dict."""
+        """front_layer returns the front layer DcmMapping."""
         dcm = utils.DeepChainMap()
         dcm._set_at_path(("a",), 1)
 
-        assert dcm.front_layer == {"a": 1}
+        # front_layer is now DcmMapping
+        assert dcm.front_layer["a"] == 1
+        assert dcm.front_layer._raw_data() == {"a": 1}
 
-    def test_delete_layer_property(self) -> None:
-        """delete_layer returns the delete layer dict."""
+    def test_front_layer_with_delete(self) -> None:
+        """front_layer can hold DELETE markers."""
         dcm = utils.DeepChainMap({"a": 1})
         dcm._delete_at_path(("a",))
 
-        assert dcm.delete_layer == {"a": _DELETED}
+        # front_layer contains DELETE markers accessible via _raw_data
+        raw = dcm.front_layer._raw_data()
+        assert raw == {"a": DELETE}
 
     def test_list_ops_property(self) -> None:
         """list_ops returns the list operations dict."""
@@ -1381,11 +1364,11 @@ class TestClearingMethods:
     def test_clear_front_layer(self) -> None:
         """clear_front_layer empties front_layer."""
         dcm = utils.DeepChainMap()
-        dcm._front_layer = {"a": 1, "b": 2}
+        dcm._front_layer._raw_data().update({"a": 1, "b": 2})
 
         dcm.clear_front_layer()
 
-        assert dcm._front_layer == {}
+        assert dcm._front_layer._raw_data() == {}
 
     def test_clear_front_layer_clears_cache(self) -> None:
         """clear_front_layer clears cache."""
@@ -1397,14 +1380,15 @@ class TestClearingMethods:
 
         assert dcm._cache == {}
 
-    def test_clear_delete_layer(self) -> None:
-        """clear_delete_layer empties delete_layer."""
-        dcm = utils.DeepChainMap()
-        dcm._delete_layer = {"a": _DELETED}
+    def test_clear_front_layer_clears_deletions(self) -> None:
+        """clear_front_layer also clears DELETE markers."""
+        dcm = utils.DeepChainMap({"a": 1})
+        del dcm["a"]  # Places DELETE in front_layer
 
-        dcm.clear_delete_layer()
+        dcm.clear_front_layer()
 
-        assert dcm._delete_layer == {}
+        # DELETE marker is gone
+        assert dcm._front_layer._raw_data() == {}
 
     def test_clear_list_ops(self) -> None:
         """clear_list_ops empties list_ops."""
@@ -1416,17 +1400,15 @@ class TestClearingMethods:
         assert dcm._list_ops == {}
 
     def test_reset_clears_all(self) -> None:
-        """reset clears front_layer, delete_layer, list_ops, and cache."""
+        """reset clears front_layer (including deletions), list_ops, and cache."""
         dcm = utils.DeepChainMap({"a": 1})
-        dcm._front_layer = {"b": 2}
-        dcm._delete_layer = {"c": _DELETED}
+        dcm._front_layer._raw_data().update({"b": 2, "c": DELETE})
         dcm._list_ops = {("d",): [_operations.Append(3)]}
         _ = dcm["a"]
 
         dcm.reset()
 
-        assert dcm._front_layer == {}
-        assert dcm._delete_layer == {}
+        assert dcm._front_layer._raw_data() == {}
         assert dcm._list_ops == {}
         assert dcm._cache == {}
 
@@ -1434,7 +1416,7 @@ class TestClearingMethods:
         """reset does not modify source layers."""
         layer = {"a": 1}
         dcm = utils.DeepChainMap(layer)
-        dcm._front_layer = {"b": 2}
+        dcm._front_layer._raw_data().update({"b": 2})
 
         dcm.reset()
 
