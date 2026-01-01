@@ -62,9 +62,9 @@ class MutableProxy(_abc.MutableMapping[str, _typing.Any]):
         Raises:
             KeyError: If key not in merged data or is deleted.
         """
-        # Check if deleted
+        # Check if deleted in front_layer
         full_path = self._path + (key,)
-        if self._dcm._is_path_deleted(full_path):
+        if self._dcm._is_deleted_in_front_layer(full_path):
             raise KeyError(key)
 
         # Get from data
@@ -99,7 +99,7 @@ class MutableProxy(_abc.MutableMapping[str, _typing.Any]):
         full_path = self._path + (key,)
 
         # Check key exists before deleting
-        if self._dcm._is_path_deleted(full_path):
+        if self._dcm._is_deleted_in_front_layer(full_path):
             raise KeyError(key)
         if key not in self._data:
             raise KeyError(key)
@@ -110,7 +110,7 @@ class MutableProxy(_abc.MutableMapping[str, _typing.Any]):
         """Iterate over keys, excluding deleted ones."""
         for key in self._data:
             full_path = self._path + (key,)
-            if not self._dcm._is_path_deleted(full_path):
+            if not self._dcm._is_deleted_in_front_layer(full_path):
                 yield key
 
     def __len__(self) -> int:
@@ -122,7 +122,7 @@ class MutableProxy(_abc.MutableMapping[str, _typing.Any]):
         if not isinstance(key, str):
             return False
         full_path = self._path + (key,)
-        if self._dcm._is_path_deleted(full_path):
+        if self._dcm._is_deleted_in_front_layer(full_path):
             return False
         return key in self._data
 
