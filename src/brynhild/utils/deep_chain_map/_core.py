@@ -70,8 +70,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         **Source layer semantics:** Source layers are stored **by reference**,
         not copied. This means:
 
-        1. DeepChainMap will never modify your source dicts (writes go to
-           ``front_layer``, deletes go to ``delete_layer``)
+        1. DeepChainMap will never modify your source dicts (writes and
+           deletes both go to ``front_layer``)
         2. If you modify source dicts externally, DCM won't see changes
            until you call ``reload()`` to clear the cache
         3. Multiple DeepChainMaps can share the same source layers
@@ -339,6 +339,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
                 current[final_key] = self._deep_merge_dicts(existing, value)
             else:
                 current[final_key] = _copy.deepcopy(value)
+        elif not merge and isinstance(value, dict):
+            # Wrap in ReplaceMarker so source layers don't merge through
+            current[final_key] = _yaml_markers.ReplaceMarker(_copy.deepcopy(value))
         else:
             current[final_key] = _copy.deepcopy(value)
 
@@ -410,6 +413,98 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             current = value
         return False
 
+    # =========================================================================
+    # Public path-based mutation API
+    # =========================================================================
+
+    def set_path(
+        self,
+        path: tuple[str, ...],
+        value: _typing.Any,
+        *,
+        merge: bool = True,
+    ) -> None:
+        """
+        Set a value at a nested path in front_layer.
+
+        Creates intermediate dicts as needed. If the final key exists and
+        both old and new values are dicts, they are merged (unless merge=False).
+
+        Setting a value automatically clears any DELETE marker at that path.
+
+        Args:
+            path: Tuple of keys representing the path (e.g., ("a", "b", "c")).
+            value: The value to set.
+            merge: If True and both existing and new values are dicts, merge them.
+                   If False, replace entirely.
+
+        Raises:
+            TypeError: If any path component is not a string.
+            ValueError: If path is empty.
+
+        Example:
+            >>> dcm = DeepChainMap({"a": {"x": 1}})
+            >>> dcm.set_path(("a", "y"), 2)
+            >>> dcm["a"]
+            FrozenMapping({'x': 1, 'y': 2})
+        """
+        if not path:
+            raise ValueError("path cannot be empty")
+        self._set_at_path(path, value, merge=merge)
+
+    def replace_path(self, path: tuple[str, ...], value: _typing.Any) -> None:
+        """
+        Replace a value at a nested path without merging.
+
+        Like set_path(merge=False), this replaces the entire value at the path
+        rather than merging with any existing dict.
+
+        Args:
+            path: Tuple of keys representing the path.
+            value: The value to set (replaces entirely, no merge).
+
+        Raises:
+            TypeError: If any path component is not a string.
+            ValueError: If path is empty.
+
+        Example:
+            >>> dcm = DeepChainMap({"a": {"x": 1, "y": 2}})
+            >>> dcm.replace_path(("a",), {"z": 3})
+            >>> dcm["a"]
+            FrozenMapping({'z': 3})
+        """
+        if not path:
+            raise ValueError("path cannot be empty")
+        self._set_at_path(path, value, merge=False)
+
+    def delete_path(self, path: tuple[str, ...]) -> None:
+        """
+        Mark a path as deleted by placing DELETE marker in front_layer.
+
+        This hides the key from the merged view. The original source layers
+        are not modified.
+
+        Args:
+            path: Tuple of keys representing the path to delete.
+
+        Raises:
+            TypeError: If any path component is not a string.
+            ValueError: If path is empty.
+
+        Example:
+            >>> dcm = DeepChainMap({"a": {"x": 1, "y": 2}})
+            >>> dcm.delete_path(("a", "x"))
+            >>> dcm["a"]
+            FrozenMapping({'y': 2})
+        """
+        if not path:
+            raise ValueError("path cannot be empty")
+        self._delete_at_path(path)
+
+    # =========================================================================
+    # Internal merge helpers
+    # =========================================================================
+
     def _deep_merge_dicts(
         self,
         base: dict[str, _typing.Any],
@@ -422,6 +517,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         - DELETE: removes the key from merged result
         - ReplaceMarker: uses value exactly, no deep merge
 
+        This method delegates to _merge_value for unified merge logic,
+        discarding the provenance tracking.
+
         Args:
             base: The base dict (or Mapping).
             override: The dict to merge in (or Mapping, takes priority).
@@ -429,41 +527,11 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         Returns:
             New merged dict.
         """
-        result = dict(base)
-
-        # Iterate using raw access for DcmMapping to see DELETE markers
-        override_keys: _typing.Iterable[str]
-        if isinstance(override, _yaml_markers.DcmMapping):
-            override_keys = override._raw_iter()
-        else:
-            override_keys = override.keys()
-
-        for key in override_keys:
-            # Get raw value (handles DcmMapping)
-            if isinstance(override, _yaml_markers.DcmMapping):
-                value = override._raw_getitem(key)
-            else:
-                value = override[key]
-
-            # Handle YAML DELETE marker
-            if _yaml_markers.is_delete(value):
-                result.pop(key, None)
-                continue
-
-            # Handle YAML ReplaceMarker - no deep merge
-            if _yaml_markers.is_replace(value):
-                result[key] = _copy.deepcopy(value.value)
-                continue
-
-            # Normal merge logic (check for Mapping, not just dict)
-            result_is_mapping = isinstance(result.get(key), _abc.Mapping)
-            value_is_mapping = isinstance(value, _abc.Mapping)
-
-            if key in result and result_is_mapping and value_is_mapping:
-                result[key] = self._deep_merge_dicts(result[key], value)
-            else:
-                result[key] = _copy.deepcopy(value)
-        return result
+        # Delegate to unified merge logic, discard provenance
+        # Use layer_idx=-1 as a sentinel (not a real layer)
+        result, _ = self._merge_value(base, override, {}, -1)
+        # _merge_value returns Any, but we know it's a dict when both inputs are dicts
+        return _typing.cast(dict[str, _typing.Any], result)
 
     # =========================================================================
     # List operations for 2.0 semantics
@@ -774,11 +842,13 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         # Check front_layer for non-DELETE value
         has_front = key in front_raw and not _yaml_markers.is_delete(front_raw[key])
         front_value = None
+        front_is_replace = False
         if has_front:
             raw_value = front_raw[key]
-            # Unwrap ReplaceMarker
+            # Track if this is a ReplaceMarker (prevents merge with source layers)
             if _yaml_markers.is_replace(raw_value):
                 front_value = raw_value.value
+                front_is_replace = True
             else:
                 front_value = raw_value
 
@@ -810,7 +880,15 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
 
         # Step 3: Apply front_layer override
         if has_front:
-            if isinstance(result, dict) and isinstance(front_value, dict):
+            # ReplaceMarker means don't merge with source layers
+            if front_is_replace:
+                result = _copy.deepcopy(front_value)
+                if self._track_provenance:
+                    if isinstance(front_value, dict):
+                        provenance = dict.fromkeys(front_value, -1)
+                    else:
+                        provenance = {".": -1}
+            elif isinstance(result, dict) and isinstance(front_value, dict):
                 result = self._deep_merge_dicts(result, front_value)
                 # Update provenance for front_layer keys (-1 = front_layer)
                 if self._track_provenance:
@@ -897,7 +975,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             if path in self._list_ops:
                 return _operations.apply_operations(value, self._list_ops[path])
             return value
-        elif isinstance(value, dict):
+        # Check Mapping (not just dict) to handle DcmMapping and other types
+        elif isinstance(value, _abc.Mapping):
             obj_id = id(value)
             if obj_id in seen:
                 return value  # Circular reference
@@ -1303,7 +1382,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     def _update_provenance_for_front(
         self,
         provenance: dict[str, _typing.Any],
-        front_value: dict[str, _typing.Any],
+        front_value: _abc.Mapping[str, _typing.Any],
     ) -> None:
         """
         Update provenance dict in-place for front_layer values.
@@ -1311,10 +1390,23 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         Front layer values are marked with index -1 to distinguish them
         from source layers (which have indices >= 0).
 
+        Recursively updates nested dicts to maintain provenance structure.
+
         Args:
             provenance: The provenance dict to update (modified in place).
             front_value: The dict from front_layer being merged.
         """
-        for key in front_value:
-            provenance[key] = -1
+        for key, value in front_value.items():
+            if isinstance(value, _abc.Mapping):
+                # For nested dicts, recurse to maintain structure
+                existing_prov = provenance.get(key)
+                if isinstance(existing_prov, dict):
+                    # Recurse into existing provenance structure
+                    self._update_provenance_for_front(existing_prov, value)
+                else:
+                    # Create new nested provenance structure
+                    provenance[key] = self._build_provenance(value, -1)
+            else:
+                # Scalar or list - mark as from front_layer
+                provenance[key] = -1
 
