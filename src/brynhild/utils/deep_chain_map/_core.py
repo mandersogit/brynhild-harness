@@ -324,10 +324,27 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         current: dict[str, _typing.Any] = raw_data
         for key in path[:-1]:
             raw_value = current.get(key)
-            # Skip DELETE markers and non-dicts
-            if raw_value is None or _yaml_markers.is_delete(raw_value) or not isinstance(raw_value, dict):
+            # Handle ReplaceMarker — descend into marker.value WITHOUT unwrapping
+            # This preserves replacement semantics on subsequent reads
+            if _yaml_markers.is_replace(raw_value):
+                # Type narrowing: raw_value is ReplaceMarker after is_replace check
+                marker = _typing.cast(_yaml_markers.ReplaceMarker, raw_value)
+                inner = marker.value
+                if isinstance(inner, dict):
+                    # Navigate INTO the marker's dict value (don't unwrap the marker!)
+                    current = inner
+                else:
+                    # ReplaceMarker wraps non-dict, need to replace with a dict
+                    # Wrap in new ReplaceMarker to maintain semantics
+                    new_dict: dict[str, _typing.Any] = {}
+                    current[key] = _yaml_markers.ReplaceMarker(new_dict)
+                    current = new_dict
+            elif raw_value is None or _yaml_markers.is_delete(raw_value) or not isinstance(raw_value, dict):
+                # Skip DELETE markers and non-dicts
                 current[key] = {}
-            current = current[key]
+                current = current[key]
+            else:
+                current = current[key]
 
         final_key = path[-1]
 
@@ -380,9 +397,25 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         current: dict[str, _typing.Any] = raw_data
         for key in path[:-1]:
             raw_value = current.get(key)
-            if raw_value is None or _yaml_markers.is_delete(raw_value) or not isinstance(raw_value, dict):
+            # Handle ReplaceMarker — descend into marker.value WITHOUT unwrapping
+            # This preserves replacement semantics on subsequent reads
+            if _yaml_markers.is_replace(raw_value):
+                # Type narrowing: raw_value is ReplaceMarker after is_replace check
+                marker = _typing.cast(_yaml_markers.ReplaceMarker, raw_value)
+                inner = marker.value
+                if isinstance(inner, dict):
+                    # Navigate INTO the marker's dict value (don't unwrap the marker!)
+                    current = inner
+                else:
+                    # ReplaceMarker wraps non-dict, need to replace with a dict
+                    new_dict: dict[str, _typing.Any] = {}
+                    current[key] = _yaml_markers.ReplaceMarker(new_dict)
+                    current = new_dict
+            elif raw_value is None or _yaml_markers.is_delete(raw_value) or not isinstance(raw_value, dict):
                 current[key] = {}
-            current = current[key]
+                current = current[key]
+            else:
+                current = current[key]
 
         current[path[-1]] = _yaml_markers.DELETE
         # Only invalidate the affected top-level key
@@ -870,12 +903,19 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
                 provenance = {".": -1}
         elif len(values) == 1:
             result = _copy.deepcopy(values[0][1])
+            # Normalize Mapping types (e.g., DcmMapping) to plain dict
+            # This ensures consistent merge behavior downstream
+            if isinstance(result, _abc.Mapping) and not isinstance(result, dict):
+                result = dict(result)
             provenance = self._build_provenance(result, values[0][0])
         else:
             result, provenance = self._deep_merge_with_provenance(values)
 
         # Step 2: Apply nested YAML markers (DELETE and ReplaceMarker)
-        if isinstance(result, dict):
+        # Handle any Mapping type, not just dict
+        if isinstance(result, _abc.Mapping):
+            if not isinstance(result, dict):
+                result = dict(result)
             result = self._apply_yaml_markers(result, (key,))
 
         # Step 3: Apply front_layer override
@@ -883,13 +923,21 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             # ReplaceMarker means don't merge with source layers
             if front_is_replace:
                 result = _copy.deepcopy(front_value)
+                # Clean up any YAML markers (DELETE, ReplaceMarker) inside the replaced value
+                # These can appear if user mutated inside the replaced subtree
+                if isinstance(result, dict):
+                    result = self._apply_yaml_markers(result, (key,))
                 if self._track_provenance:
-                    if isinstance(front_value, dict):
-                        provenance = dict.fromkeys(front_value, -1)
+                    if isinstance(result, _abc.Mapping):
+                        provenance = dict.fromkeys(result, -1)
                     else:
                         provenance = {".": -1}
-            elif isinstance(result, dict) and isinstance(front_value, dict):
-                result = self._deep_merge_dicts(result, front_value)
+            elif isinstance(result, _abc.Mapping) and isinstance(front_value, _abc.Mapping):
+                # Normalize both to dict for consistent merge
+                if not isinstance(result, dict):
+                    result = dict(result)
+                front_dict = dict(front_value) if not isinstance(front_value, dict) else front_value
+                result = self._deep_merge_dicts(result, front_dict)
                 # Update provenance for front_layer keys (-1 = front_layer)
                 if self._track_provenance:
                     self._update_provenance_for_front(provenance, front_value)
@@ -1113,6 +1161,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         Returns:
             Tuple of (merged_value, provenance_dict).
             The provenance dict maps leaf keys to layer indices (0 = highest priority).
+            The provenance dict is a deep copy to prevent external mutation of internal state.
 
         Raises:
             KeyError: If no layer contains the key.
@@ -1125,7 +1174,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             )
 
         value = self[key]  # Ensures cache is populated
-        return value, self._provenance_cache.get(key, {})
+        # Return a deep copy of provenance to prevent external mutation of internal state
+        provenance = self._provenance_cache.get(key, {})
+        return value, _copy.deepcopy(provenance)
 
     def to_dict(self) -> dict[str, _typing.Any]:
         """
