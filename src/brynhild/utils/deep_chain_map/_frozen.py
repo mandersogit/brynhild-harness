@@ -131,15 +131,16 @@ def freeze(value: _typing.Any) -> _typing.Any:
     """
     Wrap mutable containers in frozen views.
 
-    - dict → FrozenMapping
-    - list → FrozenSequence
+    - dict/Mapping → FrozenMapping
+    - list/Sequence → FrozenSequence (except str/bytes)
+    - Already frozen types returned as-is
     - Other types returned as-is
 
     Args:
         value: Any value to potentially freeze.
 
     Returns:
-        Frozen view if value is dict/list, otherwise the value unchanged.
+        Frozen view if value is a mutable container, otherwise unchanged.
 
     Example:
         >>> freeze({"a": [1, 2]})
@@ -149,9 +150,15 @@ def freeze(value: _typing.Any) -> _typing.Any:
         >>> freeze("string")
         'string'
     """
-    if isinstance(value, dict):
+    # Already frozen - return as-is
+    if isinstance(value, (FrozenMapping, FrozenSequence)):
+        return value
+    # Mapping types (dict, DcmMapping, OrderedDict, etc.)
+    if isinstance(value, _abc.Mapping):
         return FrozenMapping(value)
-    if isinstance(value, list):
+    # Sequence types (list, etc.) but NOT str/bytes/tuple
+    # Tuple is already immutable, str/bytes are not containers
+    if isinstance(value, _abc.Sequence) and not isinstance(value, (str, bytes, tuple)):
         return FrozenSequence(value)
     return value
 
