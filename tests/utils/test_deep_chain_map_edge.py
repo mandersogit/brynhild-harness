@@ -226,7 +226,7 @@ class TestEmptyAndNoneValues:
 class TestMutationEdgeCases:
     """Tests for setitem and delitem behavior.
 
-    2.0: Mutations go to front_layer/delete_layer, source layers unchanged.
+    2.0: Mutations go to front_layer (including DELETE markers), source layers unchanged.
     """
 
     def test_setitem_writes_to_front_layer(self) -> None:
@@ -242,8 +242,8 @@ class TestMutationEdgeCases:
         assert dcm.front_layer == {"a": 1}
         assert dcm["a"] == 1
 
-    def test_delitem_marks_in_delete_layer(self) -> None:
-        """2.0: Deleting marks in delete_layer, source layers unchanged."""
+    def test_delitem_marks_deletion_in_front_layer(self) -> None:
+        """2.0: Deleting adds DELETE marker in front_layer, source layers unchanged."""
         layer0 = {"a": 1}
         layer1 = {"b": 2}
         dcm = utils.DeepChainMap(layer0, layer1)
@@ -252,7 +252,7 @@ class TestMutationEdgeCases:
 
         # Source layer unchanged
         assert layer1["b"] == 2
-        # Deleted via delete_layer
+        # Deleted via DELETE marker in front_layer
         assert "b" not in dcm
         assert "a" in dcm  # Unaffected
 

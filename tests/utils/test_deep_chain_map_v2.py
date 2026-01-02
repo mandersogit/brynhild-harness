@@ -2,8 +2,7 @@
 Tests for DeepChainMap 2.0 features.
 
 These tests verify the new immutability and mutation semantics:
-- front_layer for user overrides
-- delete_layer for deletion tracking
+- front_layer for user overrides (including DELETE markers for deletions)
 - Path-based operations
 - MutableProxy for natural dict syntax
 """
@@ -66,14 +65,16 @@ class TestPathHelpers:
         assert raw["a"]["c"] == 2
 
     def test_set_at_path_replaces_when_merge_false(self) -> None:
-        """_set_at_path replaces entirely when merge=False."""
+        """_set_at_path replaces entirely when merge=False, using ReplaceMarker."""
         dcm = utils.DeepChainMap()
         dcm._front_layer._raw_data().update({"a": {"existing": 1, "b": 2}})
 
         dcm._set_at_path(("a",), {"new": "only"}, merge=False)
 
+        # merge=False wraps dict values in ReplaceMarker to prevent merging with source layers
         raw = dcm._front_layer._raw_data()
-        assert raw["a"] == {"new": "only"}
+        assert _yaml.is_replace(raw["a"])
+        assert raw["a"].value == {"new": "only"}
 
     def test_set_at_path_overwrites_deletion_marker(self) -> None:
         """_set_at_path overwrites DELETE marker with value."""
@@ -1097,7 +1098,7 @@ class TestDeleteAndAddLayer:
         del dcm["a"]
         dcm.add_layer({"a": "new"})
 
-        # Still deleted because delete_layer takes precedence
+        # Still deleted because DELETE marker in front_layer takes precedence
         assert "a" not in dcm
 
     def test_delete_then_clear_front_layer_then_add(self) -> None:
@@ -1186,7 +1187,7 @@ class TestListOpsOnRead:
 
 
 class TestToDictWithFullState:
-    """Tests for to_dict with front_layer, delete_layer, list_ops."""
+    """Tests for to_dict with front_layer (including DELETE markers), list_ops."""
 
     def test_to_dict_includes_front_layer(self) -> None:
         """to_dict includes front_layer values."""
@@ -1222,7 +1223,7 @@ class TestToDictWithFullState:
         )
         dcm["c"] = 3  # front_layer
         dcm["config"]["y"] = 20  # nested front_layer
-        del dcm["a"]  # delete_layer
+        del dcm["a"]  # DELETE marker in front_layer
         dcm.list_append(("items",), 2)  # list_ops
 
         result = dcm.to_dict()
@@ -1246,8 +1247,8 @@ class TestReloadPreservesUserState:
 
         assert dcm["front"] == 2
 
-    def test_reload_preserves_delete_layer(self) -> None:
-        """reload() doesn't clear delete_layer."""
+    def test_reload_preserves_deletions(self) -> None:
+        """reload() doesn't clear DELETE markers in front_layer."""
         dcm = utils.DeepChainMap({"a": 1})
         del dcm["a"]
         dcm.reload()
@@ -1520,8 +1521,8 @@ class TestCopyMethod:
         assert "c" not in dcm
         assert "b" in copied  # Copied from original
 
-    def test_copy_has_independent_delete_layer(self) -> None:
-        """copy() has its own delete_layer."""
+    def test_copy_has_independent_deletions(self) -> None:
+        """copy() has its own front_layer with independent DELETE markers."""
         dcm = utils.DeepChainMap({"a": 1, "b": 2})
         del dcm["a"]
 
@@ -1568,8 +1569,8 @@ class TestPickle2_0State:
         assert restored["front"] == 2
         assert restored._front_layer == {"front": 2}
 
-    def test_pickle_preserves_delete_layer(self) -> None:
-        """Pickle roundtrip preserves deletion markers."""
+    def test_pickle_preserves_deletions(self) -> None:
+        """Pickle roundtrip preserves DELETE markers in front_layer."""
         import pickle as _pickle
 
         dcm = utils.DeepChainMap({"a": 1, "b": 2})

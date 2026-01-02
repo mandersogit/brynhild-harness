@@ -261,7 +261,7 @@ class TestDeepChainMapMutation:
         assert dcm["a"]["b"] == 2
 
     def test_delitem_marks_deleted(self) -> None:
-        """2.0: Deleting marks in delete_layer, source layers unchanged."""
+        """2.0: Deleting marks DELETE in front_layer, source layers unchanged."""
         layer0 = {"a": 1}
         layer1 = {"a": 2}
         dcm = utils.DeepChainMap(layer0, layer1)
@@ -271,7 +271,7 @@ class TestDeepChainMapMutation:
         # Source layers unchanged
         assert layer0["a"] == 1
         assert layer1["a"] == 2
-        # Deleted via delete_layer
+        # Deleted via DELETE marker in front_layer
         assert "a" not in dcm
 
     def test_delitem_missing_raises(self) -> None:
