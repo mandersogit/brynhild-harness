@@ -139,13 +139,48 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         return [_frozen.FrozenMapping(layer) for layer in self._layers]
 
     @property
-    def front_layer(self) -> _yaml_markers.DcmMapping:
-        """Read-only access to the front layer (user overrides and deletions)."""
-        return self._front_layer
+    def front_layer(self) -> _frozen.FrozenMapping:
+        """
+        Read-only view of the front layer (user overrides and deletions).
+
+        Returns a FrozenMapping that prevents accidental mutation.
+        DELETE markers are hidden (keys appear not to exist).
+        For internal/debugging access to the mutable front layer, use
+        _front_layer_mutable().
+        """
+        # Wrap the DcmMapping (not raw data) so DELETE markers are hidden
+        return _frozen.FrozenMapping(self._front_layer)
 
     @property
-    def list_ops(self) -> dict[tuple[str, ...], list[_typing.Any]]:
-        """Read-only access to pending list operations."""
+    def list_ops(self) -> _typing.Mapping[tuple[str, ...], tuple[_typing.Any, ...]]:
+        """
+        Read-only view of pending list operations.
+
+        Returns an immutable mapping with tuples instead of lists to prevent
+        accidental mutation. For internal access, use _list_ops_mutable().
+        """
+        import types as _types
+
+        # Convert lists to tuples for immutability
+        frozen_ops = {path: tuple(ops) for path, ops in self._list_ops.items()}
+        return _types.MappingProxyType(frozen_ops)
+
+    def _front_layer_mutable(self) -> _yaml_markers.DcmMapping:
+        """
+        Internal access to the mutable front layer.
+
+        WARNING: Mutating this directly will NOT invalidate caches.
+        Call reload() after making changes.
+        """
+        return self._front_layer
+
+    def _list_ops_mutable(self) -> dict[tuple[str, ...], list[_typing.Any]]:
+        """
+        Internal access to the mutable list_ops dict.
+
+        WARNING: Mutating this directly will NOT invalidate caches.
+        Call reload() after making changes.
+        """
         return self._list_ops
 
     def add_layer(
@@ -228,9 +263,23 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self._clear_cache()
 
     def _clear_cache(self) -> None:
-        """Clear internal caches."""
+        """Clear all internal caches."""
         self._cache.clear()
         self._provenance_cache.clear()
+
+    def _invalidate_key(self, key: str) -> None:
+        """
+        Invalidate cache for a single top-level key.
+
+        More efficient than _clear_cache() when only one key is affected.
+        Used by _set_at_path and _delete_at_path since mutations only
+        affect one top-level key.
+
+        Args:
+            key: The top-level key to invalidate.
+        """
+        self._cache.pop(key, None)
+        self._provenance_cache.pop(key, None)
 
     # =========================================================================
     # Path helpers for 2.0 mutation semantics
@@ -293,7 +342,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         else:
             current[final_key] = _copy.deepcopy(value)
 
-        self._clear_cache()
+        # Only invalidate the affected top-level key (more efficient than clearing all)
+        self._invalidate_key(path[0])
 
     def _delete_at_path(self, path: tuple[str, ...]) -> None:
         """
@@ -332,7 +382,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             current = current[key]
 
         current[path[-1]] = _yaml_markers.DELETE
-        self._clear_cache()
+        # Only invalidate the affected top-level key
+        self._invalidate_key(path[0])
 
     def _is_deleted_in_front_layer(self, path: tuple[str, ...]) -> bool:
         """
@@ -425,6 +476,8 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         After owning, the list is independent of source updates.
         Direct mutations to front_layer[path] won't be visible to sources.
 
+        The copied list includes any pending list_ops (they are "baked in").
+
         Args:
             path: Path to the list to own.
 
@@ -432,19 +485,32 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             KeyError: If path doesn't exist.
             TypeError: If value at path is not a list.
         """
-        import collections.abc as _abc
+        if not path:
+            raise KeyError("Empty path")
 
-        # Get current merged value at path
-        value = self._get_at_path(path)
+        # Ensure cache is populated for the top-level key
+        top_key = path[0]
+        if top_key not in self._cache:
+            _ = self[top_key]
 
-        # Support list and Sequence (FrozenSequence)
-        if not isinstance(value, _abc.Sequence) or isinstance(value, str):
+        # Navigate through the RAW cache to get the actual list (not FrozenSequence)
+        current: _typing.Any = self._cache[top_key]
+        for key in path[1:]:
+            if not isinstance(current, _abc.Mapping):
+                raise KeyError(f"Cannot navigate through non-Mapping at {key!r}")
+            current = current[key]
+
+        # Verify it's a list
+        if not isinstance(current, list):
             raise TypeError(f"Value at path {path!r} is not a list")
 
-        # Copy to front_layer
-        self._set_at_path(path, list(value), merge=False)
+        # Deep copy the raw list (not FrozenSequence, so no frozen wrappers)
+        owned_list = _copy.deepcopy(current)
 
-        # Clear any pending operations for this path
+        # Copy to front_layer
+        self._set_at_path(path, owned_list, merge=False)
+
+        # Clear any pending operations for this path (they're now baked in)
         if path in self._list_ops:
             del self._list_ops[path]
 
@@ -567,7 +633,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         if path not in self._list_ops:
             self._list_ops[path] = []
         self._list_ops[path].append(op)
-        self._clear_cache()
+        # Only invalidate the affected top-level key
+        if path:
+            self._invalidate_key(path[0])
 
     def _get_raw_layer_value(
         self,
@@ -620,6 +688,43 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
                 raise KeyError(f"Cannot navigate through non-dict at {key!r}")
         return current
 
+    def _get_cached_data_at_path(self, path: tuple[str, ...]) -> _abc.Mapping[str, _typing.Any]:
+        """
+        Get raw cached data at a nested path (for MutableProxy live views).
+
+        This returns the actual cached dict/Mapping, not a wrapped proxy.
+        Used by MutableProxy to get fresh data on each access.
+
+        Args:
+            path: Path to navigate (must have at least one component).
+
+        Returns:
+            The Mapping at the path in the cache.
+
+        Raises:
+            KeyError: If path doesn't exist or value is not a Mapping.
+        """
+        if not path:
+            raise KeyError("Empty path")
+
+        # Ensure top-level key is cached
+        top_key = path[0]
+        if top_key not in self._cache:
+            # Trigger cache population (but don't return the proxy)
+            _ = self[top_key]
+
+        # Navigate through cache
+        current: _typing.Any = self._cache[top_key]
+        for key in path[1:]:
+            if not isinstance(current, _abc.Mapping):
+                raise KeyError(f"Cannot navigate through non-Mapping at {key!r}")
+            current = current[key]
+
+        if not isinstance(current, _abc.Mapping):
+            raise KeyError(f"Value at path {path!r} is not a Mapping")
+
+        return current
+
     def __getitem__(self, key: str) -> _typing.Any:
         """
         Get a merged value for key.
@@ -629,9 +734,14 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         2. Merge source layers (lowest to highest priority)
            - DELETE marker stops merging from that layer down
            - ReplaceMarker prevents deep merge, uses value exactly
-        3. Apply list_ops (replay operations on lists)
+        3. Apply nested YAML markers (DELETE, ReplaceMarker in nested structures)
         4. Apply front_layer (deep merge overrides)
-        5. Return appropriate wrapper (MutableProxy for dicts, FrozenSequence for lists)
+        5. Apply list_ops (replay operations on lists) — AFTER front_layer!
+        6. Return appropriate wrapper (MutableProxy for dicts, FrozenSequence for lists)
+
+        Note: list_ops are applied AFTER front_layer so that own_list() + list ops
+        works correctly. Lists in front_layer (from own_list) will have list ops
+        applied to them.
 
         Raises:
             KeyError: If key doesn't exist or is deleted.
@@ -698,10 +808,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         if isinstance(result, dict):
             result = self._apply_yaml_markers(result, (key,))
 
-        # Step 3: Apply list_ops
-        result = self._apply_all_list_ops(result, (key,))
-
-        # Step 4: Apply front_layer override
+        # Step 3: Apply front_layer override
         if has_front:
             if isinstance(result, dict) and isinstance(front_value, dict):
                 result = self._deep_merge_dicts(result, front_value)
@@ -713,6 +820,10 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
                 # Scalar from front_layer
                 if self._track_provenance:
                     provenance = {".": -1}
+
+        # Step 4: Apply list_ops AFTER front_layer
+        # This ensures own_list() + list_append() works correctly
+        result = self._apply_all_list_ops(result, (key,))
 
         self._cache[key] = result
         if self._track_provenance:
@@ -807,12 +918,15 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
             value: The merged value.
 
         Returns:
-            MutableProxy for dicts, FrozenSequence for lists, value otherwise.
+            MutableProxy for Mappings (dict, DcmMapping, etc.),
+            FrozenSequence for lists, value otherwise.
         """
         import brynhild.utils.deep_chain_map._proxy as _proxy
 
-        if isinstance(value, dict):
-            return _proxy.MutableProxy(self, (key,), value)
+        # Check Mapping (not just dict) to catch DcmMapping and other Mapping types
+        if isinstance(value, _abc.Mapping):
+            # Use live data mode for proper live view semantics
+            return _proxy.MutableProxy(self, (key,), value, _use_live_data=True)
         if isinstance(value, list):
             return _frozen.FrozenSequence(value)
         return value
@@ -943,12 +1057,11 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         """
         result: dict[str, _typing.Any] = {}
         for key in self:
-            value = self._cache.get(key)
-            if value is None:
+            # Use 'in' check instead of .get() to handle None values correctly
+            if key not in self._cache:
                 # Trigger cache population
                 _ = self[key]
-                value = self._cache[key]
-            result[key] = _copy.deepcopy(value)
+            result[key] = _copy.deepcopy(self._cache[key])
         return result
 
     def copy(self) -> DeepChainMap:
