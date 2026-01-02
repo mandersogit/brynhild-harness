@@ -17,7 +17,18 @@ Usage:
     ./scripts/commit-helper plan.yaml                    # Preview
     ./scripts/commit-helper plan.yaml --execute          # Execute in source repo
     ./scripts/commit-helper plan.yaml --sync-public      # Sync to public repo
+
+Commit Plan Format:
+    commits:
+      - message: |
+          type: short description
+        files:
+          - path/to/added_or_modified.py
+        deleted:
+          - path/to/removed.py
 """
+
+# ruff: noqa: E402 (imports not at top - polyglot script)
 
 import pathlib as _pathlib
 import shutil as _shutil
@@ -27,7 +38,6 @@ import typing as _typing
 
 import click as _click
 import yaml as _yaml
-
 
 # Default repository paths for brynhild
 DEFAULT_SOURCE_REPO = _pathlib.Path("/Users/manderso/git/github/brynhild")
@@ -49,8 +59,19 @@ def _run_git(
     args: list[str],
     cwd: _pathlib.Path,
     dry_run: bool = False,
+    check: bool = True,
 ) -> _subprocess.CompletedProcess[str]:
-    """Run a git command."""
+    """Run a git command.
+
+    Args:
+        args: Git command arguments (without 'git' prefix).
+        cwd: Working directory for the command.
+        dry_run: If True, print command without executing.
+        check: If True, exit on non-zero return code.
+
+    Returns:
+        CompletedProcess result.
+    """
     cmd = ["git"] + args
     if dry_run:
         _click.echo(f"  [DRY-RUN] {' '.join(cmd)}")
@@ -62,18 +83,21 @@ def _run_git(
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
+    if check and result.returncode != 0:
         _click.echo(f"  ERROR: git {' '.join(args)}", err=True)
         _click.echo(f"  {result.stderr}", err=True)
         _sys.exit(1)
     return result
 
 
-def _validate_files(
+def _validate_files_exist(
     files: list[str],
     repo_path: _pathlib.Path,
 ) -> list[str]:
-    """Validate that all files exist. Returns list of missing files."""
+    """Validate that all files exist on disk.
+
+    Returns list of missing files.
+    """
     missing = []
     for f in files:
         path = repo_path / f
@@ -82,20 +106,67 @@ def _validate_files(
     return missing
 
 
+def _validate_deleted_files(
+    files: list[str],
+    repo_path: _pathlib.Path,
+) -> tuple[list[str], list[str]]:
+    """Validate deleted files: should be tracked by git but not exist on disk.
+
+    Returns:
+        Tuple of (still_exist, not_tracked) - files that fail validation.
+    """
+    still_exist = []
+    not_tracked = []
+
+    for f in files:
+        path = repo_path / f
+        if path.exists():
+            still_exist.append(f)
+            continue
+
+        # Check if file is tracked by git (was deleted)
+        result = _subprocess.run(
+            ["git", "ls-files", "--deleted", f],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if not result.stdout.strip():
+            # Not in deleted list, check if it's in the index at all
+            result2 = _subprocess.run(
+                ["git", "ls-files", f],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if not result2.stdout.strip():
+                not_tracked.append(f)
+
+    return still_exist, not_tracked
+
+
 def _find_duplicate_files(
     commits: list[dict[str, _typing.Any]],
 ) -> dict[str, list[int]]:
     """Find files that appear in multiple commits.
-    
+
+    Checks both 'files' and 'deleted' lists.
+
     Returns dict mapping filename to list of commit indices (1-based).
     """
     file_commits: dict[str, list[int]] = {}
     for i, commit in enumerate(commits, 1):
+        # Check regular files
         for f in commit.get("files", []):
             if f not in file_commits:
                 file_commits[f] = []
             file_commits[f].append(i)
-    
+        # Check deleted files
+        for f in commit.get("deleted", []):
+            if f not in file_commits:
+                file_commits[f] = []
+            file_commits[f].append(i)
+
     # Return only duplicates
     return {f: commits for f, commits in file_commits.items() if len(commits) > 1}
 
@@ -165,19 +236,48 @@ def _preview(plan_path: _pathlib.Path) -> None:
             _click.echo(f"  - {f} → commits {commit_nums}", err=True)
         _sys.exit(1)
 
-    # Validate all files exist
+    # Collect all files and deleted files
     all_files: set[str] = set()
+    all_deleted: set[str] = set()
     for commit in commits:
         all_files.update(commit.get("files", []))
+        all_deleted.update(commit.get("deleted", []))
 
-    missing = _validate_files(list(all_files), src_repo)
-    if missing:
-        _click.echo("ERROR: Missing files in source repo:", err=True)
-        for f in missing:
-            _click.echo(f"  - {f}", err=True)
+    # Validate files exist
+    has_errors = False
+    if all_files:
+        missing = _validate_files_exist(list(all_files), src_repo)
+        if missing:
+            _click.echo("ERROR: Missing files in source repo:", err=True)
+            for f in missing:
+                _click.echo(f"  - {f}", err=True)
+            has_errors = True
+        else:
+            _click.echo(
+                _click.style(f"✓ All {len(all_files)} files exist", fg="green")
+            )
+
+    # Validate deleted files
+    if all_deleted:
+        still_exist, not_tracked = _validate_deleted_files(list(all_deleted), src_repo)
+        if still_exist:
+            _click.echo("ERROR: Files marked for deletion still exist:", err=True)
+            for f in still_exist:
+                _click.echo(f"  - {f}", err=True)
+            has_errors = True
+        if not_tracked:
+            _click.echo("ERROR: Deleted files not tracked by git:", err=True)
+            for f in not_tracked:
+                _click.echo(f"  - {f}", err=True)
+            has_errors = True
+        if not still_exist and not not_tracked:
+            _click.echo(
+                _click.style(f"✓ All {len(all_deleted)} deletions valid", fg="green")
+            )
+
+    if has_errors:
         _sys.exit(1)
 
-    _click.echo(_click.style(f"✓ All {len(all_files)} files exist in source repo", fg="green"))
     _click.echo()
 
     # Show each commit
@@ -185,13 +285,26 @@ def _preview(plan_path: _pathlib.Path) -> None:
         msg_lines = commit["message"].strip().split("\n")
         title = msg_lines[0]
         files = commit.get("files", [])
+        deleted = commit.get("deleted", [])
 
         _click.echo(f"--- Commit {i}: {title} ---")
-        _click.echo(f"Files ({len(files)}):")
-        for f in files[:5]:
-            _click.echo(f"  + {f}")
-        if len(files) > 5:
-            _click.echo(f"  ... and {len(files) - 5} more")
+
+        # Show added/modified files
+        if files:
+            _click.echo(f"Files ({len(files)}):")
+            for f in files[:5]:
+                _click.echo(f"  + {f}")
+            if len(files) > 5:
+                _click.echo(f"  ... and {len(files) - 5} more")
+
+        # Show deleted files
+        if deleted:
+            _click.echo(f"Deleted ({len(deleted)}):")
+            for f in deleted[:5]:
+                _click.echo(_click.style(f"  - {f}", fg="red"))
+            if len(deleted) > 5:
+                _click.echo(f"  ... and {len(deleted) - 5} more")
+
         _click.echo()
 
 
@@ -213,17 +326,35 @@ def execute(ctx: _click.Context, dry_run: bool) -> None:
         _click.echo("(DRY RUN - no changes will be made)")
     _click.echo()
 
-    # Validate all files exist
+    # Collect and validate all files
     all_files: set[str] = set()
+    all_deleted: set[str] = set()
     for commit in plan.get("commits", []):
         all_files.update(commit.get("files", []))
+        all_deleted.update(commit.get("deleted", []))
 
-    missing = _validate_files(list(all_files), src_repo)
-    if missing:
-        _click.echo("ERROR: Missing files:", err=True)
-        for f in missing:
-            _click.echo(f"  - {f}", err=True)
-        _sys.exit(1)
+    # Validate files exist
+    if all_files:
+        missing = _validate_files_exist(list(all_files), src_repo)
+        if missing:
+            _click.echo("ERROR: Missing files:", err=True)
+            for f in missing:
+                _click.echo(f"  - {f}", err=True)
+            _sys.exit(1)
+
+    # Validate deleted files
+    if all_deleted:
+        still_exist, not_tracked = _validate_deleted_files(list(all_deleted), src_repo)
+        if still_exist:
+            _click.echo("ERROR: Files marked for deletion still exist:", err=True)
+            for f in still_exist:
+                _click.echo(f"  - {f}", err=True)
+            _sys.exit(1)
+        if not_tracked:
+            _click.echo("ERROR: Deleted files not tracked by git:", err=True)
+            for f in not_tracked:
+                _click.echo(f"  - {f}", err=True)
+            _sys.exit(1)
 
     # Execute each commit
     # TODO: Fix pre-staged files issue. If files are already staged before
@@ -235,13 +366,18 @@ def execute(ctx: _click.Context, dry_run: bool) -> None:
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
+        deleted = commit.get("deleted", [])
         title = msg.split("\n")[0]
 
         _click.echo(f">>> Commit {i}: {title}")
 
-        # Stage files
+        # Stage added/modified files
         for f in files:
             _run_git(["add", f], src_repo, dry_run)
+
+        # Stage deleted files
+        for f in deleted:
+            _run_git(["rm", "--cached", f], src_repo, dry_run)
 
         # Check if there are staged changes
         if not dry_run:
@@ -289,11 +425,12 @@ def sync_public(ctx: _click.Context, dry_run: bool) -> None:
     for i, commit in enumerate(plan.get("commits", []), 1):
         msg = commit["message"].strip()
         files = commit.get("files", [])
+        deleted = commit.get("deleted", [])
         title = msg.split("\n")[0]
 
         _click.echo(f">>> Commit {i}: {title}")
 
-        # Copy files
+        # Copy added/modified files
         for f in files:
             src_path = src_repo / f
             dst_path = dst_repo / f
@@ -307,6 +444,17 @@ def sync_public(ctx: _click.Context, dry_run: bool) -> None:
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 _shutil.copy2(src_path, dst_path)
             _click.echo(f"  [COPY] {f}")
+
+        # Delete files
+        for f in deleted:
+            dst_path = dst_repo / f
+            if dst_path.exists():
+                if not dry_run:
+                    dst_path.unlink()
+                _click.echo(_click.style(f"  [DELETE] {f}", fg="red"))
+            else:
+                # File might not exist in public repo yet, that's OK
+                _click.echo(f"  [DELETE] {f} (already absent)")
 
         # Stage all changes
         _run_git(["add", "-A"], dst_repo, dry_run)
