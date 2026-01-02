@@ -25,7 +25,9 @@ YAML Extensions:
         >>> from brynhild.utils.deep_chain_map import DcmLoader, DELETE
         >>> import yaml
         >>> data = yaml.load("key: !delete", Loader=DcmLoader)
-        >>> data["key"] is DELETE
+        >>> "key" in data  # DELETE-marked keys appear absent
+        False
+        >>> data._raw_getitem("key") is DELETE  # Raw access for internal use
         True
 """
 
