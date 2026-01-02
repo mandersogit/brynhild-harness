@@ -25,14 +25,23 @@ class ModelProfile:
     """Model family for fallback matching (e.g., 'gpt-oss')."""
 
     description: str = ""
-    """Human-readable description of the profile."""
+    """Human-readable description of the profile.
+
+    Note: Display only; no effect on system behavior.
+    """
 
     # API defaults
     default_temperature: float = 0.7
-    """Default temperature for completions."""
+    """Default temperature for completions.
+
+    Note: Display only; provider uses its own temperature setting.
+    """
 
     default_max_tokens: int = 8192
-    """Default max tokens for responses."""
+    """Default max tokens for responses.
+
+    Note: Display only; not enforced. Use min_max_tokens for enforcement.
+    """
 
     min_max_tokens: int | None = None
     """Minimum max_tokens to use (enforced when profile is active).
@@ -43,13 +52,22 @@ class ModelProfile:
     """
 
     supports_tools: bool = True
-    """Whether this model supports tool/function calling."""
+    """Whether this model supports tool/function calling.
+
+    Note: Display only; provider has its own supports_tools() method.
+    """
 
     supports_reasoning: bool = False
-    """Whether this model supports reasoning traces."""
+    """Whether this model supports reasoning traces.
+
+    Note: Display only; provider has its own supports_reasoning() method.
+    """
 
     supports_streaming: bool = True
-    """Whether this model supports streaming responses."""
+    """Whether this model supports streaming responses.
+
+    Note: Display only; no effect on system behavior.
+    """
 
     # Model-specific API parameters
     api_params: dict[str, _typing.Any] = _dataclasses.field(default_factory=dict)
@@ -59,6 +77,8 @@ class ModelProfile:
     Examples:
         - reasoning_effort: "medium"
         - verbosity: "low"
+
+    Note: Display only; NOT actually passed to provider.
     """
 
     # System prompt components
@@ -80,14 +100,24 @@ class ModelProfile:
     """List of pattern names from prompt_patterns to include in system prompt."""
 
     # Tool configuration
+    # NOTE: These tool fields are aspirational; none currently affect behavior.
     tool_format: str = "openai"
-    """Tool schema format: 'openai', 'anthropic', or 'custom'."""
+    """Tool schema format: 'openai', 'anthropic', or 'custom'.
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     tool_parallelization: bool = True
-    """Whether to allow parallel tool calls."""
+    """Whether to allow parallel tool calls.
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     max_tools_per_turn: int | None = None
-    """Maximum tool calls per turn (None = unlimited)."""
+    """Maximum tool calls per turn (None = unlimited).
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     # Tool call recovery settings
     enable_tool_recovery: bool = False
@@ -116,25 +146,45 @@ class ModelProfile:
     """
 
     # Behavioral settings
+    # NOTE: These behavioral fields are display-only; none currently affect behavior.
     eagerness: _typing.Literal["minimal", "low", "medium", "high"] = "medium"
-    """How proactive vs. waiting for guidance."""
+    """How proactive vs. waiting for guidance.
+
+    Note: Display only; no current effect on system behavior.
+    """
 
     verbosity: _typing.Literal["low", "medium", "high"] = "medium"
-    """Output length preference."""
+    """Output length preference.
+
+    Note: Display only; no current effect on system behavior.
+    """
 
     thoroughness: _typing.Literal["fast", "balanced", "thorough"] = "balanced"
-    """Speed vs. completeness tradeoff."""
+    """Speed vs. completeness tradeoff.
+
+    Note: Display only; no current effect on system behavior.
+    """
 
     # Stuck detection
+    # NOTE: These stuck detection fields are aspirational; none currently affect behavior.
     stuck_detection_enabled: bool = True
-    """Whether to detect stuck/looping behavior."""
+    """Whether to detect stuck/looping behavior.
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     max_similar_tool_calls: int = 3
-    """How many similar tool calls before triggering stuck detection."""
+    """How many similar tool calls before triggering stuck detection.
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     # Provider-specific overrides
     provider_specific: dict[str, _typing.Any] = _dataclasses.field(default_factory=dict)
-    """Provider-specific configuration overrides."""
+    """Provider-specific configuration overrides.
+
+    Note: Aspirational; no current effect on system behavior.
+    """
 
     def get_enabled_patterns_text(self) -> str:
         """Get concatenated text of all enabled prompt patterns."""
@@ -178,4 +228,3 @@ class ModelProfile:
     def from_dict(cls, data: dict[str, _typing.Any]) -> ModelProfile:
         """Create profile from dictionary."""
         return cls(**data)
-
