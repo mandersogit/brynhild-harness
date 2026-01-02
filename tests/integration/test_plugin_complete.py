@@ -234,6 +234,11 @@ class TestStandaloneSkills:
         assert "[TEST-STANDALONE-SKILL]" in skill.body
 
 
+# Skip reason for disabled rules feature
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
+
+
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestRulesFixtures:
     """Test rules fixtures."""
 
@@ -339,4 +344,3 @@ class TestPluginIntegration:
         assert d["hooks"] is True
         assert "debugging" in d["skills"]
         assert "test-marker" in d["providers"]
-

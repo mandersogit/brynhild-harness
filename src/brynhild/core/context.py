@@ -74,12 +74,34 @@ class ContextBuilder:
     Fires CONTEXT_BUILD hook to allow plugins to inject content.
     """
 
+    # TODO: AUDIT RULES INJECTION SYSTEM
+    #
+    # The rules injection system (include_rules) is DISABLED by default.
+    # It was auto-loading files like AGENTS.md, .cursorrules, rules.md and
+    # injecting them into the system prompt wrapped in <project_rules> tags.
+    #
+    # Problems identified:
+    # 1. AGENTS.md is agent onboarding documentation (for the LLM to read and
+    #    understand the project), NOT instructions for the system prompt.
+    # 2. Auto-discovery of arbitrary markdown files is surprising/"magic".
+    # 3. The concatenation of multiple rule files creates confusing prompts.
+    # 4. No clear UX for users to understand what's being injected.
+    #
+    # Before re-enabling, decide:
+    # - Should this feature exist at all?
+    # - If yes, should it be opt-in with explicit file list?
+    # - What files should be included vs excluded?
+    # - How should it interact with the new profile system?
+    #
+    # The code remains intact in rules.py and here, just disabled by default.
+    # Set include_rules=True to re-enable for testing/development.
+
     def __init__(
         self,
         *,
         project_root: _pathlib.Path | None = None,
         logger: brynhild_logging.ConversationLogger | None = None,
-        include_rules: bool = True,
+        include_rules: bool = False,  # DISABLED - see TODO above
         include_skills: bool = True,
         profile_name: str | None = None,
         model: str | None = None,
@@ -94,7 +116,7 @@ class ContextBuilder:
         Args:
             project_root: Project root for discovery.
             logger: Logger for recording injections.
-            include_rules: Whether to load and inject rules.
+            include_rules: Whether to load and inject rules (DISABLED by default).
             include_skills: Whether to load and inject skill metadata.
             profile_name: Explicit profile name to use.
             model: Model name for profile resolution.
@@ -518,7 +540,7 @@ def build_context(
     *,
     project_root: _pathlib.Path | None = None,
     logger: brynhild_logging.ConversationLogger | None = None,
-    include_rules: bool = True,
+    include_rules: bool = False,  # DISABLED - see ContextBuilder TODO
     include_skills: bool = True,
     profile_name: str | None = None,
     model: str | None = None,
@@ -531,7 +553,7 @@ def build_context(
         base_system_prompt: The base system prompt to enhance.
         project_root: Project root for discovery.
         logger: Logger for recording injections.
-        include_rules: Whether to load and inject rules.
+        include_rules: Whether to load and inject rules (DISABLED by default).
         include_skills: Whether to load and inject skill metadata.
         profile_name: Explicit profile name to use.
         model: Model name for profile resolution.

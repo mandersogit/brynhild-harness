@@ -407,7 +407,7 @@ async def _run_conversation(
         base_prompt,
         project_root=settings.project_root,
         logger=conv_logger,
-        include_rules=True,
+        # include_rules disabled - see TODO in context.py
         include_skills=True,
         profile_name=profile_name,
         model=settings.model,
@@ -598,7 +598,7 @@ def _handle_interactive_mode(
         base_prompt,
         project_root=settings.project_root,
         logger=conv_logger,
-        include_rules=True,
+        # include_rules disabled - see TODO in context.py
         include_skills=True,
         profile_name=profile_name,
         model=settings.model,

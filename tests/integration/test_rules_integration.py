@@ -8,15 +8,25 @@ Test IDs from design-plan-phase6.md:
 - RI-04: Multiple rule files concatenate
 - RI-05: Missing rule files handled
 - RI-06: Rules logged
+
+NOTE: The rules injection system is currently DISABLED.
+See TODO in brynhild.core.context.ContextBuilder and RULE_FILES in brynhild.plugins.rules.
+All tests in this file are skipped until the feature is audited and re-enabled.
 """
 
 import pathlib as _pathlib
+
+import pytest as _pytest
 
 import brynhild.core.context as context
 import brynhild.logging.conversation_logger as conversation_logger
 import brynhild.plugins.rules as rules
 
+# Skip reason for disabled rules feature
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
 
+
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestRulesIntegration:
     """Integration tests for rules system."""
 
@@ -74,9 +84,7 @@ class TestRulesIntegration:
         files = manager.list_rule_files()
         assert any(".cursorrules" in f["path"] for f in files)
 
-    def test_ri04_multiple_rule_files_concatenate(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_ri04_multiple_rule_files_concatenate(self, tmp_path: _pathlib.Path) -> None:
         """RI-04: Rules from multiple sources appear in order."""
         # Setup: Create multiple rule files
         (tmp_path / "AGENTS.md").write_text("# From AGENTS.md")
@@ -149,12 +157,11 @@ class TestRulesIntegration:
         assert "Logged Rules Content" in log_content
 
 
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestRulesWalkToRoot:
     """Test rules discovery walking up directory tree."""
 
-    def test_discovers_rules_in_parent_directories(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_discovers_rules_in_parent_directories(self, tmp_path: _pathlib.Path) -> None:
         """Rules in parent directories are discovered."""
         # Setup: Create nested structure
         parent = tmp_path / "parent"
@@ -193,4 +200,3 @@ class TestRulesWalkToRoot:
         # Should find parent and child
         assert any("parent/AGENTS.md" in p for p in paths_str)
         assert any("child/AGENTS.md" in p for p in paths_str)
-

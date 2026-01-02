@@ -6,14 +6,24 @@ Tests verify that:
 - Walk-to-root discovery works
 - Global and project rules are merged
 - Rules are formatted for prompt inclusion
+
+NOTE: The rules injection system is currently DISABLED.
+See TODO in brynhild.core.context.ContextBuilder and RULE_FILES in brynhild.plugins.rules.
+Most tests in this file are skipped until the feature is audited and re-enabled.
 """
 
 import pathlib as _pathlib
 import unittest.mock as _mock
 
+import pytest as _pytest
+
 import brynhild.plugins.rules as rules
 
+# Skip reason for disabled rules feature
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
 
+
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestDiscoverRuleFiles:
     """Tests for discover_rule_files function."""
 
@@ -146,14 +156,13 @@ class TestLoadGlobalRules:
 
     def test_returns_empty_if_dir_missing(self) -> None:
         """Returns empty list if global dir doesn't exist."""
-        with _mock.patch.object(
-            rules, "GLOBAL_RULES_DIR", _pathlib.Path("/nonexistent/path")
-        ):
+        with _mock.patch.object(rules, "GLOBAL_RULES_DIR", _pathlib.Path("/nonexistent/path")):
             loaded = rules.load_global_rules()
 
         assert loaded == []
 
 
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestRulesManager:
     """Tests for RulesManager class."""
 
@@ -209,9 +218,7 @@ class TestRulesManager:
         reloaded = manager.load_rules(force_reload=True)
         assert "Modified" in reloaded
 
-    def test_get_rules_for_prompt_wraps_content(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_rules_for_prompt_wraps_content(self, tmp_path: _pathlib.Path) -> None:
         """get_rules_for_prompt wraps rules in XML tags."""
         (tmp_path / "AGENTS.md").write_text("My rules")
 
@@ -225,9 +232,7 @@ class TestRulesManager:
         assert "</project_rules>" in prompt
         assert "My rules" in prompt
 
-    def test_get_rules_for_prompt_empty_returns_empty(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_rules_for_prompt_empty_returns_empty(self, tmp_path: _pathlib.Path) -> None:
         """get_rules_for_prompt returns empty string if no rules."""
         manager = rules.RulesManager(
             project_root=tmp_path,
@@ -237,9 +242,7 @@ class TestRulesManager:
 
         assert prompt == ""
 
-    def test_list_rule_files_includes_metadata(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_list_rule_files_includes_metadata(self, tmp_path: _pathlib.Path) -> None:
         """list_rule_files returns path, source, and size."""
         (tmp_path / "AGENTS.md").write_text("x" * 100)
 
@@ -297,6 +300,7 @@ class TestRulesManager:
 class TestHelperFunctions:
     """Tests for module-level helper functions."""
 
+    @_pytest.mark.skip(reason=RULES_DISABLED_REASON)
     def test_rule_files_constant(self) -> None:
         """RULE_FILES contains expected file names."""
         assert "AGENTS.md" in rules.RULE_FILES
@@ -308,4 +312,3 @@ class TestHelperFunctions:
         """get_global_rules_path returns expected path."""
         path = rules.get_global_rules_path()
         assert path.parts[-3:] == (".config", "brynhild", "rules")
-

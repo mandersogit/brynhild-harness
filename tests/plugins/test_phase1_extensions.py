@@ -11,11 +11,16 @@ Tests:
 import pathlib as _pathlib
 import tempfile as _tempfile
 
+import pytest as _pytest
+
 import brynhild.hooks.events as events
 import brynhild.logging as brynhild_logging
 import brynhild.plugins.manifest as manifest
 import brynhild.plugins.rules as rules
 import brynhild.tools.base as tools_base
+
+# Skip reason for disabled rules feature
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
 
 
 class TestContextBuildEvent:
@@ -184,6 +189,7 @@ class TestLoggerInHookContext:
                 logger.close()
 
 
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestPluginRulesContribution:
     """Tests for plugin rules contribution (Gap #6)."""
 
@@ -248,6 +254,7 @@ class TestPluginRulesContribution:
         assert data["rules"] == ["rules.md"]
 
 
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestLoadPluginRules:
     """Tests for load_plugin_rules function."""
 
@@ -336,6 +343,7 @@ class TestLoadPluginRules:
             assert result == []
 
 
+@_pytest.mark.skip(reason=RULES_DISABLED_REASON)
 class TestRulesManagerWithPlugins:
     """Tests for RulesManager plugin integration."""
 
@@ -499,4 +507,3 @@ class TestLoggerPluginEvent:
             assert event["plugin_event_type"] == "custom_action"
             assert event["plugin_data"] == {"param": 123}
             assert event["metadata"] == {"extra": "info"}
-

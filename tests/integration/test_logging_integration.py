@@ -12,8 +12,13 @@ Test IDs from design-plan-phase6.md:
 import json as _json
 import pathlib as _pathlib
 
+import pytest as _pytest
+
 import brynhild.core.context as context
 import brynhild.logging.conversation_logger as conversation_logger
+
+# Skip reason for disabled rules feature
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
 
 
 class TestLoggingIntegration:
@@ -33,6 +38,7 @@ class TestLoggingIntegration:
         assert hasattr(logger, "log_context_checkpoint")
         assert hasattr(logger, "context_version")
 
+    @_pytest.mark.skip(reason=RULES_DISABLED_REASON)
     def test_li02_rules_injection_logged(self, tmp_path: _pathlib.Path) -> None:
         """LI-02: Rules injection produces log event."""
         # Create rules
@@ -60,9 +66,9 @@ class TestLoggingIntegration:
         # Parse log and find rules injection
         events = _parse_log_file(log_file)
         rules_injections = [
-            e for e in events
-            if e.get("event_type") == "context_injection"
-            and e.get("source") == "rules"
+            e
+            for e in events
+            if e.get("event_type") == "context_injection" and e.get("source") == "rules"
         ]
 
         assert len(rules_injections) >= 1
@@ -92,9 +98,9 @@ class TestLoggingIntegration:
         # Parse log and find skill trigger
         events = _parse_log_file(log_file)
         skill_triggers = [
-            e for e in events
-            if e.get("event_type") == "context_injection"
-            and e.get("source") == "skill_trigger"
+            e
+            for e in events
+            if e.get("event_type") == "context_injection" and e.get("source") == "skill_trigger"
         ]
 
         assert len(skill_triggers) == 1
@@ -125,9 +131,9 @@ class TestLoggingIntegration:
         # Parse log and find hook injection
         events = _parse_log_file(log_file)
         hook_injections = [
-            e for e in events
-            if e.get("event_type") == "context_injection"
-            and e.get("source") == "hook"
+            e
+            for e in events
+            if e.get("event_type") == "context_injection" and e.get("source") == "hook"
         ]
 
         assert len(hook_injections) == 1
@@ -137,9 +143,7 @@ class TestLoggingIntegration:
 class TestLogReplay:
     """Tests for log replay and context reconstruction."""
 
-    def test_li05_log_replay_reconstructs_context(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_li05_log_replay_reconstructs_context(self, tmp_path: _pathlib.Path) -> None:
         """LI-05: Parsing log file gives full context sequence."""
         log_file = tmp_path / "test.jsonl"
         logger = conversation_logger.ConversationLogger(
@@ -256,4 +260,3 @@ def _parse_log_file(path: _pathlib.Path) -> list[dict]:
             if line:
                 events.append(_json.loads(line))
     return events
-

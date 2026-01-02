@@ -21,12 +21,14 @@ if _typing.TYPE_CHECKING:
     import brynhild.plugins.manifest as _manifest
 
 # Rule file names to search for, in priority order
-RULE_FILES = [
-    "AGENTS.md",
-    ".cursorrules",
-    "rules.md",
-    ".brynhild/rules.md",
-]
+# RULE_FILES = [
+#     "AGENTS.md",
+#     ".cursorrules",
+#     "rules.md",
+#     ".brynhild/rules.md",
+# ]
+# TODO: AUDIT RULES INJECTION SYSTEM (see brynhild.core.context.ContextBuilder)
+RULE_FILES: list[str] = []
 
 # Global rules directory
 GLOBAL_RULES_DIR = _pathlib.Path.home() / ".config" / "brynhild" / "rules"

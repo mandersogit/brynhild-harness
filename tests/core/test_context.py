@@ -11,9 +11,15 @@ These tests verify that:
 import pathlib as _pathlib
 import unittest.mock as _mock
 
+import pytest as _pytest
+
 import brynhild.core.context as context
 import brynhild.logging.conversation_logger as conversation_logger
 import brynhild.profiles.types as profiles_types
+
+# The rules injection system is DISABLED.
+# See TODO in brynhild.core.context.ContextBuilder and RULE_FILES in brynhild.plugins.rules.
+RULES_DISABLED_REASON = "Rules injection is disabled - see TODO in context.py and rules.py"
 
 
 class TestContextInjection:
@@ -91,6 +97,7 @@ class TestContextBuilder:
         assert ctx.base_prompt == "Base system prompt"
         assert len(ctx.injections) == 0
 
+    @_pytest.mark.skip(reason=RULES_DISABLED_REASON)
     def test_build_with_rules_prepends_content(self, tmp_path: _pathlib.Path) -> None:
         """Rules content is prepended to system prompt."""
         # Create an AGENTS.md file
@@ -109,9 +116,7 @@ class TestContextBuilder:
         assert "Project Rules" in ctx.system_prompt
         assert "Base prompt" in ctx.system_prompt
         # Rules come first
-        assert ctx.system_prompt.index("Project Rules") < ctx.system_prompt.index(
-            "Base prompt"
-        )
+        assert ctx.system_prompt.index("Project Rules") < ctx.system_prompt.index("Base prompt")
         # Should have rules injection
         assert any(i.source == "rules" for i in ctx.injections)
 
@@ -148,9 +153,7 @@ Use print statements first.
 
     def test_build_applies_profile(self) -> None:
         """Profile prefix/suffix is applied."""
-        with _mock.patch(
-            "brynhild.profiles.manager.ProfileManager.resolve"
-        ) as mock_resolve:
+        with _mock.patch("brynhild.profiles.manager.ProfileManager.resolve") as mock_resolve:
             profile = profiles_types.ModelProfile(
                 name="test-profile",
                 system_prompt_prefix="[Profile Prefix]",
@@ -195,6 +198,7 @@ Use print statements first.
         assert "context_init" in log_content
         assert "context_ready" in log_content
 
+    @_pytest.mark.skip(reason=RULES_DISABLED_REASON)
     def test_build_logs_rules_injection(self, tmp_path: _pathlib.Path) -> None:
         """Rules injection is logged."""
         # Create rules file
@@ -257,9 +261,7 @@ class TestBuildContextFunction:
 class TestContextLogging:
     """Test context logging integration."""
 
-    def test_context_version_increments_with_injections(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_context_version_increments_with_injections(self, tmp_path: _pathlib.Path) -> None:
         """Context version increments with each injection."""
         log_file = tmp_path / "test.jsonl"
         logger = conversation_logger.ConversationLogger(
@@ -356,9 +358,8 @@ class TestContextLogging:
 class TestContextIntegrationScenarios:
     """Integration scenarios for context building."""
 
-    def test_full_context_build_with_rules_skills_profile(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    @_pytest.mark.skip(reason=RULES_DISABLED_REASON)
+    def test_full_context_build_with_rules_skills_profile(self, tmp_path: _pathlib.Path) -> None:
         """Full integration: rules + skills + profile."""
         # Create rules
         agents_md = tmp_path / "AGENTS.md"
@@ -378,9 +379,7 @@ Write tests first.
         )
 
         # Build with mocked profile
-        with _mock.patch(
-            "brynhild.profiles.manager.ProfileManager.resolve"
-        ) as mock_resolve:
+        with _mock.patch("brynhild.profiles.manager.ProfileManager.resolve") as mock_resolve:
             profile = profiles_types.ModelProfile(
                 name="test",
                 system_prompt_prefix="[Prefix]",
@@ -401,4 +400,3 @@ Write tests first.
         assert "Base system prompt" in ctx.system_prompt
         assert ctx.profile is not None
         assert any(i.source == "rules" for i in ctx.injections)
-
