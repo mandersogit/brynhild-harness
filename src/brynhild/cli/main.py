@@ -1121,8 +1121,9 @@ def _print_config_with_provenance(
             if isinstance(config_data[key], dict):
                 # Check provenance structure for top-level label
                 if "." in prov:
-                    # Scalar-like provenance
+                    # Scalar-like provenance - "." value is always int
                     layer_idx = prov["."]
+                    assert isinstance(layer_idx, int)
                     top_code = layer_codes.get(layer_idx, builtin_code)
                     line_suffix = get_line_suffix(layer_idx, key_path)
                     top_code_with_line = f"{top_code}{line_suffix}"
@@ -1141,9 +1142,10 @@ def _print_config_with_provenance(
                 lines.append((f"{key}:", top_code_with_line))
                 collect_lines(config_data[key], prov, depth=1, path_prefix=key_path)
             else:
-                # Top-level scalar
+                # Top-level scalar - "." value is always int
                 val = config_data[key]
-                layer_idx = prov.get(".", default_layer_idx)
+                dot_prov = prov.get(".", default_layer_idx)
+                layer_idx = dot_prov if isinstance(dot_prov, int) else default_layer_idx
                 code = layer_codes.get(layer_idx, builtin_code)
                 line_suffix = get_line_suffix(layer_idx, key_path)
                 code_with_line = f"{code}{line_suffix}"

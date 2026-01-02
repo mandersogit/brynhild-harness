@@ -127,6 +127,19 @@ class FrozenSequence(_abc.Sequence[_typing.Any]):
         raise TypeError(f"unhashable type: '{type(self).__name__}'")
 
 
+# Overloads for better type inference at call sites
+@_typing.overload
+def freeze(value: _abc.Mapping[str, _typing.Any]) -> FrozenMapping: ...
+
+
+@_typing.overload
+def freeze(value: _abc.Sequence[_typing.Any]) -> FrozenSequence: ...
+
+
+@_typing.overload
+def freeze(value: _typing.Any) -> _typing.Any: ...
+
+
 def freeze(value: _typing.Any) -> _typing.Any:
     """
     Wrap mutable containers in frozen views.

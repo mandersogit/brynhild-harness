@@ -26,6 +26,7 @@ import typing as _typing
 
 import brynhild.utils.deep_chain_map._frozen as _frozen
 import brynhild.utils.deep_chain_map._operations as _operations
+import brynhild.utils.deep_chain_map._types as _types
 import brynhild.utils.deep_chain_map._yaml as _yaml_markers
 
 
@@ -110,11 +111,11 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self._layers: list[_abc.Mapping[str, _typing.Any]] = list(maps)
         self._track_provenance = track_provenance
         self._cache: dict[str, _typing.Any] = {}
-        self._provenance_cache: dict[str, dict[str, _typing.Any]] = {}
+        self._provenance_cache: dict[str, _types.Provenance] = {}
 
         # Front layer for user modifications (DcmMapping handles both values and deletions)
         self._front_layer: _yaml_markers.DcmMapping = _yaml_markers.DcmMapping()
-        self._list_ops: dict[tuple[str, ...], list[_typing.Any]] = {}
+        self._list_ops: dict[_types.Path, list[_operations.ListOp]] = {}
 
     @property
     def layers(self) -> list[_frozen.FrozenMapping]:
@@ -540,11 +541,11 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
 
     def _deep_merge_dicts(
         self,
-        base: dict[str, _typing.Any],
-        override: dict[str, _typing.Any],
+        base: _abc.Mapping[str, _typing.Any],
+        override: _abc.Mapping[str, _typing.Any],
     ) -> dict[str, _typing.Any]:
         """
-        Deep merge two dicts, with override taking priority.
+        Deep merge two mappings, with override taking priority.
 
         Handles YAML markers:
         - DELETE: removes the key from merged result
@@ -892,7 +893,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         values = list(reversed(values))
 
         # Merge source layers
-        provenance: dict[str, _typing.Any]
+        provenance: _types.Provenance
         if len(values) == 0:
             # Value only in front_layer
             result = _copy.deepcopy(front_value)
@@ -1154,7 +1155,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     def get_with_provenance(
         self,
         key: str,
-    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
+    ) -> tuple[_typing.Any, _types.Provenance]:
         """
         Get a merged value along with provenance information.
 
@@ -1242,7 +1243,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
     def _deep_merge_with_provenance(
         self,
         values: list[tuple[int, _typing.Any]],
-    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
+    ) -> tuple[_typing.Any, _types.Provenance]:
         """
         Deep merge values from multiple layers.
 
@@ -1269,12 +1270,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         self,
         base: _typing.Any,
         override: _typing.Any,
-        # TODO: Define a proper recursive TypeAlias for provenance instead of Any.
-        # Provenance maps keys to either int (layer index) or nested provenance dict.
-        # Correct type: Provenance = dict[str, int | Provenance]
-        provenance: dict[str, _typing.Any],
+        provenance: _types.Provenance,
         layer_idx: int,
-    ) -> tuple[_typing.Any, dict[str, _typing.Any]]:
+    ) -> tuple[_typing.Any, _types.Provenance]:
         """
         Merge override into base.
 
@@ -1337,10 +1335,15 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
 
                 if key in result and result_is_mapping and value_is_mapping:
                     # Recursive merge for nested dicts
+                    existing_prov = provenance.get(key, {})
+                    # existing_prov is int (leaf) or dict (nested) - use {} if int
+                    sub_prov_arg: _types.Provenance = (
+                        existing_prov if isinstance(existing_prov, dict) else {}
+                    )
                     result[key], sub_prov = self._merge_value(
                         result[key],
                         value,
-                        provenance.get(key, {}) if isinstance(provenance.get(key), dict) else {},
+                        sub_prov_arg,
                         layer_idx,
                     )
                     new_provenance[key] = sub_prov
@@ -1395,7 +1398,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         layer_idx: int,
         *,
         _seen: set[int] | None = None,
-    ) -> dict[str, _typing.Any]:
+    ) -> _types.Provenance:
         """
         Build initial provenance dict for a value from a single layer.
 
@@ -1432,7 +1435,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
 
     def _update_provenance_for_front(
         self,
-        provenance: dict[str, _typing.Any],
+        provenance: _types.Provenance,
         front_value: _abc.Mapping[str, _typing.Any],
     ) -> None:
         """
