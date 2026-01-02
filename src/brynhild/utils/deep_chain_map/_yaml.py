@@ -79,6 +79,10 @@ class ReplaceMarker:
     any parent value exactly, without deep merging even if both are dicts.
 
     Use `.value` to access the wrapped value.
+
+    Note: ReplaceMarker is explicitly unhashable because it wraps potentially
+    unhashable values and proper hash/equality semantics would require hashing
+    the wrapped value (which may be a dict, list, etc.).
     """
 
     __slots__ = ("_value",)
@@ -99,9 +103,9 @@ class ReplaceMarker:
             return bool(self._value == other._value)
         return NotImplemented
 
-    def __hash__(self) -> int:
-        # Not hashable if value isn't hashable
-        return hash(("ReplaceMarker", id(self._value)))
+    # Explicitly unhashable - wrapped values may not be hashable,
+    # and the previous __hash__ using id() violated the hash/equality contract
+    __hash__ = None  # type: ignore[assignment]
 
 
 # =============================================================================
@@ -339,30 +343,28 @@ def _replace_constructor(
           not: merged
         key: !replace [list, items]
         key: !replace ~  (null)
+
+    Uses PyYAML's native value construction to correctly handle all YAML
+    scalar types (booleans, numbers, null, etc.) according to the YAML spec.
     """
     value: _typing.Any
     if isinstance(node, _yaml.MappingNode):
+        # For mappings, use construct_mapping which handles nested structures
         value = loader.construct_mapping(node, deep=True)
     elif isinstance(node, _yaml.SequenceNode):
+        # For sequences, use construct_sequence
         value = loader.construct_sequence(node, deep=True)
     elif isinstance(node, _yaml.ScalarNode):
-        # Parse scalar value properly
-        scalar_value = node.value
-        if scalar_value in ("~", "null", "Null", "NULL", ""):
-            value = None
-        elif scalar_value in ("true", "True", "TRUE"):
-            value = True
-        elif scalar_value in ("false", "False", "FALSE"):
-            value = False
+        # For scalars, use construct_yaml_* methods based on implicit tag
+        # This properly handles all YAML 1.1 scalar types (bool, int, float, null, str)
+        implicit_tag = loader.resolve(_yaml.ScalarNode, node.value, (True, False))  # type: ignore[no-untyped-call]
+        # Find the appropriate constructor for this implicit tag
+        if implicit_tag in loader.yaml_constructors:
+            scalar_constructor = loader.yaml_constructors[implicit_tag]
+            value = scalar_constructor(loader, node)
         else:
-            # Try to interpret as number
-            try:
-                value = int(scalar_value)
-            except ValueError:
-                try:
-                    value = float(scalar_value)
-                except ValueError:
-                    value = scalar_value
+            # Default to string for unknown tags
+            value = node.value
     else:
         value = None
 
