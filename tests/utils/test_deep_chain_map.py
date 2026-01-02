@@ -172,18 +172,25 @@ class TestDeepChainMapCaching:
         assert result1["b"] == result2["b"] == 1
 
     def test_reload_clears_cache(self) -> None:
-        """reload() forces re-merge."""
+        """reload() forces re-merge and proxies see fresh data."""
         data = {"a": {"b": 1}}
         dcm = utils.DeepChainMap(data)
 
         result1 = dcm["a"]
-        data["a"]["b"] = 2  # Modify in place
-        dcm.reload()
-        result2 = dcm["a"]
+        assert result1["b"] == 1  # Initial value
 
-        assert result1["b"] == 1
+        data["a"]["b"] = 2  # Modify in place
+        # Before reload, cache still has old data
+        assert result1["b"] == 1  # Still sees cached value
+
+        dcm.reload()
+        # After reload, proxies are live views and see fresh data
+        assert result1["b"] == 2  # Live proxy sees updated value
+
+        result2 = dcm["a"]
         assert result2["b"] == 2
-        assert result1 is not result2
+        # Both proxies see the same current state
+        assert result1 is not result2  # Different proxy instances
 
 
 class TestDeepChainMapProvenance:

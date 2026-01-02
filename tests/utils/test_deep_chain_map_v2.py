@@ -86,14 +86,18 @@ class TestPathHelpers:
         assert raw["a"]["b"] == "restored"
 
     def test_set_at_path_clears_cache(self) -> None:
-        """_set_at_path clears the cache."""
+        """_set_at_path clears cache for the affected key only."""
         dcm = utils.DeepChainMap({"a": 1})
         _ = dcm["a"]  # Populate cache
         assert "a" in dcm._cache
 
         dcm._set_at_path(("b",), 2)
 
-        assert dcm._cache == {}
+        # Per-key invalidation: "a" still cached, "b" is new
+        assert "a" in dcm._cache
+        # Setting at "a" would invalidate "a"
+        dcm._set_at_path(("a",), 99)
+        assert "a" not in dcm._cache
 
     def test_set_at_path_overwrites_non_dict_intermediate(self) -> None:
         """_set_at_path overwrites scalar with dict when path requires it."""
@@ -1331,21 +1335,25 @@ class TestLayerManagementV2:
         assert dcm.source_layers[1] == layer1
 
     def test_front_layer_property(self) -> None:
-        """front_layer returns the front layer DcmMapping."""
+        """front_layer returns a frozen view of the front layer."""
         dcm = utils.DeepChainMap()
         dcm._set_at_path(("a",), 1)
 
-        # front_layer is now DcmMapping
+        # front_layer is now FrozenMapping (read-only)
         assert dcm.front_layer["a"] == 1
-        assert dcm.front_layer._raw_data() == {"a": 1}
+        assert isinstance(dcm.front_layer, FrozenMapping)
+        # Use internal method for raw access (for internal tests)
+        assert dcm._front_layer._raw_data() == {"a": 1}
 
     def test_front_layer_with_delete(self) -> None:
-        """front_layer can hold DELETE markers."""
+        """front_layer property hides DELETE markers (use _front_layer for raw)."""
         dcm = utils.DeepChainMap({"a": 1})
         dcm._delete_at_path(("a",))
 
-        # front_layer contains DELETE markers accessible via _raw_data
-        raw = dcm.front_layer._raw_data()
+        # front_layer property returns FrozenMapping which hides DELETE
+        assert "a" not in dcm.front_layer
+        # Use internal _front_layer for raw access to DELETE markers
+        raw = dcm._front_layer._raw_data()
         assert raw == {"a": DELETE}
 
     def test_list_ops_property(self) -> None:
