@@ -56,9 +56,7 @@ class TestSkillLoader:
         result = ldr.list_skills()
         assert len(result) == 2
 
-    def test_get_all_metadata_formats_skills(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_all_metadata_formats_skills(self, tmp_path: _pathlib.Path) -> None:
         """get_all_metadata returns formatted skill list."""
         s = self._make_skill(tmp_path, "debugging", "Debug systematically")
         ldr = loader.SkillLoader({"debugging": s})
@@ -97,9 +95,7 @@ class TestSkillLoader:
         ldr = loader.SkillLoader({})
         assert ldr.trigger_skill("nonexistent") is None
 
-    def test_get_reference_file_loads_from_disk(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_reference_file_loads_from_disk(self, tmp_path: _pathlib.Path) -> None:
         """get_reference_file loads file content."""
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
@@ -112,9 +108,7 @@ class TestSkillLoader:
         content = ldr.get_reference_file("test-skill", "examples.md")
         assert content == "Example content here"
 
-    def test_get_reference_file_caches_content(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_reference_file_caches_content(self, tmp_path: _pathlib.Path) -> None:
         """get_reference_file caches loaded content."""
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
@@ -136,9 +130,7 @@ class TestSkillLoader:
         content2 = ldr.get_reference_file("test-skill", "examples.md")
         assert content2 == "Original content"
 
-    def test_get_reference_file_returns_none_for_missing(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_reference_file_returns_none_for_missing(self, tmp_path: _pathlib.Path) -> None:
         """get_reference_file returns None for missing file."""
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
@@ -203,4 +195,3 @@ class TestSkillLoader:
         d = ldr.to_dict()
         assert d["skill_count"] == 1
         assert len(d["skills"]) == 1
-

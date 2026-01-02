@@ -65,4 +65,3 @@ def test_tools_schema_shows_json_schema(
     assert data["name"] == "Bash"
     assert "input_schema" in data
     assert "command" in data["input_schema"]["properties"]
-

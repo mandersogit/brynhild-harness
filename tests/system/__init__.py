@@ -10,4 +10,3 @@ Test categories:
 - test_session_lifecycle.py: Session lifecycle (Session + Hooks + Storage)
 - test_config_cascade.py: Configuration priority cascade (CLI + Env + Config)
 """
-

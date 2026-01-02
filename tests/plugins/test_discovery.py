@@ -35,9 +35,7 @@ class TestPluginSearchPaths:
         env_path1.mkdir()
         env_path2.mkdir()
 
-        with _mock.patch.dict(
-            _os.environ, {"BRYNHILD_PLUGIN_PATH": f"{env_path1}:{env_path2}"}
-        ):
+        with _mock.patch.dict(_os.environ, {"BRYNHILD_PLUGIN_PATH": f"{env_path1}:{env_path2}"}):
             paths = discovery.get_plugin_search_paths(tmp_path)
 
         # Global first, then env paths, then project last
@@ -97,9 +95,7 @@ version: {version}
         assert dir_plugins["plugin-a"].version == "1.0.0"
         assert dir_plugins["plugin-b"].version == "1.0.0"
 
-    def test_later_sources_override_earlier_by_name(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_later_sources_override_earlier_by_name(self, tmp_path: _pathlib.Path) -> None:
         """Plugin with same name from later source replaces earlier."""
         global_dir = tmp_path / "global"
         project_dir = tmp_path / "project"
@@ -120,9 +116,7 @@ version: {version}
         assert len(dir_plugins) == 1
         assert dir_plugins["shared-plugin"].version == "2.0.0"  # Project wins
 
-    def test_skips_directories_without_manifest(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_skips_directories_without_manifest(self, tmp_path: _pathlib.Path) -> None:
         """Directories without plugin.yaml are skipped."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -195,9 +189,7 @@ version: {version}
         assert len(plugins) >= 1
         assert any(p.name == "plugin-a" for p in plugins)
 
-    def test_discover_all_with_errors_yields_exceptions(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_discover_all_with_errors_yields_exceptions(self, tmp_path: _pathlib.Path) -> None:
         """discover_all() yields exceptions for invalid plugins when include_errors=True."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -228,9 +220,7 @@ class TestHelperFunctions:
         path = discovery.get_global_plugins_path()
         assert ".config" in str(path) or "brynhild" in str(path)
 
-    def test_project_plugins_path_is_in_brynhild(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_project_plugins_path_is_in_brynhild(self, tmp_path: _pathlib.Path) -> None:
         """Project plugins path is .brynhild/plugins."""
         path = discovery.get_project_plugins_path(tmp_path)
         assert path == tmp_path / ".brynhild" / "plugins"

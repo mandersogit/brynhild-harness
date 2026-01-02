@@ -60,9 +60,7 @@ hooks:
       command: "echo valid"
 """)
 
-    result = cli_runner.invoke(
-        cli.cli, ["hooks", "validate", str(hooks_yaml)]
-    )
+    result = cli_runner.invoke(cli.cli, ["hooks", "validate", str(hooks_yaml)])
 
     assert result.exit_code == 0
     # Should indicate success
@@ -85,11 +83,8 @@ hooks:
       # Missing type field
 """)
 
-    result = cli_runner.invoke(
-        cli.cli, ["hooks", "validate", str(hooks_yaml)]
-    )
+    result = cli_runner.invoke(cli.cli, ["hooks", "validate", str(hooks_yaml)])
 
     # Should report an error (either non-zero exit or error message)
     # The exact behavior depends on implementation
     assert result.exit_code != 0 or "error" in result.output.lower()
-

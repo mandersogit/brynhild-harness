@@ -155,9 +155,7 @@ class TestSettingsPrecedence:
             _os.environ,
             {"BRYNHILD_BEHAVIOR__VERBOSE": "true"},
         ):
-            settings = config.Settings(
-                behavior=types.BehaviorConfig(verbose=False)
-            )
+            settings = config.Settings(behavior=types.BehaviorConfig(verbose=False))
 
         # Constructor wins
         assert settings.verbose is False
@@ -347,9 +345,7 @@ class TestBackwardCompatibility:
     def test_tools_disabled_aliases(self) -> None:
         """Tools disabled property aliases work correctly."""
         settings = config.Settings(
-            tools=types.ToolsConfig(
-                disabled={"Bash": True, "Write": True, "Read": False}
-            )
+            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True, "Read": False})
         )
 
         # disabled_tools returns comma-separated string of disabled tools
@@ -365,9 +361,7 @@ class TestBackwardCompatibility:
         assert settings.disable_builtin_tools is False
 
         # With marker
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"__builtin__": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"__builtin__": True}))
         assert settings.disable_builtin_tools is True
 
 
@@ -380,10 +374,7 @@ class TestMigrationDetection:
 
     def _env_without_skip(self, extra: dict[str, str]) -> dict[str, str]:
         """Create env dict without the skip flag and with legacy vars."""
-        env = {
-            k: v for k, v in _os.environ.items()
-            if k != "BRYNHILD_SKIP_MIGRATION_CHECK"
-        }
+        env = {k: v for k, v in _os.environ.items() if k != "BRYNHILD_SKIP_MIGRATION_CHECK"}
         env.update(extra)
         return env
 
@@ -431,14 +422,25 @@ class TestMigrationDetection:
         """New nested env var syntax does not trigger migration error."""
         # Start with clean env, no legacy vars, no skip flag
         clean_env = {
-            k: v for k, v in _os.environ.items()
-            if k not in ["BRYNHILD_MODEL", "BRYNHILD_PROVIDER", "BRYNHILD_VERBOSE",
-                        "BRYNHILD_MAX_TOKENS", "BRYNHILD_OUTPUT_FORMAT",
-                        "BRYNHILD_SANDBOX_ENABLED", "BRYNHILD_SANDBOX_ALLOW_NETWORK",
-                        "BRYNHILD_LOG_CONVERSATIONS", "BRYNHILD_LOG_DIR",
-                        "BRYNHILD_LOG_DIR_PRIVATE", "BRYNHILD_RAW_LOG",
-                        "BRYNHILD_DISABLED_TOOLS", "BRYNHILD_DISABLE_BUILTIN_TOOLS",
-                        "BRYNHILD_SKIP_MIGRATION_CHECK"]
+            k: v
+            for k, v in _os.environ.items()
+            if k
+            not in [
+                "BRYNHILD_MODEL",
+                "BRYNHILD_PROVIDER",
+                "BRYNHILD_VERBOSE",
+                "BRYNHILD_MAX_TOKENS",
+                "BRYNHILD_OUTPUT_FORMAT",
+                "BRYNHILD_SANDBOX_ENABLED",
+                "BRYNHILD_SANDBOX_ALLOW_NETWORK",
+                "BRYNHILD_LOG_CONVERSATIONS",
+                "BRYNHILD_LOG_DIR",
+                "BRYNHILD_LOG_DIR_PRIVATE",
+                "BRYNHILD_RAW_LOG",
+                "BRYNHILD_DISABLED_TOOLS",
+                "BRYNHILD_DISABLE_BUILTIN_TOOLS",
+                "BRYNHILD_SKIP_MIGRATION_CHECK",
+            ]
         }
         clean_env["BRYNHILD_MODELS__DEFAULT"] = "some-model"
 

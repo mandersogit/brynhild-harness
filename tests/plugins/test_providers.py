@@ -132,6 +132,7 @@ class TestProviderRegistry:
 
     def test_register_and_get_provider(self) -> None:
         """Should be able to register and retrieve a provider."""
+
         # Create a mock provider class
         class MockProvider:
             name = "mock"
@@ -154,6 +155,7 @@ class TestProviderRegistry:
 
     def test_get_all_plugin_providers(self) -> None:
         """Should return dict of all registered providers."""
+
         # Register a test provider
         class TestProvider2:
             name = "test2"
@@ -209,4 +211,3 @@ class TestIsProviderClass:
                 pass
 
         assert providers._is_provider_class(StreamProvider) is True
-

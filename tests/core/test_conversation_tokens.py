@@ -84,9 +84,7 @@ class RealisticUsageProvider(api_base.LLMProvider):
         tool_uses = []
         usage = None
 
-        async for event in self.stream(
-            messages, system=system, max_tokens=max_tokens, tools=tools
-        ):
+        async for event in self.stream(messages, system=system, max_tokens=max_tokens, tools=tools):
             if event.type == "text_delta" and event.text:
                 text_parts.append(event.text)
             elif event.type == "tool_use_start" and event.tool_use:
@@ -134,9 +132,7 @@ class RealisticUsageProvider(api_base.LLMProvider):
             )
             stop_reason = "tool_use"
         else:
-            yield api_types.StreamEvent(
-                type="text_delta", text=f"Response for call {current_call}"
-            )
+            yield api_types.StreamEvent(type="text_delta", text=f"Response for call {current_call}")
             stop_reason = "stop"
 
         # Usage comes in message_delta event (how real providers work)
@@ -353,8 +349,7 @@ class TestTokenTrackingSemantics:
 
         # Output tokens SHOULD be accumulated
         assert result.output_tokens == 300, (
-            f"output_tokens should be accumulated sum (300), "
-            f"got {result.output_tokens}"
+            f"output_tokens should be accumulated sum (300), got {result.output_tokens}"
         )
 
     @_pytest.mark.asyncio
@@ -655,4 +650,3 @@ class TestTokenTrackingEdgeCases:
 
         # Output should be sum: 20+30+40+50+60+70 = 270
         assert result.output_tokens == 270
-

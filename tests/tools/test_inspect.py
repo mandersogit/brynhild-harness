@@ -81,12 +81,14 @@ class TestInspectTool:
             f2.write_text("new")
 
             tool = inspect_tool.InspectTool(working_dir=_pathlib.Path(tmpdir))
-            result = await tool.execute({
-                "operation": "ls",
-                "path": ".",
-                "sort_by": "mtime",
-                "filter": "files",
-            })
+            result = await tool.execute(
+                {
+                    "operation": "ls",
+                    "path": ".",
+                    "sort_by": "mtime",
+                    "filter": "files",
+                }
+            )
 
             assert result.success is True
             # old.txt should appear before new.txt (oldest first by default)
@@ -102,11 +104,13 @@ class TestInspectTool:
             (_pathlib.Path(tmpdir) / "subdir").mkdir()
 
             tool = inspect_tool.InspectTool(working_dir=_pathlib.Path(tmpdir))
-            result = await tool.execute({
-                "operation": "ls",
-                "path": ".",
-                "filter": "files",
-            })
+            result = await tool.execute(
+                {
+                    "operation": "ls",
+                    "path": ".",
+                    "filter": "files",
+                }
+            )
 
             assert result.success is True
             assert "file.txt" in result.output
@@ -120,11 +124,13 @@ class TestInspectTool:
             (_pathlib.Path(tmpdir) / "subdir").mkdir()
 
             tool = inspect_tool.InspectTool(working_dir=_pathlib.Path(tmpdir))
-            result = await tool.execute({
-                "operation": "ls",
-                "path": ".",
-                "filter": "dirs",
-            })
+            result = await tool.execute(
+                {
+                    "operation": "ls",
+                    "path": ".",
+                    "filter": "dirs",
+                }
+            )
 
             assert result.success is True
             assert "file.txt" not in result.output
@@ -138,11 +144,13 @@ class TestInspectTool:
                 (_pathlib.Path(tmpdir) / f"file{i}.txt").write_text(f"content{i}")
 
             tool = inspect_tool.InspectTool(working_dir=_pathlib.Path(tmpdir))
-            result = await tool.execute({
-                "operation": "ls",
-                "path": ".",
-                "limit": 3,
-            })
+            result = await tool.execute(
+                {
+                    "operation": "ls",
+                    "path": ".",
+                    "limit": 3,
+                }
+            )
 
             assert result.success is True
             # Count file entries (look for the file icon)
@@ -195,4 +203,3 @@ class TestInspectTool:
 
         assert result.success is False
         assert "Unknown operation" in (result.error or "")
-

@@ -88,9 +88,7 @@ class TestRegistryModelsExistOnOpenRouter:
 
             # Check if this model exists on OpenRouter
             if openrouter_id not in openrouter_models:
-                missing_models.append(
-                    f"  {canonical_id} -> {openrouter_id}"
-                )
+                missing_models.append(f"  {canonical_id} -> {openrouter_id}")
 
         if missing_models:
             # Provide helpful error with all missing models
@@ -142,5 +140,3 @@ class TestRegistryModelsExistOnOpenRouter:
                 f"Default model '{default_model}' has OpenRouter binding '{openrouter_id}' "
                 f"which does NOT exist on OpenRouter"
             )
-
-

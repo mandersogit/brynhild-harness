@@ -56,9 +56,7 @@ hooks:
         assert len(config.hooks["pre_tool_use"]) == 1
         assert config.hooks["pre_tool_use"][0].name == "log_tool"
 
-    def test_returns_none_for_plugin_without_hooks(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_returns_none_for_plugin_without_hooks(self, tmp_path: _pathlib.Path) -> None:
         """Returns None if plugin doesn't declare hooks."""
         m = manifest.PluginManifest(name="no-hooks", version="1.0.0", hooks=False)
         plugin = manifest.Plugin(manifest=m, path=tmp_path)
@@ -67,9 +65,7 @@ hooks:
 
         assert config is None
 
-    def test_returns_none_for_missing_hooks_file(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_returns_none_for_missing_hooks_file(self, tmp_path: _pathlib.Path) -> None:
         """Returns None if hooks.yaml doesn't exist."""
         m = manifest.PluginManifest(name="missing", version="1.0.0", hooks=True)
         plugin = manifest.Plugin(manifest=m, path=tmp_path)
@@ -131,9 +127,7 @@ hooks:
         assert "base_hook" in names
         assert "plugin_hook" in names
 
-    def test_later_plugin_overrides_same_name(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_later_plugin_overrides_same_name(self, tmp_path: _pathlib.Path) -> None:
         """Later plugin hooks override earlier ones with same name."""
         plugin1 = self._create_plugin_with_hooks(
             tmp_path / "plugin1",
@@ -204,9 +198,7 @@ class TestLoadMergedConfigWithPlugins:
         m = manifest.PluginManifest(name=name, version="1.0.0", hooks=True)
         return manifest.Plugin(manifest=m, path=path)
 
-    def test_loads_standalone_hooks_without_plugins(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_loads_standalone_hooks_without_plugins(self, tmp_path: _pathlib.Path) -> None:
         """Without plugins, returns standalone hooks only."""
         config = plugin_hooks.load_merged_config_with_plugins(
             project_root=tmp_path,
@@ -238,4 +230,3 @@ hooks:
         assert "pre_tool_use" in config.hooks
         names = [h.name for h in config.hooks["pre_tool_use"]]
         assert "plugin_hook" in names
-

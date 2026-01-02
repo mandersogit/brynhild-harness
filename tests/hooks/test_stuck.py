@@ -158,4 +158,3 @@ class TestStuckDetector:
 
         state = detector.check()
         assert state.is_stuck is False
-

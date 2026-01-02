@@ -66,9 +66,7 @@ Instructions for {name}.
         assert skill.name == "debugging"
         assert skill.description == "Debug things"
 
-    def test_has_skill_returns_true_for_existing(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_has_skill_returns_true_for_existing(self, tmp_path: _pathlib.Path) -> None:
         """has_skill returns True for existing skill."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
@@ -95,9 +93,7 @@ Instructions for {name}.
         assert "## Available Skills" in meta
         assert "**debugging**" in meta
 
-    def test_trigger_skill_returns_wrapped_content(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_trigger_skill_returns_wrapped_content(self, tmp_path: _pathlib.Path) -> None:
         """trigger_skill returns body wrapped in tags."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
@@ -132,9 +128,7 @@ Body
         content = reg.get_reference_file("test-skill", "examples.md")
         assert content == "Example content"
 
-    def test_find_matching_skills_by_name(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_find_matching_skills_by_name(self, tmp_path: _pathlib.Path) -> None:
         """find_matching_skills finds skills by name in input."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
@@ -149,15 +143,11 @@ Body
         assert len(matches) >= 1
         assert any(s.name == "debugging" for s in matches)
 
-    def test_find_matching_skills_by_description(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_find_matching_skills_by_description(self, tmp_path: _pathlib.Path) -> None:
         """find_matching_skills finds skills by description keywords."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
-        self._create_skill(
-            skills_dir, "systematic-debugging", "Use when encountering failures"
-        )
+        self._create_skill(skills_dir, "systematic-debugging", "Use when encountering failures")
         self._create_skill(skills_dir, "tdd", "Test driven development")
 
         reg = registry.SkillRegistry()
@@ -169,9 +159,7 @@ Body
         assert len(matches) >= 1
         assert any(s.name == "systematic-debugging" for s in matches)
 
-    def test_find_matching_skills_max_results(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_find_matching_skills_max_results(self, tmp_path: _pathlib.Path) -> None:
         """find_matching_skills respects max_results."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
@@ -199,4 +187,3 @@ Body
         assert d["project_root"] == str(tmp_path)
         assert d["skill_count"] == 1
         assert len(d["skills"]) == 1
-

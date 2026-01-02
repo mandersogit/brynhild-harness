@@ -285,4 +285,3 @@ class TestModelEncoderSelection:
         callbacks = adapters.RendererCallbacks(renderer, model="some-unknown-model")
 
         assert callbacks._turn_counter.encoder_name == "cl100k_base"
-

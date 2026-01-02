@@ -227,28 +227,32 @@ class TestMergedConfig:
         global_dir = tmp_path / "global" / ".config" / "brynhild"
         global_dir.mkdir(parents=True)
         global_yaml = global_dir / "hooks.yaml"
-        global_yaml.write_text(_textwrap.dedent("""
+        global_yaml.write_text(
+            _textwrap.dedent("""
             version: 1
             hooks:
               pre_tool_use:
                 - name: global-hook
                   type: command
                   command: echo global
-        """))
+        """)
+        )
 
         # Create project config
         project_dir = tmp_path / "project"
         project_hooks_dir = project_dir / ".brynhild"
         project_hooks_dir.mkdir(parents=True)
         project_yaml = project_hooks_dir / "hooks.yaml"
-        project_yaml.write_text(_textwrap.dedent("""
+        project_yaml.write_text(
+            _textwrap.dedent("""
             version: 1
             hooks:
               pre_tool_use:
                 - name: project-hook
                   type: command
                   command: echo project
-        """))
+        """)
+        )
 
         # Patch global path
         monkeypatch.setattr(
@@ -272,27 +276,31 @@ class TestMergedConfig:
         global_dir = tmp_path / "global" / ".config" / "brynhild"
         global_dir.mkdir(parents=True)
         global_yaml = global_dir / "hooks.yaml"
-        global_yaml.write_text(_textwrap.dedent("""
+        global_yaml.write_text(
+            _textwrap.dedent("""
             version: 1
             hooks:
               pre_tool_use:
                 - name: shared-name
                   type: command
                   command: echo global-version
-        """))
+        """)
+        )
 
         project_dir = tmp_path / "project"
         project_hooks_dir = project_dir / ".brynhild"
         project_hooks_dir.mkdir(parents=True)
         project_yaml = project_hooks_dir / "hooks.yaml"
-        project_yaml.write_text(_textwrap.dedent("""
+        project_yaml.write_text(
+            _textwrap.dedent("""
             version: 1
             hooks:
               pre_tool_use:
                 - name: shared-name
                   type: command
                   command: echo project-version
-        """))
+        """)
+        )
 
         monkeypatch.setattr(
             config,
@@ -304,4 +312,3 @@ class TestMergedConfig:
         hooks = cfg.get_hooks_for_event(events.HookEvent.PRE_TOOL_USE)
         assert len(hooks) == 1
         assert hooks[0].command == "echo project-version"
-

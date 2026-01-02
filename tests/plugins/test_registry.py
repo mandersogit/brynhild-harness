@@ -72,9 +72,7 @@ version: {version}
         assert plugin.name == "my-plugin"
         assert plugin.version == "2.0.0"
 
-    def test_get_plugin_returns_none_for_unknown(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_plugin_returns_none_for_unknown(self, tmp_path: _pathlib.Path) -> None:
         """get_plugin returns None for unknown plugin name."""
         reg = registry.PluginRegistry(registry_path=tmp_path / "registry.yaml")
         reg._discovery._search_paths = []  # No plugins
@@ -116,9 +114,7 @@ version: {version}
         assert plugin is not None
         assert plugin.enabled is False
 
-    def test_disable_returns_false_if_already_disabled(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_disable_returns_false_if_already_disabled(self, tmp_path: _pathlib.Path) -> None:
         """disable() returns False if plugin already disabled."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -149,9 +145,7 @@ version: {version}
         assert result is True  # State changed
         assert reg.is_enabled("plugin-a") is True
 
-    def test_enable_returns_false_if_already_enabled(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_enable_returns_false_if_already_enabled(self, tmp_path: _pathlib.Path) -> None:
         """enable() returns False if plugin already enabled."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -203,9 +197,7 @@ version: {version}
         assert plugin is not None
         assert plugin.enabled is False
 
-    def test_get_enabled_plugins_filters_disabled(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_enabled_plugins_filters_disabled(self, tmp_path: _pathlib.Path) -> None:
         """get_enabled_plugins returns only enabled plugins."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -240,9 +232,7 @@ version: {version}
         assert d["enabled_count"] == 1
         assert d["disabled_count"] == 1
 
-    def test_disable_unknown_plugin_returns_false(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_disable_unknown_plugin_returns_false(self, tmp_path: _pathlib.Path) -> None:
         """disable() returns False for unknown plugin."""
         reg = registry.PluginRegistry(registry_path=tmp_path / "registry.yaml")
         reg._discovery._search_paths = []
@@ -252,9 +242,7 @@ version: {version}
 
         assert result is False
 
-    def test_enable_unknown_plugin_returns_false(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_enable_unknown_plugin_returns_false(self, tmp_path: _pathlib.Path) -> None:
         """enable() returns False for unknown plugin."""
         reg = registry.PluginRegistry(registry_path=tmp_path / "registry.yaml")
         reg._discovery._search_paths = []
@@ -264,9 +252,7 @@ version: {version}
 
         assert result is False
 
-    def test_is_enabled_returns_false_for_unknown(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_is_enabled_returns_false_for_unknown(self, tmp_path: _pathlib.Path) -> None:
         """is_enabled returns False for unknown plugin."""
         reg = registry.PluginRegistry(registry_path=tmp_path / "registry.yaml")
         reg._discovery._search_paths = []

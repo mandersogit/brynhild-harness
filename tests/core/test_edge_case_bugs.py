@@ -410,4 +410,3 @@ class TestMultipleUsageEvents:
         # Should have received multiple usage updates
         # (or at least the final one)
         assert len(callbacks.usage_updates) >= 1
-

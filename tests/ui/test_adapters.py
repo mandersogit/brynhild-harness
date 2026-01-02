@@ -328,4 +328,3 @@ class TestStateReset:
         assert len(text_calls) == 2
         assert text_calls[0][1]["text"] == "Response 1"
         assert text_calls[1][1]["text"] == "Response 2"
-

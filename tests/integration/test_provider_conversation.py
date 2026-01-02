@@ -113,9 +113,7 @@ class TestProviderConversationIntegration:
     async def test_provider_error_propagates_to_caller(self) -> None:
         """Provider errors propagate through ConversationProcessor."""
         # Setup: Provider that fails
-        provider = conftest.MockProvider(
-            should_fail=True, fail_message="API rate limit exceeded"
-        )
+        provider = conftest.MockProvider(should_fail=True, fail_message="API rate limit exceeded")
         callbacks = RecordingCallbacks()
 
         processor = conversation.ConversationProcessor(
@@ -252,4 +250,3 @@ class TestProviderConversationIntegration:
         thinking_complete_events = [e for e in callbacks.events if e[0] == "thinking_complete"]
         assert len(thinking_complete_events) == 1
         assert thinking_complete_events[0][1] == "Let me think... about this."
-

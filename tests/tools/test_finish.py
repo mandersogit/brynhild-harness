@@ -53,10 +53,12 @@ class TestFinishTool:
     @_pytest.mark.asyncio
     async def test_execute_success(self, tool: finish.FinishTool) -> None:
         """Test execute with success status."""
-        result = await tool.execute({
-            "status": "success",
-            "summary": "Task completed successfully",
-        })
+        result = await tool.execute(
+            {
+                "status": "success",
+                "summary": "Task completed successfully",
+            }
+        )
         assert result.success is True
         assert "Status: success" in result.output
         assert "Summary: Task completed successfully" in result.output
@@ -64,11 +66,13 @@ class TestFinishTool:
     @_pytest.mark.asyncio
     async def test_execute_with_next_steps(self, tool: finish.FinishTool) -> None:
         """Test execute with next_steps."""
-        result = await tool.execute({
-            "status": "partial",
-            "summary": "Made some progress",
-            "next_steps": "Continue with step 2",
-        })
+        result = await tool.execute(
+            {
+                "status": "partial",
+                "summary": "Made some progress",
+                "next_steps": "Continue with step 2",
+            }
+        )
         assert result.success is True
         assert "Status: partial" in result.output
         assert "Next steps: Continue with step 2" in result.output
@@ -76,20 +80,24 @@ class TestFinishTool:
     @_pytest.mark.asyncio
     async def test_execute_failed_status(self, tool: finish.FinishTool) -> None:
         """Test execute with failed status."""
-        result = await tool.execute({
-            "status": "failed",
-            "summary": "Could not complete task",
-        })
+        result = await tool.execute(
+            {
+                "status": "failed",
+                "summary": "Could not complete task",
+            }
+        )
         assert result.success is True  # The tool always succeeds
         assert "Status: failed" in result.output
 
     @_pytest.mark.asyncio
     async def test_execute_blocked_status(self, tool: finish.FinishTool) -> None:
         """Test execute with blocked status."""
-        result = await tool.execute({
-            "status": "blocked",
-            "summary": "Need user input",
-        })
+        result = await tool.execute(
+            {
+                "status": "blocked",
+                "summary": "Need user input",
+            }
+        )
         assert result.success is True
         assert "Status: blocked" in result.output
 
@@ -100,4 +108,3 @@ class TestFinishTool:
         assert result.success is True
         assert "Status: success" in result.output
         assert "Summary: Task completed." in result.output
-

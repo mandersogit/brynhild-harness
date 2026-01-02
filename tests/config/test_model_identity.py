@@ -6,7 +6,6 @@ Phase 4 types:
 - ModelIdentity: complete identity with bindings and descriptor
 """
 
-
 import pydantic as _pydantic
 import pytest as _pytest
 
@@ -570,4 +569,3 @@ class TestAliasResolution:
         enabled = [name for name, enabled in identity.aliases.items() if enabled]
 
         assert set(enabled) == {"good", "also-good"}
-

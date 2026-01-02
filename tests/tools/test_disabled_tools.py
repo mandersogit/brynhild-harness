@@ -1,7 +1,5 @@
 """Tests for tool disabling functionality."""
 
-
-
 import brynhild.config as config
 import brynhild.config.types as types
 import brynhild.tools as tools
@@ -46,9 +44,7 @@ class TestDisabledToolsSettings:
 
     def test_is_tool_disabled_returns_true_for_disabled_tool(self) -> None:
         """Should return True for tools in disabled list."""
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"Bash": True, "Write": True}))
         assert settings.is_tool_disabled("Bash") is True
         assert settings.is_tool_disabled("Write") is True
         assert settings.is_tool_disabled("Read") is False
@@ -56,9 +52,7 @@ class TestDisabledToolsSettings:
     def test_is_tool_disabled_returns_true_when_all_builtins_disabled(self) -> None:
         """Should return True for any tool when __builtin__ marker is set."""
         # The __builtin__ marker in disabled dict disables all builtin tools
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"__builtin__": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"__builtin__": True}))
         assert settings.is_tool_disabled("Bash") is True
         assert settings.is_tool_disabled("Read") is True
         assert settings.is_tool_disabled("Write") is True
@@ -79,9 +73,7 @@ class TestBuildRegistryWithDisabledTools:
 
     def test_registry_excludes_disabled_tools(self) -> None:
         """Disabled tools should not be in registry."""
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"Bash": True, "Write": True}))
         registry = tools.build_registry_from_settings(settings)
 
         assert "Bash" not in registry
@@ -91,18 +83,14 @@ class TestBuildRegistryWithDisabledTools:
 
     def test_registry_is_empty_when_all_builtins_disabled(self) -> None:
         """Registry should be empty when __builtin__ marker is set."""
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"__builtin__": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"__builtin__": True}))
         registry = tools.build_registry_from_settings(settings)
 
         assert len(registry) == 0
 
     def test_disable_single_tool(self) -> None:
         """Disabling a single tool should only remove that tool."""
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"Bash": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"Bash": True}))
         registry = tools.build_registry_from_settings(settings)
 
         assert "Bash" not in registry
@@ -115,9 +103,7 @@ class TestBuildRegistryWithDisabledTools:
 
     def test_disabled_tools_in_to_dict(self) -> None:
         """Settings.to_dict() should include disabled_tools info."""
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"Bash": True, "Write": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"Bash": True, "Write": True}))
         d = settings.to_dict()
 
         assert "disable_builtin_tools" in d
@@ -149,9 +135,7 @@ class TestSystemPromptWithDisabledTools:
         import brynhild.core.prompts as prompts
         import brynhild.tools as tools_module
 
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"Bash": True, "Grep": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"Bash": True, "Grep": True}))
         registry = tools_module.build_registry_from_settings(settings)
 
         prompt = prompts.get_system_prompt("test-model", tool_registry=registry)
@@ -167,9 +151,7 @@ class TestSystemPromptWithDisabledTools:
         import brynhild.core.prompts as prompts
         import brynhild.tools as tools_module
 
-        settings = config.Settings(
-            tools=types.ToolsConfig(disabled={"__builtin__": True})
-        )
+        settings = config.Settings(tools=types.ToolsConfig(disabled={"__builtin__": True}))
         registry = tools_module.build_registry_from_settings(settings)
 
         prompt = prompts.get_system_prompt("test-model", tool_registry=registry)
@@ -186,6 +168,15 @@ class TestBuiltinToolNames:
 
     def test_builtin_tool_names_contains_expected_tools(self) -> None:
         """Should contain all expected builtin tool names."""
-        expected = {"Bash", "Read", "Write", "Edit", "Grep", "Glob", "Inspect", "LearnSkill", "Finish"}
+        expected = {
+            "Bash",
+            "Read",
+            "Write",
+            "Edit",
+            "Grep",
+            "Glob",
+            "Inspect",
+            "LearnSkill",
+            "Finish",
+        }
         assert expected == tools.BUILTIN_TOOL_NAMES
-

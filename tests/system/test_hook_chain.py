@@ -36,9 +36,7 @@ class TestHookChainSystem:
             command="exit 0",
         )
 
-        hook_config = hooks_config.HooksConfig(
-            hooks={"pre_tool_use": [hook1, hook2, hook3]}
-        )
+        hook_config = hooks_config.HooksConfig(hooks={"pre_tool_use": [hook1, hook2, hook3]})
         manager = hooks_manager.HookManager(hook_config, project_root=tmp_path)
 
         # Create context
@@ -80,9 +78,7 @@ class TestHookChainSystem:
             command="exit 0",  # Would allow, but never reached
         )
 
-        hook_config = hooks_config.HooksConfig(
-            hooks={"pre_tool_use": [hook1, hook2, hook3]}
-        )
+        hook_config = hooks_config.HooksConfig(hooks={"pre_tool_use": [hook1, hook2, hook3]})
         manager = hooks_manager.HookManager(hook_config, project_root=tmp_path)
 
         context = hooks_events.HookContext(
@@ -305,4 +301,3 @@ class TestHookChainSystem:
 
         result_end = await manager.dispatch(hooks_events.HookEvent.SESSION_END, end_context)
         assert result_end.action == hooks_events.HookAction.CONTINUE
-

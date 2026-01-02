@@ -64,9 +64,7 @@ class TestSkillsIntegration:
         assert "testing" in metadata
         assert "Help write tests" in metadata
 
-    def test_si05_skill_body_injected_correctly(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_si05_skill_body_injected_correctly(self, tmp_path: _pathlib.Path) -> None:
         """SI-05: Triggered skill body appears in context."""
         # Setup: Create skill with specific body
         skill_dir = tmp_path / ".brynhild" / "skills"
@@ -149,9 +147,7 @@ class TestSkillsIntegration:
         assert "skill-from-dir1" in skill_names
         assert "skill-from-dir2" in skill_names
 
-    def test_si08_invalid_skill_gracefully_handled(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_si08_invalid_skill_gracefully_handled(self, tmp_path: _pathlib.Path) -> None:
         """SI-08: Bad SKILL.md doesn't crash, others still load."""
         # Setup: Create one valid and one invalid skill
         skill_dir = tmp_path / "skills"
@@ -199,9 +195,7 @@ class TestSkillMatching:
         assert len(matches) >= 1
         assert any(s.name == "debugging" for s in matches)
 
-    def test_find_matching_skills_by_description(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_find_matching_skills_by_description(self, tmp_path: _pathlib.Path) -> None:
         """Skills matching by description keywords are found."""
         skill_dir = tmp_path / "skills"
         _create_skill(skill_dir, "tdd", "Test-driven development methodology")
@@ -217,9 +211,7 @@ class TestSkillMatching:
         # Should find by description match (if word > 3 chars)
         assert len(matches) >= 0  # Matching depends on word length filter
 
-    def test_find_matching_skills_limits_results(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_find_matching_skills_limits_results(self, tmp_path: _pathlib.Path) -> None:
         """max_results parameter limits returned skills."""
         skill_dir = tmp_path / "skills"
         for i in range(5):
@@ -234,4 +226,3 @@ class TestSkillMatching:
         matches = registry.find_matching_skills("debug something", max_results=2)
 
         assert len(matches) <= 2
-

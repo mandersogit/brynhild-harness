@@ -49,9 +49,7 @@ class TestLiveModelCompatibility:
 
     @_pytest.mark.asyncio
     @_pytest.mark.parametrize("model", LIVE_TEST_MODELS_CHEAP)
-    async def test_cheap_model_basic_completion(
-        self, api_key: str, model: str
-    ) -> None:
+    async def test_cheap_model_basic_completion(self, api_key: str, model: str) -> None:
         """Cheap models can complete basic prompts."""
         provider = _create_provider(api_key, model)
 
@@ -73,9 +71,7 @@ class TestLiveModelCompatibility:
 
     @_pytest.mark.asyncio
     @_pytest.mark.parametrize("model", LIVE_TEST_MODELS_DIVERSE)
-    async def test_diverse_model_basic_completion(
-        self, api_key: str, model: str
-    ) -> None:
+    async def test_diverse_model_basic_completion(self, api_key: str, model: str) -> None:
         """Diverse models can complete basic prompts."""
         provider = _create_provider(api_key, model)
 
@@ -118,9 +114,7 @@ class TestLiveModelCompatibility:
 
         try:
             response = await provider.complete(
-                messages=[
-                    {"role": "user", "content": "What's the weather in Tokyo?"}
-                ],
+                messages=[{"role": "user", "content": "What's the weather in Tokyo?"}],
                 tools=[tool],
                 max_tokens=100,
             )
@@ -177,4 +171,3 @@ class TestLiveModelCompatibility:
             if "rate" in str(e).lower() or "unavailable" in str(e).lower():
                 _pytest.skip(f"Model unavailable: {e}")
             raise
-

@@ -168,4 +168,3 @@ def foo():
         imports = _extract_imports(content)
         assert len(imports) == 1
         assert "from forbidden import Other" in imports[0][1]
-

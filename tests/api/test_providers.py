@@ -331,4 +331,3 @@ class TestOpenRouterProviderLive:
         )
         assert has_output, "Model produced neither content nor thinking"
         assert response.usage.input_tokens > 0
-

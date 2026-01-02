@@ -138,9 +138,7 @@ class TestPluginToolsLoadedIntoRegistry:
             f"Plugin tool 'marker' not in API format output. Tools: {tool_names}"
         )
 
-    def test_plugin_tools_appear_in_openai_format(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_plugin_tools_appear_in_openai_format(self, tmp_path: _pathlib.Path) -> None:
         """Plugin tools should appear in to_openai_format() output."""
         import brynhild.plugins.manifest as manifest
 
@@ -172,9 +170,7 @@ class TestPluginToolsLoadedIntoRegistry:
 class TestPluginToolsErrorHandling:
     """Test error handling when loading plugin tools."""
 
-    def test_builtin_tools_work_when_plugins_fail(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_builtin_tools_work_when_plugins_fail(self, tmp_path: _pathlib.Path) -> None:
         """Builtin tools should still be available if plugin loading fails."""
         settings = _create_settings_with_project_root(tmp_path)
 
@@ -191,9 +187,7 @@ class TestPluginToolsErrorHandling:
         assert "Write" in tool_registry
         assert "Edit" in tool_registry
 
-    def test_other_plugins_load_when_one_fails(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_other_plugins_load_when_one_fails(self, tmp_path: _pathlib.Path) -> None:
         """If one plugin's tools fail to load, other plugins should still work."""
         import brynhild.plugins.manifest as manifest
 
@@ -237,9 +231,7 @@ class TestPluginToolsErrorHandling:
 class TestDisabledPluginTools:
     """Test that disabled plugins don't have their tools loaded."""
 
-    def test_disabled_plugin_tools_not_loaded(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_disabled_plugin_tools_not_loaded(self, tmp_path: _pathlib.Path) -> None:
         """Tools from disabled plugins should not be loaded."""
         settings = _create_settings_with_project_root(tmp_path)
 

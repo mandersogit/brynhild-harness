@@ -57,9 +57,7 @@ class TestToolRoundTrip:
     """Test complete tool call -> result -> response flow."""
 
     @_pytest.mark.asyncio
-    async def test_tool_result_received_by_model(
-        self, provider: api.LLMProvider
-    ) -> None:
+    async def test_tool_result_received_by_model(self, provider: api.LLMProvider) -> None:
         """Model receives and uses tool result after our message format fix."""
         if not provider.supports_tools():
             _pytest.skip(f"Model {provider.model} does not support tools")
@@ -87,14 +85,10 @@ class TestToolRoundTrip:
         # - Original user message
         # - Assistant message with tool_calls (our fix adds this)
         # - Tool result message (our fix sends these individually)
-        assistant_msg = core_types.format_assistant_tool_call(
-            [tool_use], response1.content or ""
-        )
+        assistant_msg = core_types.format_assistant_tool_call([tool_use], response1.content or "")
 
         # Simulate calculator result
-        fake_result = tools_base.ToolResult(
-            success=True, output="838102050", error=None
-        )
+        fake_result = tools_base.ToolResult(success=True, output="838102050", error=None)
         tool_result_msg = core_types.format_tool_result_message(tool_use.id, fake_result)
 
         messages = [
@@ -133,9 +127,7 @@ class TestToolRoundTrip:
         print(f"Model response after tool result: {response2.content}")
 
     @_pytest.mark.asyncio
-    async def test_message_format_structure(
-        self, provider: api.LLMProvider
-    ) -> None:
+    async def test_message_format_structure(self, provider: api.LLMProvider) -> None:
         """Verify the message format structure is correct."""
         if not provider.supports_tools():
             _pytest.skip(f"Model {provider.model} does not support tools")
@@ -168,4 +160,3 @@ class TestToolRoundTrip:
         assert tool_result_msg["tool_use_id"] == tool_use.id
         assert tool_result_msg["content"] == "4"
         assert tool_result_msg["is_error"] is False
-

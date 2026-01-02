@@ -10,10 +10,7 @@ class TestContextCompactor:
         """Don't compact when message count is under keep_recent."""
         compactor = compaction.ContextCompactor(keep_recent=10)
 
-        messages = [
-            {"role": "user", "content": f"Message {i}"}
-            for i in range(5)
-        ]
+        messages = [{"role": "user", "content": f"Message {i}"} for i in range(5)]
 
         result = compactor.compact(messages)
         assert result.compacted is False
@@ -25,10 +22,7 @@ class TestContextCompactor:
         """Compact when message count exceeds keep_recent."""
         compactor = compaction.ContextCompactor(keep_recent=5)
 
-        messages = [
-            {"role": "user", "content": f"Message {i}"}
-            for i in range(20)
-        ]
+        messages = [{"role": "user", "content": f"Message {i}"} for i in range(20)]
 
         result = compactor.compact(messages)
         assert result.compacted is True
@@ -40,10 +34,7 @@ class TestContextCompactor:
         """Compaction keeps the most recent messages."""
         compactor = compaction.ContextCompactor(keep_recent=3)
 
-        messages = [
-            {"role": "user", "content": f"Message {i}"}
-            for i in range(10)
-        ]
+        messages = [{"role": "user", "content": f"Message {i}"} for i in range(10)]
 
         result = compactor.compact(messages)
 
@@ -174,4 +165,3 @@ class TestCompactMessagesFunction:
 
         assert result.compacted is False
         assert len(result.messages) == 1
-

@@ -88,4 +88,3 @@ class TestJSONRendererBugs:
         assert renderer._assistant_text == ""
         assert renderer._streaming is False
         assert renderer._finish_result is None  # This is the BUG!
-

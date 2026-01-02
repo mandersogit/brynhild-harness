@@ -188,4 +188,3 @@ class TestCommandHookExecutor:
 
         result = await executor.execute(hook_def, context)
         assert result.action == events.HookAction.CONTINUE
-

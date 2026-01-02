@@ -8,4 +8,3 @@ These tests make actual API calls to LLM providers and require:
 All tests are marked with @pytest.mark.live and excluded from default test runs.
 Run with: make test-live or pytest -m live
 """
-

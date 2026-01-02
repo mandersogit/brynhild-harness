@@ -40,9 +40,7 @@ class TestCacheCorrectness:
         result2 = dcm["a"]
 
         # 2.0: MutableProxy objects are equal, underlying data is cached
-        assert result1 == result2, (
-            "Expected equal content on repeated access"
-        )
+        assert result1 == result2, "Expected equal content on repeated access"
         assert result1["nested"] == result2["nested"] == 1
 
     def test_cache_stale_after_layer_mutation(self) -> None:
@@ -60,8 +58,7 @@ class TestCacheCorrectness:
         # Cache should be stale
         result2 = dcm["a"]
         assert result2 == 1, (
-            "Cache should be stale — modification without reload() "
-            "should return old cached value"
+            "Cache should be stale — modification without reload() should return old cached value"
         )
 
     def test_reload_refreshes_cache(self) -> None:
@@ -77,9 +74,7 @@ class TestCacheCorrectness:
         dcm.reload()
 
         result2 = dcm["a"]
-        assert result2["b"] == 2, (
-            "After reload(), cache should be cleared and value re-merged"
-        )
+        assert result2["b"] == 2, "After reload(), cache should be cleared and value re-merged"
         assert result1 is not result2, "Should be different objects after reload"
 
     def test_cache_isolation_from_caller_mutation(self) -> None:
@@ -164,9 +159,7 @@ class TestEmptyAndNoneValues:
         """Higher priority None overrides lower priority value."""
         dcm = utils.DeepChainMap({"a": None}, {"a": 1})
 
-        assert dcm["a"] is None, (
-            "Expected None to override 1 (None is a valid value, not 'unset')"
-        )
+        assert dcm["a"] is None, "Expected None to override 1 (None is a valid value, not 'unset')"
 
     def test_value_overrides_none(self) -> None:
         """Higher priority value overrides lower priority None."""
@@ -211,9 +204,7 @@ class TestEmptyAndNoneValues:
             {"a": {"b": 1, "c": 2}},
         )
 
-        assert dcm["a"] is None, (
-            "None should win over dict (type mismatch = higher priority wins)"
-        )
+        assert dcm["a"] is None, "None should win over dict (type mismatch = higher priority wins)"
 
     def test_no_layers(self) -> None:
         """DeepChainMap with no layers is empty."""
@@ -313,9 +304,7 @@ class TestListBehaviorEdgeCases:
             {"items": [1, 2, 3]},
         )
 
-        assert list(dcm["items"]) == [4, 5], (
-            "Higher priority list should completely replace lower"
-        )
+        assert list(dcm["items"]) == [4, 5], "Higher priority list should completely replace lower"
 
     def test_list_replace_empty_list(self) -> None:
         """Empty list in high priority replaces non-empty."""
@@ -324,9 +313,7 @@ class TestListBehaviorEdgeCases:
             {"items": [1, 2, 3]},
         )
 
-        assert list(dcm["items"]) == [], (
-            "Empty list should replace non-empty"
-        )
+        assert list(dcm["items"]) == [], "Empty list should replace non-empty"
 
     def test_list_with_none_elements(self) -> None:
         """Lists with None elements are replaced correctly."""
@@ -335,9 +322,7 @@ class TestListBehaviorEdgeCases:
             {"items": [2, 3]},
         )
 
-        assert list(dcm["items"]) == [None, 1], (
-            "Higher priority list with None should replace"
-        )
+        assert list(dcm["items"]) == [None, 1], "Higher priority list with None should replace"
 
     def test_nested_list_in_dict_replaces(self) -> None:
         """Nested lists also replace, not merge."""
@@ -347,9 +332,7 @@ class TestListBehaviorEdgeCases:
         )
 
         result = dcm["config"]
-        assert list(result["plugins"]) == ["new"], (
-            "Nested list should replace, not merge"
-        )
+        assert list(result["plugins"]) == ["new"], "Nested list should replace, not merge"
         assert result["other"] == "value"
 
     def test_list_extend_via_list_ops(self) -> None:
@@ -357,9 +340,7 @@ class TestListBehaviorEdgeCases:
         dcm = utils.DeepChainMap({"items": [1, 2]})
         dcm.list_extend(("items",), [3, 4])
 
-        assert list(dcm["items"]) == [1, 2, 3, 4], (
-            "list_extend should append items"
-        )
+        assert list(dcm["items"]) == [1, 2, 3, 4], "list_extend should append items"
 
     def test_list_ops_on_nested_path(self) -> None:
         """list_* methods work on nested paths."""
@@ -476,8 +457,8 @@ class TestProvenanceEdgeCases:
     def test_provenance_three_layers(self) -> None:
         """Provenance correctly identifies layer for each key."""
         dcm = utils.DeepChainMap(
-            {"model": {"name": "user_override"}},        # layer 0
-            {"model": {"size": "project_default"}},       # layer 1
+            {"model": {"name": "user_override"}},  # layer 0
+            {"model": {"size": "project_default"}},  # layer 1
             {"model": {"name": "builtin", "size": "7b", "base": True}},  # layer 2
             track_provenance=True,
         )
@@ -632,8 +613,8 @@ class TestDeepNestingAndStress:
         override: dict[str, _typing.Any] = {"value": "override"}
 
         for i in range(9):
-            base = {f"level{9-i}": base}
-            override = {f"level{9-i}": override}
+            base = {f"level{9 - i}": base}
+            override = {f"level{9 - i}": override}
 
         dcm = utils.DeepChainMap(override, base)
 
@@ -681,7 +662,9 @@ class TestDeepNestingAndStress:
             }
 
         base = make_wide_nested(4, "base")
-        override = {"level_4_0": {"level_3_0": {"level_2_0": {"level_1_0": {"key_50": "OVERRIDE"}}}}}
+        override = {
+            "level_4_0": {"level_3_0": {"level_2_0": {"level_1_0": {"key_50": "OVERRIDE"}}}}
+        }
 
         dcm = utils.DeepChainMap(override, base)
 
@@ -929,4 +912,3 @@ class TestReprAndCoverage:
         assert "DeepChainMap" in result
         assert "{'a': 1}" in result
         assert "{'b': 2}" in result
-

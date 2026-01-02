@@ -39,9 +39,7 @@ class TestSkillSearchPaths:
         env_path1.mkdir()
         env_path2.mkdir()
 
-        with _mock.patch.dict(
-            _os.environ, {"BRYNHILD_SKILL_PATH": f"{env_path1}:{env_path2}"}
-        ):
+        with _mock.patch.dict(_os.environ, {"BRYNHILD_SKILL_PATH": f"{env_path1}:{env_path2}"}):
             paths = discovery.get_skill_search_paths(tmp_path)
 
         assert paths[0] == discovery.get_builtin_skills_path()
@@ -95,9 +93,7 @@ Instructions for {name}.
         assert "skill-a" in skills
         assert "skill-b" in skills
 
-    def test_later_sources_override_earlier_by_name(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_later_sources_override_earlier_by_name(self, tmp_path: _pathlib.Path) -> None:
         """Skill with same name from later source replaces earlier."""
         global_dir = tmp_path / "global"
         project_dir = tmp_path / "project"
@@ -113,9 +109,7 @@ Instructions for {name}.
         assert len(skills) == 1
         assert skills["shared-skill"].description == "Project version"
 
-    def test_skips_directories_without_skill_md(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_skips_directories_without_skill_md(self, tmp_path: _pathlib.Path) -> None:
         """Directories without SKILL.md are skipped."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
@@ -184,4 +178,3 @@ class TestHelperFunctions:
         """Project skills path is under .brynhild/skills/."""
         path = discovery.get_project_skills_path(tmp_path)
         assert path == tmp_path / ".brynhild" / "skills"
-

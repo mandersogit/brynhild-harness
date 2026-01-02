@@ -8,7 +8,6 @@ These tests verify the new immutability and mutation semantics:
 - MutableProxy for natural dict syntax
 """
 
-
 import pytest as _pytest
 
 import brynhild.utils as utils
@@ -1057,9 +1056,9 @@ class TestFrontLayerIntegration:
         dcm["config"] = {"b": 99, "c": 3}
 
         result = dcm["config"]
-        assert result["a"] == 1   # From source
+        assert result["a"] == 1  # From source
         assert result["b"] == 99  # From front (overrides)
-        assert result["c"] == 3   # From front (new key)
+        assert result["c"] == 3  # From front (new key)
 
     def test_iter_includes_front_layer_keys(self) -> None:
         """Iteration includes keys only in front_layer."""
@@ -1217,19 +1216,19 @@ class TestToDictWithFullState:
         dcm = utils.DeepChainMap(
             {"a": 1, "b": 2, "items": [1], "config": {"x": 10}},
         )
-        dcm["c"] = 3                            # front_layer
-        dcm["config"]["y"] = 20                 # nested front_layer
-        del dcm["a"]                            # delete_layer
-        dcm.list_append(("items",), 2)          # list_ops
+        dcm["c"] = 3  # front_layer
+        dcm["config"]["y"] = 20  # nested front_layer
+        del dcm["a"]  # delete_layer
+        dcm.list_append(("items",), 2)  # list_ops
 
         result = dcm.to_dict()
 
-        assert "a" not in result                # Deleted
-        assert result["b"] == 2                 # Source
-        assert result["c"] == 3                 # Front
-        assert result["config"]["x"] == 10     # Source nested
-        assert result["config"]["y"] == 20     # Front nested
-        assert result["items"] == [1, 2]       # List ops applied
+        assert "a" not in result  # Deleted
+        assert result["b"] == 2  # Source
+        assert result["c"] == 3  # Front
+        assert result["config"]["x"] == 10  # Source nested
+        assert result["config"]["y"] == 20  # Front nested
+        assert result["items"] == [1, 2]  # List ops applied
 
 
 class TestReloadPreservesUserState:
@@ -1655,7 +1654,7 @@ class TestProvenanceFrontLayer:
 
         _, prov = dcm.get_with_provenance("config")
 
-        assert prov["a"] == 0   # From source layer 0
+        assert prov["a"] == 0  # From source layer 0
         assert prov["b"] == -1  # Overridden by front
         assert prov["c"] == -1  # New from front
 
@@ -1670,4 +1669,3 @@ class TestProvenanceFrontLayer:
         _, prov = dcm.get_with_provenance("value")
 
         assert prov == {".": -1}
-

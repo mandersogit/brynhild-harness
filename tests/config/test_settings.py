@@ -107,17 +107,13 @@ class TestSettingsEnvironmentOverride:
 
     def test_nested_env_var_overrides_verbose(self) -> None:
         """BRYNHILD_BEHAVIOR__VERBOSE=true should set verbose to True."""
-        with _mock.patch.dict(
-            _os.environ, {"BRYNHILD_BEHAVIOR__VERBOSE": "true"}, clear=False
-        ):
+        with _mock.patch.dict(_os.environ, {"BRYNHILD_BEHAVIOR__VERBOSE": "true"}, clear=False):
             settings = config.Settings.construct_without_dotenv()
             assert settings.verbose is True
 
     def test_nested_env_var_overrides_provider(self) -> None:
         """BRYNHILD_PROVIDERS__DEFAULT should override default provider."""
-        with _mock.patch.dict(
-            _os.environ, {"BRYNHILD_PROVIDERS__DEFAULT": "ollama"}, clear=False
-        ):
+        with _mock.patch.dict(_os.environ, {"BRYNHILD_PROVIDERS__DEFAULT": "ollama"}, clear=False):
             settings = config.Settings.construct_without_dotenv()
             assert settings.provider == "ollama"
 
@@ -137,9 +133,7 @@ class TestSettingsValidation:
         """max_tokens=0 should raise ValidationError."""
         with _pytest.raises(ValueError):
             # Must pass via nested config
-            config.Settings.construct_without_dotenv(
-                behavior=types.BehaviorConfig(max_tokens=0)
-            )
+            config.Settings.construct_without_dotenv(behavior=types.BehaviorConfig(max_tokens=0))
 
     def test_max_tokens_rejects_over_limit(self) -> None:
         """max_tokens over 200000 should raise ValidationError."""

@@ -157,10 +157,7 @@ class TestContextBuilderSkillInjection:
         )
 
         # Should have injection record
-        skill_injections = [
-            i for i in ctx.injections
-            if i.source == "skill_metadata"
-        ]
+        skill_injections = [i for i in ctx.injections if i.source == "skill_metadata"]
         assert len(skill_injections) == 1
         assert skill_injections[0].location == "system_prompt_append"
 
@@ -267,4 +264,3 @@ class TestSkillResourcesAccess:
 
         content = patterns_file.read_text()
         assert "Sequential" in content or "Workflow" in content
-

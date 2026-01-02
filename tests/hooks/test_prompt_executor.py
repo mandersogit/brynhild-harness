@@ -188,4 +188,3 @@ class TestPromptHookExecutor:
         sent_prompt = mock_provider.last_messages[0]["content"]
         assert "Tool: Bash" in sent_prompt
         assert "Command: rm -rf /" in sent_prompt
-

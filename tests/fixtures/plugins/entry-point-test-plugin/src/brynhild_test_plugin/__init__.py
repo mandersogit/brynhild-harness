@@ -27,4 +27,3 @@ def register():
         description="Test plugin for entry point discovery",
         tools=["TestCalculator"],  # Declared tools
     )
-

@@ -108,14 +108,18 @@ class TestCLIBasics:
 
     def test_provider_option_overrides_default(self) -> None:
         """--provider option should override the default provider."""
-        result = self.runner.invoke(cli.cli, ["--provider", "openrouter", "config", "show", "--json"])
+        result = self.runner.invoke(
+            cli.cli, ["--provider", "openrouter", "config", "show", "--json"]
+        )
         assert result.exit_code == 0
         data = _json.loads(result.output)
         assert data["providers"]["default"] == "openrouter"
 
     def test_model_option_overrides_default(self) -> None:
         """--model option should override the default model."""
-        result = self.runner.invoke(cli.cli, ["--model", "custom-model", "config", "show", "--json"])
+        result = self.runner.invoke(
+            cli.cli, ["--model", "custom-model", "config", "show", "--json"]
+        )
         assert result.exit_code == 0
         data = _json.loads(result.output)
         assert data["models"]["default"] == "custom-model"

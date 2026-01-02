@@ -7,7 +7,6 @@ These tests verify:
 3. TurnTokenCounter tracks per-turn tokens correctly
 """
 
-
 import brynhild.ui.tokenizer as tokenizer
 
 
@@ -153,7 +152,7 @@ class TestTokenCountingAccuracy:
         text = "The quick brown fox jumps over the lazy dog. " * 10
         chunk_size = 50
         for i in range(0, len(text), chunk_size):
-            chunk = text[i:i + chunk_size]
+            chunk = text[i : i + chunk_size]
             counter.add_text(chunk)
 
         final_count = counter.count
@@ -195,4 +194,3 @@ class TestTokenCountingAccuracy:
         # Counts should be in the same ballpark (within 50%)
         ratio = max(oss_count, gpt4_count) / min(oss_count, gpt4_count)
         assert ratio < 1.5, f"Token counts differ too much: {oss_count} vs {gpt4_count}"
-

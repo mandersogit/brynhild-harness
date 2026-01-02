@@ -4,8 +4,6 @@ Tests for message formatting bugs.
 These tests were written to expose real bugs found during code review.
 """
 
-
-
 import brynhild.api.ollama_provider as ollama_provider
 import brynhild.api.openrouter_provider as openrouter_provider
 
@@ -56,9 +54,7 @@ class TestMessageFormatBugs:
 
     def test_tool_result_messages_are_preserved_openrouter(self) -> None:
         """Same test for OpenRouter provider."""
-        provider = openrouter_provider.OpenRouterProvider(
-            model="test", api_key="fake-key"
-        )
+        provider = openrouter_provider.OpenRouterProvider(model="test", api_key="fake-key")
 
         messages = [
             {"role": "user", "content": "Hello"},
@@ -114,4 +110,3 @@ class TestMessageFormatBugs:
         assert "system" not in roles or len(formatted) == 4, (
             f"Expected system message to be handled somehow, got roles: {roles}"
         )
-

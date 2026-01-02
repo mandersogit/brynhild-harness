@@ -522,4 +522,3 @@ class TestRecoveredToolCallDisplay:
         assert "tool_calls" in data
         if data["tool_calls"]:
             assert data["tool_calls"][0].get("recovered") is True
-

@@ -97,20 +97,24 @@ class TestDcmMapping:
 
     def test_iter_skips_deleted(self) -> None:
         """Iteration skips DELETE keys."""
-        data = dcm.DcmMapping({
-            "a": "value_a",
-            "b": dcm.DELETE,
-            "c": "value_c",
-        })
+        data = dcm.DcmMapping(
+            {
+                "a": "value_a",
+                "b": dcm.DELETE,
+                "c": "value_c",
+            }
+        )
         assert list(data.keys()) == ["a", "c"]
 
     def test_len_excludes_deleted(self) -> None:
         """Length excludes DELETE keys."""
-        data = dcm.DcmMapping({
-            "a": "value_a",
-            "b": dcm.DELETE,
-            "c": "value_c",
-        })
+        data = dcm.DcmMapping(
+            {
+                "a": "value_a",
+                "b": dcm.DELETE,
+                "c": "value_c",
+            }
+        )
         assert len(data) == 2
 
     def test_delitem_places_delete_marker(self) -> None:
@@ -423,11 +427,13 @@ class TestDcmMappingCopyAndPickle:
         """DcmMapping survives pickle roundtrip."""
         import pickle as _pickle
 
-        original = dcm.DcmMapping({
-            "normal": "value",
-            "deleted": dcm.DELETE,
-            "replaced": dcm.ReplaceMarker({"x": 1}),
-        })
+        original = dcm.DcmMapping(
+            {
+                "normal": "value",
+                "deleted": dcm.DELETE,
+                "replaced": dcm.ReplaceMarker({"x": 1}),
+            }
+        )
 
         pickled = _pickle.dumps(original)
         restored = _pickle.loads(pickled)

@@ -85,22 +85,39 @@ class TestPatternMatcher:
 
     def test_multiple_patterns_all_must_match(self) -> None:
         """Multiple patterns use AND logic."""
-        matcher = matching.PatternMatcher({
-            "tool": "Bash",
-            "tool_input.command": "^ls",
-        })
-        assert matcher.matches({
-            "tool": "Bash",
-            "tool_input": {"command": "ls -la"},
-        }) is True
-        assert matcher.matches({
-            "tool": "Bash",
-            "tool_input": {"command": "pwd"},
-        }) is False
-        assert matcher.matches({
-            "tool": "Read",
-            "tool_input": {"command": "ls -la"},
-        }) is False
+        matcher = matching.PatternMatcher(
+            {
+                "tool": "Bash",
+                "tool_input.command": "^ls",
+            }
+        )
+        assert (
+            matcher.matches(
+                {
+                    "tool": "Bash",
+                    "tool_input": {"command": "ls -la"},
+                }
+            )
+            is True
+        )
+        assert (
+            matcher.matches(
+                {
+                    "tool": "Bash",
+                    "tool_input": {"command": "pwd"},
+                }
+            )
+            is False
+        )
+        assert (
+            matcher.matches(
+                {
+                    "tool": "Read",
+                    "tool_input": {"command": "ls -la"},
+                }
+            )
+            is False
+        )
 
     def test_none_value_does_not_match(self) -> None:
         """None values don't match any pattern."""
@@ -122,4 +139,3 @@ class TestMatchPatterns:
         """match_patterns function works correctly."""
         assert matching.match_patterns({"tool": "Bash"}, {"tool": "Bash"}) is True
         assert matching.match_patterns({"tool": "Bash"}, {"tool": "Read"}) is False
-

@@ -120,9 +120,7 @@ class TestModelsConfigRegistry:
             bindings={"provider": "native"},
         )
 
-        config = types.ModelsConfig(
-            registry={"original/id": original}
-        )
+        config = types.ModelsConfig(registry={"original/id": original})
 
         assert config.registry["original/id"] is original
 
@@ -600,4 +598,3 @@ models:
 
         with _pytest.raises(_pydantic.ValidationError):
             settings_module.Settings(_env_file=None)
-

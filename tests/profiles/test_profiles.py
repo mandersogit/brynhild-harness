@@ -173,4 +173,3 @@ class TestBuiltinProfiles:
             assert profile.name
             assert profile.default_temperature > 0
             assert profile.default_max_tokens > 0
-

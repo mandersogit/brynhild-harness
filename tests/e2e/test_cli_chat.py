@@ -116,4 +116,3 @@ def test_chat_no_tools_flag_disables_tools(
     data = _json.loads(result.output)
     # Should have a response (not a tool call error)
     assert "error" not in data or data.get("error") is None
-

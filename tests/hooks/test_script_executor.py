@@ -64,4 +64,3 @@ class TestScriptHookExecutor:
 
         with _pytest.raises(base.HookExecutionError, match="not found"):
             await executor.execute(hook_def, context)
-

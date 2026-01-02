@@ -206,4 +206,3 @@ class TestConfigSessionIntegration:
         # Verify: Timestamps preserved
         assert loaded is not None
         assert loaded.created_at == original_created
-

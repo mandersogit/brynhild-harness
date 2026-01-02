@@ -81,9 +81,7 @@ class TestToolUseSubclassRoundTrip:
     """Test that custom ToolUse subclass fields survive round-trip to real model."""
 
     @_pytest.mark.asyncio
-    async def test_custom_field_in_message_sent_to_model(
-        self, provider: api.LLMProvider
-    ) -> None:
+    async def test_custom_field_in_message_sent_to_model(self, provider: api.LLMProvider) -> None:
         """
         Verify custom fields from ToolUse subclass appear in message history
         and the model accepts the message without error.
@@ -139,9 +137,7 @@ class TestToolUseSubclassRoundTrip:
 
         # Step 4: Create tool result
         fake_result = tools_base.ToolResult(success=True, output="56", error=None)
-        tool_result_msg = core_types.format_tool_result_message(
-            custom_tool_use.id, fake_result
-        )
+        tool_result_msg = core_types.format_tool_result_message(custom_tool_use.id, fake_result)
 
         # Step 5: Send message with custom field back to model
         # If the model rejects the extra field, this would error
@@ -166,17 +162,15 @@ class TestToolUseSubclassRoundTrip:
         if response2.tool_uses:
             for tu in response2.tool_uses:
                 if tu.name == "calculator":
-                    _pytest.fail(
-                        "Model called calculator again - tool result not received"
-                    )
+                    _pytest.fail("Model called calculator again - tool result not received")
 
         assert response2.content, "Model should respond after receiving tool result"
-        print(f"✓ Model accepted message with custom field and responded: {response2.content[:100]}...")
+        print(
+            f"✓ Model accepted message with custom field and responded: {response2.content[:100]}..."
+        )
 
     @_pytest.mark.asyncio
-    async def test_multiple_tool_calls_with_custom_fields(
-        self, provider: api.LLMProvider
-    ) -> None:
+    async def test_multiple_tool_calls_with_custom_fields(self, provider: api.LLMProvider) -> None:
         """
         Test that multiple tool calls can each have their own custom field values.
         """
@@ -307,4 +301,3 @@ class TestToolUseSubclassWithLogging:
             assert len(tool_result_events) == 1
             assert tool_result_events[0]["success"] is True
             print("✓ Tool result logged correctly")
-

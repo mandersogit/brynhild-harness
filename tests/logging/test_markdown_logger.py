@@ -587,4 +587,3 @@ class TestMarkdownLogger:
             second_a = content.find("Second answer")
 
             assert first_q < first_a < second_q < second_a
-

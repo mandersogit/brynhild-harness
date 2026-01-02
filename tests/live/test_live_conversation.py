@@ -312,8 +312,7 @@ class TestLiveTokenTracking:
             # Each update should show cumulative output (growing)
             for i in range(1, len(outputs)):
                 assert outputs[i] >= outputs[i - 1], (
-                    f"Output tokens should be cumulative. "
-                    f"Got {outputs[i]} after {outputs[i-1]}"
+                    f"Output tokens should be cumulative. Got {outputs[i]} after {outputs[i - 1]}"
                 )
 
 
@@ -326,9 +325,7 @@ class TestOpenRouterCostTracking:
     """Live tests for cost tracking from OpenRouter."""
 
     @_pytest.mark.asyncio
-    async def test_openrouter_reports_cost(
-        self, openrouter_provider: api.LLMProvider
-    ) -> None:
+    async def test_openrouter_reports_cost(self, openrouter_provider: api.LLMProvider) -> None:
         """OpenRouter should report cost in Usage.details."""
         callbacks = CaptureCallbacks()
 
@@ -357,9 +354,7 @@ class TestOpenRouterCostTracking:
             assert last_usage.details.reasoning_tokens >= 0
 
     @_pytest.mark.asyncio
-    async def test_cost_details_structure(
-        self, openrouter_provider: api.LLMProvider
-    ) -> None:
+    async def test_cost_details_structure(self, openrouter_provider: api.LLMProvider) -> None:
         """Verify the full structure of UsageDetails from OpenRouter."""
         callbacks = CaptureCallbacks()
 
@@ -403,9 +398,7 @@ class TestOllamaTokenTracking:
     """Token tracking tests specifically for Ollama (free local provider)."""
 
     @_pytest.mark.asyncio
-    async def test_ollama_tokens_reported(
-        self, ollama_provider: api.LLMProvider
-    ) -> None:
+    async def test_ollama_tokens_reported(self, ollama_provider: api.LLMProvider) -> None:
         """Ollama reports token usage through ConversationProcessor."""
         callbacks = CaptureCallbacks()
 
@@ -424,9 +417,7 @@ class TestOllamaTokenTracking:
         assert len(callbacks.usage_updates) > 0
 
     @_pytest.mark.asyncio
-    async def test_ollama_multi_turn_tokens(
-        self, ollama_provider: api.LLMProvider
-    ) -> None:
+    async def test_ollama_multi_turn_tokens(self, ollama_provider: api.LLMProvider) -> None:
         """
         Multi-turn conversation maintains reasonable token counts.
 
@@ -473,8 +464,7 @@ class TestOllamaTokenTracking:
         # But not ridiculously more (sanity check)
         growth = result2.input_tokens - result1.input_tokens
         assert growth < result1.input_tokens * 3, (
-            f"Token growth {growth} seems excessive compared to "
-            f"turn 1 size {result1.input_tokens}"
+            f"Token growth {growth} seems excessive compared to turn 1 size {result1.input_tokens}"
         )
 
 
@@ -557,9 +547,7 @@ class TestOllamaStreamingTokenDisplay:
     """
 
     @_pytest.mark.asyncio
-    async def test_streaming_token_counts_increment(
-        self, ollama_provider: api.LLMProvider
-    ) -> None:
+    async def test_streaming_token_counts_increment(self, ollama_provider: api.LLMProvider) -> None:
         """
         During streaming, token counts should increment.
         """
@@ -593,9 +581,7 @@ class TestOllamaStreamingTokenDisplay:
             )
 
     @_pytest.mark.asyncio
-    async def test_provider_data_received_at_end(
-        self, ollama_provider: api.LLMProvider
-    ) -> None:
+    async def test_provider_data_received_at_end(self, ollama_provider: api.LLMProvider) -> None:
         """
         Provider should report usage at turn end.
         """
@@ -617,9 +603,7 @@ class TestOllamaStreamingTokenDisplay:
         )
 
         # Provider should have reported usage
-        assert len(renderer.provider_token_updates) > 0, (
-            "Provider should report usage"
-        )
+        assert len(renderer.provider_token_updates) > 0, "Provider should report usage"
 
         # Last provider update should match result
         last_input, last_output = renderer.provider_token_updates[-1]
@@ -628,9 +612,7 @@ class TestOllamaStreamingTokenDisplay:
         assert last_output > 0
 
     @_pytest.mark.asyncio
-    async def test_streaming_mode_toggled(
-        self, ollama_provider: api.LLMProvider
-    ) -> None:
+    async def test_streaming_mode_toggled(self, ollama_provider: api.LLMProvider) -> None:
         """
         Streaming mode should be set True at start, False at end.
         """
@@ -652,9 +634,7 @@ class TestOllamaStreamingTokenDisplay:
         )
 
         # Should have toggled streaming mode
-        assert len(renderer.streaming_mode_calls) >= 2, (
-            "Should have set streaming mode on and off"
-        )
+        assert len(renderer.streaming_mode_calls) >= 2, "Should have set streaming mode on and off"
         assert renderer.streaming_mode_calls[0] is True, (
             "First streaming mode call should be True (start)"
         )
@@ -712,4 +692,3 @@ class TestOllamaStreamingTokenDisplay:
             f"Provider output ({provider_output}) should be at least half of "
             f"client estimate ({client_final}) - something may be wrong"
         )
-

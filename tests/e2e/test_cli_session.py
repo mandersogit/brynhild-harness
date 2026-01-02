@@ -36,4 +36,3 @@ def test_session_list_json_is_valid(
     # Should be valid JSON array
     data = _json.loads(result.output)
     assert isinstance(data, list)
-

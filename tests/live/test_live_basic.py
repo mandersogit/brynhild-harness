@@ -55,7 +55,9 @@ class TestLiveBasicChat:
         has_output = (response.content and len(response.content) > 0) or (
             response.thinking and len(response.thinking) > 0
         )
-        assert has_output, f"No output: content={response.content!r}, thinking={response.thinking!r}"
+        assert has_output, (
+            f"No output: content={response.content!r}, thinking={response.thinking!r}"
+        )
         assert response.stop_reason in ("stop", "end_turn", "max_tokens", "length")
 
     @_pytest.mark.asyncio
@@ -123,4 +125,3 @@ class TestLiveBasicChat:
             response.thinking and len(response.thinking) > 0
         )
         assert has_output
-

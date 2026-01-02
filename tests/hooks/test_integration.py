@@ -315,4 +315,3 @@ class TestHookIntegration:
         # Should work normally
         assert result.success is True
         assert "test" in result.output
-

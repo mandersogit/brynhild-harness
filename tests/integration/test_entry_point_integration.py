@@ -48,9 +48,7 @@ class TestEntryPointPluginDiscovery:
 class TestEntryPointToolLoading:
     """Integration tests for loading tools via entry points."""
 
-    def test_test_calculator_tool_loads(
-        self, installed_test_plugin: _pathlib.Path
-    ) -> None:
+    def test_test_calculator_tool_loads(self, installed_test_plugin: _pathlib.Path) -> None:
         """The TestCalculator tool loads via entry points."""
         settings = config.Settings()
         tool_registry = registry.build_registry_from_settings(settings)
@@ -99,9 +97,7 @@ class TestEntryPointToolLoading:
 class TestEntryPointPluginToolVerification:
     """Integration tests for the tool verification feature."""
 
-    def test_declared_tool_is_loaded(
-        self, installed_test_plugin: _pathlib.Path
-    ) -> None:
+    def test_declared_tool_is_loaded(self, installed_test_plugin: _pathlib.Path) -> None:
         """Tools declared in manifest are loaded via entry points."""
         # The test plugin declares TestCalculator in its manifest
         # AND registers it via brynhild.tools entry point
@@ -115,6 +111,5 @@ class TestEntryPointPluginToolVerification:
 
         for declared_tool in test_plugin.manifest.tools:
             assert declared_tool in tool_registry, (
-                f"Tool '{declared_tool}' declared in plugin manifest "
-                f"was not loaded into registry"
+                f"Tool '{declared_tool}' declared in plugin manifest was not loaded into registry"
             )

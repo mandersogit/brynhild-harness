@@ -65,7 +65,7 @@ class TestDeepChainMapMerging:
         """Higher priority scalar overrides lower."""
         dcm = utils.DeepChainMap(
             {"value": "high"},  # priority 0
-            {"value": "low"},   # priority 1
+            {"value": "low"},  # priority 1
         )
 
         assert dcm["value"] == "high"
@@ -87,9 +87,9 @@ class TestDeepChainMapMerging:
         dcm = utils.DeepChainMap(user, builtin)
 
         result = dcm["model"]
-        assert result["name"] == "llama"      # From builtin
-        assert result["size"] == "70b"        # From user (overridden)
-        assert result["context"] == 4096      # From builtin
+        assert result["name"] == "llama"  # From builtin
+        assert result["size"] == "70b"  # From user (overridden)
+        assert result["context"] == 4096  # From builtin
 
     def test_deeply_nested_merge(self) -> None:
         """Deep nesting merges correctly."""
@@ -105,7 +105,7 @@ class TestDeepChainMapMerging:
             "a": {
                 "b": {
                     "c": 100,  # Override
-                    "e": 3,    # Add new
+                    "e": 3,  # Add new
                 }
             }
         }
@@ -113,8 +113,8 @@ class TestDeepChainMapMerging:
 
         result = dcm["a"]["b"]
         assert result["c"] == 100  # Overridden
-        assert result["d"] == 2    # From base
-        assert result["e"] == 3    # Added
+        assert result["d"] == 2  # From base
+        assert result["e"] == 3  # Added
 
     def test_type_mismatch_replaces(self) -> None:
         """If types differ, higher priority replaces entirely."""
@@ -213,7 +213,7 @@ class TestDeepChainMapProvenance:
         user = {"model": {"size": "70b"}}
 
         dcm = utils.DeepChainMap(
-            user,     # layer 0 (highest priority)
+            user,  # layer 0 (highest priority)
             builtin,  # layer 1
             track_provenance=True,
         )
@@ -221,8 +221,8 @@ class TestDeepChainMapProvenance:
         value, prov = dcm.get_with_provenance("model")
         assert value["name"] == "default"
         assert value["size"] == "70b"
-        assert prov["name"] == 1   # From builtin (layer 1)
-        assert prov["size"] == 0   # From user (layer 0)
+        assert prov["name"] == 1  # From builtin (layer 1)
+        assert prov["size"] == 0  # From user (layer 0)
 
 
 class TestDeepChainMapMutation:
@@ -338,6 +338,3 @@ class TestDeepChainMapToDict:
         }
         assert isinstance(result, dict)
         assert not isinstance(result, utils.DeepChainMap)
-
-
-

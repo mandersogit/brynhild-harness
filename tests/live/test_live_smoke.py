@@ -102,7 +102,9 @@ class TestSmokeChat:
     def test_print_mode_produces_output(self) -> None:
         """bin/brynhild chat -p produces a response."""
         result = _run_brynhild(
-            "chat", "-p", "Say exactly: SMOKE_TEST_OK",
+            "chat",
+            "-p",
+            "Say exactly: SMOKE_TEST_OK",
             timeout=60,
         )
 
@@ -113,7 +115,9 @@ class TestSmokeChat:
     def test_json_mode_returns_valid_json(self) -> None:
         """bin/brynhild chat --json returns valid JSON."""
         result = _run_brynhild(
-            "chat", "--json", "What is 1+1? Answer with just the number.",
+            "chat",
+            "--json",
+            "What is 1+1? Answer with just the number.",
             timeout=60,
         )
 
@@ -143,7 +147,9 @@ class TestLoggingPipeline:
         """Chat command creates a log file when logging enabled."""
         # Run chat with custom log directory (nested config env vars)
         result = _run_brynhild(
-            "chat", "-p", "Say hello",
+            "chat",
+            "-p",
+            "Say hello",
             env_override={
                 "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
                 "BRYNHILD_LOGGING__ENABLED": "true",
@@ -155,13 +161,17 @@ class TestLoggingPipeline:
 
         # Should have created a log file
         log_files = list(temp_log_dir.glob("*.jsonl"))
-        assert len(log_files) >= 1, f"No log files in {temp_log_dir}: {list(temp_log_dir.iterdir())}"
+        assert len(log_files) >= 1, (
+            f"No log files in {temp_log_dir}: {list(temp_log_dir.iterdir())}"
+        )
 
     def test_log_file_has_expected_events(self, temp_log_dir: _pathlib.Path) -> None:
         """Log file contains expected event types."""
         # Run chat (nested config env vars)
         result = _run_brynhild(
-            "chat", "-p", "What is 2+2?",
+            "chat",
+            "-p",
+            "What is 2+2?",
             env_override={
                 "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
                 "BRYNHILD_LOGGING__ENABLED": "true",
@@ -195,7 +205,9 @@ class TestLoggingPipeline:
         """logs list command shows newly created log."""
         # Create a log by chatting
         result = _run_brynhild(
-            "chat", "-p", "Hello",
+            "chat",
+            "-p",
+            "Hello",
             env_override={
                 "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
                 "BRYNHILD_LOGGING__ENABLED": "true",
@@ -206,7 +218,8 @@ class TestLoggingPipeline:
 
         # Now list logs
         result = _run_brynhild(
-            "logs", "list",
+            "logs",
+            "list",
             env_override={"BRYNHILD_LOGGING__DIR": str(temp_log_dir)},
             timeout=10,
         )
@@ -218,7 +231,9 @@ class TestLoggingPipeline:
         """logs view command can parse a generated log."""
         # Create a log
         result = _run_brynhild(
-            "chat", "-p", "Say test",
+            "chat",
+            "-p",
+            "Say test",
             env_override={
                 "BRYNHILD_LOGGING__DIR": str(temp_log_dir),
                 "BRYNHILD_LOGGING__ENABLED": "true",
@@ -229,7 +244,8 @@ class TestLoggingPipeline:
 
         # View the log (most recent)
         result = _run_brynhild(
-            "logs", "view",
+            "logs",
+            "view",
             env_override={"BRYNHILD_LOGGING__DIR": str(temp_log_dir)},
             timeout=10,
         )
@@ -250,7 +266,8 @@ class TestProfileAppliedInRealSession:
         # Ask a question that the profile's tool_policy should handle well
         # (should answer from context, not try to search)
         result = _run_brynhild(
-            "chat", "-p",
+            "chat",
+            "-p",
             "I told you earlier my name is Alice. What is my name?",
             env_override={
                 "BRYNHILD_LOGGING__DIR": str(log_dir),
@@ -263,4 +280,3 @@ class TestProfileAppliedInRealSession:
 
         # Should produce a response (profile patterns are applied in background)
         assert len(result.stdout) > 0, "No response"
-

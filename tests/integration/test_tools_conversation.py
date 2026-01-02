@@ -351,4 +351,3 @@ class TestToolsConversationIntegration:
         assert len(callbacks.tool_calls) == 1
         assert len(callbacks.tool_results) == 1
         assert callbacks.tool_results[0].result.output == "The answer is 42"
-

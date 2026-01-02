@@ -346,9 +346,7 @@ class TestHookFailureSemantics:
             command="exit 1",
             message="Second hook blocked",
         )
-        hooks_config = config.HooksConfig(
-            hooks={"pre_tool_use": [error_hook, block_hook]}
-        )
+        hooks_config = config.HooksConfig(hooks={"pre_tool_use": [error_hook, block_hook]})
         mgr = manager.HookManager(hooks_config, project_root=tmp_path)
 
         context = events.HookContext(
@@ -362,4 +360,3 @@ class TestHookFailureSemantics:
         # First hook errored and continued, second hook should run and block
         assert result.action == events.HookAction.BLOCK
         assert result.message == "Second hook blocked"
-

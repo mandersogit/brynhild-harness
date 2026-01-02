@@ -129,9 +129,7 @@ class TestPluginSkillDiscovery:
         script_names = {s.name for s in scripts}
         assert "run_tests.sh" in script_names
 
-    def test_plugin_skills_combined_with_other_sources(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_plugin_skills_combined_with_other_sources(self, tmp_path: _pathlib.Path) -> None:
         """Plugin skills combine with project and global skills."""
         import brynhild.plugins.loader as loader
         import brynhild.skills as skills
@@ -166,9 +164,7 @@ Project skill body.
         assert "testing" in skill_names, "plugin skill not found"
         assert "project-skill" in skill_names, "project skill not found"
 
-    def test_project_skill_overrides_plugin_skill(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_project_skill_overrides_plugin_skill(self, tmp_path: _pathlib.Path) -> None:
         """Project skill with same name overrides plugin skill."""
         import brynhild.plugins.loader as loader
         import brynhild.skills as skills
@@ -264,9 +260,7 @@ class TestPluginSkillDiscoveryPaths:
 class TestPluginSkillSearchPaths:
     """Tests for skill search paths with plugins."""
 
-    def test_get_skill_search_paths_includes_plugins(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_get_skill_search_paths_includes_plugins(self, tmp_path: _pathlib.Path) -> None:
         """get_skill_search_paths includes plugin paths when provided."""
         import brynhild.plugins.loader as loader
         import brynhild.skills.discovery as discovery
@@ -284,9 +278,7 @@ class TestPluginSkillSearchPaths:
         plugin_skills_path = TEST_COMPLETE_PLUGIN / "skills"
         assert plugin_skills_path in paths
 
-    def test_plugin_skills_after_global_before_project(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_plugin_skills_after_global_before_project(self, tmp_path: _pathlib.Path) -> None:
         """Plugin skill paths come after global but before project."""
         import brynhild.plugins.loader as loader
         import brynhild.skills.discovery as discovery
@@ -355,4 +347,3 @@ class TestSkillDiscoveryWithPlugins:
         source = disc._get_source_for_path(plugin_skills_path)
 
         assert source == "plugin:test-complete"
-

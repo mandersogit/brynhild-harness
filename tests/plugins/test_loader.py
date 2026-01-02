@@ -39,18 +39,14 @@ description: Test plugin
         assert plugin.path == plugin_dir.resolve()
         assert plugin.enabled is True
 
-    def test_missing_directory_raises_file_not_found(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_directory_raises_file_not_found(self, tmp_path: _pathlib.Path) -> None:
         """Non-existent directory raises FileNotFoundError."""
         plugin_loader = loader.PluginLoader()
 
         with _pytest.raises(FileNotFoundError, match="not found"):
             plugin_loader.load(tmp_path / "nonexistent")
 
-    def test_missing_manifest_raises_file_not_found(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_manifest_raises_file_not_found(self, tmp_path: _pathlib.Path) -> None:
         """Directory without plugin.yaml raises FileNotFoundError."""
         plugin_dir = tmp_path / "no-manifest"
         plugin_dir.mkdir()
@@ -59,9 +55,7 @@ description: Test plugin
         with _pytest.raises(FileNotFoundError, match="not found"):
             plugin_loader.load(plugin_dir)
 
-    def test_invalid_manifest_raises_value_error(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_invalid_manifest_raises_value_error(self, tmp_path: _pathlib.Path) -> None:
         """Invalid manifest content raises ValueError."""
         plugin_dir = tmp_path / "bad-manifest"
         plugin_dir.mkdir()
@@ -113,9 +107,7 @@ skills:
 
         assert warnings == []
 
-    def test_missing_commands_directory_generates_warning(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_commands_directory_generates_warning(self, tmp_path: _pathlib.Path) -> None:
         """Plugin declaring commands but missing commands/ generates warning."""
         plugin_dir = tmp_path / "missing-commands"
         plugin_dir.mkdir()
@@ -134,9 +126,7 @@ commands:
         assert len(warnings) == 1
         assert "commands/ directory missing" in warnings[0]
 
-    def test_missing_command_file_generates_warning(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_command_file_generates_warning(self, tmp_path: _pathlib.Path) -> None:
         """Plugin declaring command but missing file generates warning."""
         plugin_dir = tmp_path / "missing-cmd-file"
         plugin_dir.mkdir()
@@ -159,9 +149,7 @@ commands:
         assert len(warnings) == 1
         assert "deploy.md" in warnings[0]
 
-    def test_missing_tools_directory_generates_warning(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_tools_directory_generates_warning(self, tmp_path: _pathlib.Path) -> None:
         """Plugin declaring tools but missing tools/ generates warning."""
         plugin_dir = tmp_path / "missing-tools"
         plugin_dir.mkdir()
@@ -180,9 +168,7 @@ tools:
         assert len(warnings) == 1
         assert "tools/ directory missing" in warnings[0]
 
-    def test_missing_hooks_file_generates_warning(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_hooks_file_generates_warning(self, tmp_path: _pathlib.Path) -> None:
         """Plugin declaring hooks but missing hooks.yaml generates warning."""
         plugin_dir = tmp_path / "missing-hooks"
         plugin_dir.mkdir()
@@ -248,4 +234,3 @@ hooks: true
         assert "commands/" in warning_text
         assert "tools/" in warning_text
         assert "hooks.yaml" in warning_text
-

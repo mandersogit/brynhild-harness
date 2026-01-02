@@ -74,13 +74,15 @@ class TestFrozenMapping:
 
     def test_scalar_values_unchanged(self) -> None:
         """Scalar values (int, str, etc.) returned as-is."""
-        fm = FrozenMapping({
-            "int": 42,
-            "str": "hello",
-            "float": 3.14,
-            "bool": True,
-            "none": None,
-        })
+        fm = FrozenMapping(
+            {
+                "int": 42,
+                "str": "hello",
+                "float": 3.14,
+                "bool": True,
+                "none": None,
+            }
+        )
 
         assert fm["int"] == 42
         assert fm["str"] == "hello"
@@ -364,13 +366,7 @@ class TestFreeze:
 
     def test_freeze_deeply_nested(self) -> None:
         """freeze() on nested structure creates fully frozen view."""
-        data: dict[str, _typing.Any] = {
-            "level1": {
-                "level2": {
-                    "items": [1, 2, {"deep": "value"}]
-                }
-            }
-        }
+        data: dict[str, _typing.Any] = {"level1": {"level2": {"items": [1, 2, {"deep": "value"}]}}}
 
         frozen = freeze(data)
 
@@ -384,4 +380,3 @@ class TestFreeze:
         deep_dict = items[2]
         assert isinstance(deep_dict, FrozenMapping)
         assert deep_dict["deep"] == "value"
-

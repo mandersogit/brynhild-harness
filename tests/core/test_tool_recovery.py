@@ -39,7 +39,8 @@ class MockTool(tools_base.Tool):
         return False
 
     async def execute(
-        self, input: dict[str, _typing.Any]  # noqa: A002
+        self,
+        input: dict[str, _typing.Any],  # noqa: A002
     ) -> tools_base.ToolResult:
         _ = input  # unused in mock
         return tools_base.ToolResult(success=True, output="mock result", error=None)
@@ -128,14 +129,14 @@ class TestToolCallRecovery:
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Recovers tool call JSON that appears after double newline at end of thinking."""
-        thinking = '''I analyzed the search results and found information about norigami.
+        thinking = """I analyzed the search results and found information about norigami.
 Now I should search for more specific information about the reduce functionality.
 
 {
   "corpus_key": "memcomp-support-list-new",
   "query": "norigami reduce",
   "limit": 5
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -155,12 +156,12 @@ Now I should search for more specific information about the reduce functionality
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Recovers when tool name is mentioned near the JSON."""
-        thinking = '''Let me use semantic_search to find more information.
+        thinking = """Let me use semantic_search to find more information.
 
 {
   "corpus_key": "test-corpus",
   "query": "test query"
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -187,11 +188,11 @@ Now I should search for more specific information about the reduce functionality
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Now recovers JSON even when it's not at the very end."""
-        thinking = '''Here is some analysis.
+        thinking = """Here is some analysis.
 
 {"corpus_key": "test", "query": "test"}
 
-And here is more text after the JSON.'''
+And here is more text after the JSON."""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -219,13 +220,13 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Returns None when JSON is malformed."""
-        thinking = '''Let me search.
+        thinking = """Let me search.
 
 {
   "corpus_key": "test",
   "query": "test"
   missing_comma: true
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -237,12 +238,12 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Returns None when JSON doesn't match any registered tool."""
-        thinking = '''Let me do something.
+        thinking = """Let me do something.
 
 {
   "completely": "unrelated",
   "json": "object"
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -254,11 +255,11 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Returns None when required parameters are missing."""
-        thinking = '''Search for something.
+        thinking = """Search for something.
 
 {
   "limit": 5
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -271,14 +272,12 @@ And here is more text after the JSON.'''
     ) -> None:
         """Handles empty or None thinking gracefully."""
         assert (
-            tool_recovery.try_recover_tool_call_from_thinking(
-                "", registry_with_search_tool
-            )
-            is None
+            tool_recovery.try_recover_tool_call_from_thinking("", registry_with_search_tool) is None
         )
         assert (
             tool_recovery.try_recover_tool_call_from_thinking(
-                None, registry_with_search_tool  # type: ignore
+                None,
+                registry_with_search_tool,  # type: ignore
             )
             is None
         )
@@ -296,12 +295,12 @@ And here is more text after the JSON.'''
     ) -> None:
         """Picks the tool that best matches the JSON parameters."""
         # This JSON matches semantic_search better (has corpus_key and query)
-        thinking = '''Search for info.
+        thinking = """Search for info.
 
 {
   "corpus_key": "test-corpus",
   "query": "test query"
-}'''
+}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_multiple_tools
@@ -314,14 +313,14 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Recovers JSON even with trailing whitespace/newlines."""
-        thinking = '''Search now.
+        thinking = """Search now.
 
 {
   "corpus_key": "test",
   "query": "test"
 }
 
-'''
+"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -334,8 +333,8 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Recovers JSON even without double newline separator."""
-        thinking = '''I should search for more info.
-{"corpus_key": "test", "query": "norigami"}'''
+        thinking = """I should search for more info.
+{"corpus_key": "test", "query": "norigami"}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -362,8 +361,8 @@ And here is more text after the JSON.'''
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Finds the correct JSON when text has multiple { characters."""
-        thinking = '''The config looks like {"other": "stuff"} but I need to search.
-{"corpus_key": "test", "query": "final"}'''
+        thinking = """The config looks like {"other": "stuff"} but I need to search.
+{"corpus_key": "test", "query": "final"}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -421,9 +420,9 @@ And here is more text after the JSON.'''
         """When last JSON doesn't match a tool, tries earlier JSON objects."""
         # Last JSON is {"unrelated": true} which doesn't match semantic_search
         # But earlier JSON does match
-        thinking = '''Let me search: {"corpus_key": "test", "query": "match"}
+        thinking = """Let me search: {"corpus_key": "test", "query": "match"}
 Some more analysis...
-Final note: {"unrelated": true}'''
+Final note: {"unrelated": true}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -441,9 +440,9 @@ class TestExtractAllJson:
 
     def test_extracts_multiple_json_objects(self) -> None:
         """Extracts all JSON objects from text."""
-        thinking = '''First object: {"a": 1}
+        thinking = """First object: {"a": 1}
 Second object: {"b": 2}
-Third: {"c": 3}'''
+Third: {"c": 3}"""
 
         results = tool_recovery.extract_all_json_from_thinking(thinking)
 
@@ -462,9 +461,9 @@ Third: {"c": 3}'''
 
     def test_skips_invalid_json(self) -> None:
         """Skips malformed JSON while extracting valid ones."""
-        thinking = '''Valid: {"a": 1}
+        thinking = """Valid: {"a": 1}
 Invalid: {not json}
-Also valid: {"b": 2}'''
+Also valid: {"b": 2}"""
 
         results = tool_recovery.extract_all_json_from_thinking(thinking)
 
@@ -540,9 +539,7 @@ class TestToolRecoveryPolicy:
 
         thinking = '{"corpus_key": "test", "query": "test"}'
 
-        result = tool_recovery.try_recover_tool_call_from_thinking(
-            thinking, deny_registry
-        )
+        result = tool_recovery.try_recover_tool_call_from_thinking(thinking, deny_registry)
 
         # Should not recover because tool denies it
         assert result is None
@@ -589,11 +586,11 @@ class TestAntiPatternDetection:
         # So we need enough padding between the example text and the "real" JSON
         padding = "x" * 150  # Enough to push anti-pattern out of window
 
-        thinking = f'''The format is:
+        thinking = f"""The format is:
 {{"corpus_key": "example", "query": "example"}}
 {padding}
 Now let me actually search:
-{{"corpus_key": "real", "query": "real query"}}'''
+{{"corpus_key": "real", "query": "real query"}}"""
 
         result = tool_recovery.try_recover_tool_call_from_thinking(
             thinking, registry_with_search_tool
@@ -702,9 +699,7 @@ class TestContentTagRecovery:
         """Recovers tool call from [tool_call: Bash(command="pwd")]."""
         content = 'Let me check the current directory.\n\n[tool_call: Bash(command="pwd")]'
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is not None
         assert result.tool_use.name == "Bash"
@@ -716,7 +711,9 @@ class TestContentTagRecovery:
         self, registry_with_search_tool: tools_registry.ToolRegistry
     ) -> None:
         """Recovers tool call with multiple arguments."""
-        content = '[tool_call: semantic_search(corpus_key="test", query="find something", limit=10)]'
+        content = (
+            '[tool_call: semantic_search(corpus_key="test", query="find something", limit=10)]'
+        )
 
         result = tool_recovery.try_recover_tool_call_from_content(
             content, registry_with_search_tool
@@ -733,9 +730,7 @@ class TestContentTagRecovery:
         """Matches tool names case-insensitively."""
         content = '[tool_call: bash(command="ls")]'
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is not None
         assert result.tool_use.name == "Bash"
@@ -746,9 +741,7 @@ class TestContentTagRecovery:
         """Parses boolean argument values."""
         content = '[tool_call: Bash(command="echo test", background=true)]'
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is not None
         assert result.tool_use.input["command"] == "echo test"
@@ -773,9 +766,7 @@ class TestContentTagRecovery:
         """No recovery for unknown tool names."""
         content = '[tool_call: UnknownTool(arg="value")]'
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is None
 
@@ -785,9 +776,7 @@ class TestContentTagRecovery:
         """No recovery for content without tool_call tags."""
         content = "Just some text about using tools"
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is None
 
@@ -799,9 +788,7 @@ class TestContentTagRecovery:
 More text here
 [tool_call: Bash(command="second")]"""
 
-        result = tool_recovery.try_recover_tool_call_from_content(
-            content, registry_with_bash_tool
-        )
+        result = tool_recovery.try_recover_tool_call_from_content(content, registry_with_bash_tool)
 
         assert result is not None
         assert result.tool_use.input["command"] == "second"
@@ -843,4 +830,3 @@ More text here
         result = tool_recovery.try_recover_tool_call_from_content(content, registry)
 
         assert result is None
-

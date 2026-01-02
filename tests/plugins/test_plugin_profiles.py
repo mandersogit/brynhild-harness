@@ -335,9 +335,7 @@ description: Profile from {plugin_name}
             assert "conflicting-model" in str(exc_info.value)
             assert "plugin-a" in str(exc_info.value) or "plugin-b" in str(exc_info.value)
 
-    def test_different_profile_names_no_collision(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_different_profile_names_no_collision(self, tmp_path: _pathlib.Path) -> None:
         """Two plugins with different profile names load successfully.
 
         Requirement: Multiple plugins can provide profiles if names are unique.
@@ -375,4 +373,3 @@ description: Profile from {plugin_name}
 
             assert "model-0" in profiles
             assert "model-1" in profiles
-

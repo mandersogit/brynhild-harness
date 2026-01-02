@@ -75,4 +75,3 @@ class Tool(_base.Tool):
                 output="",
                 error=f"Invalid input: {e}",
             )
-

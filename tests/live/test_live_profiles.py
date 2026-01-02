@@ -25,7 +25,12 @@ import brynhild.profiles.builtin as builtin
 
 # All tests require live API access
 # ollama_local: most tests run against local/private Ollama server
-pytestmark = [_pytest.mark.live, _pytest.mark.slow, _pytest.mark.profiles, _pytest.mark.ollama_local]
+pytestmark = [
+    _pytest.mark.live,
+    _pytest.mark.slow,
+    _pytest.mark.profiles,
+    _pytest.mark.ollama_local,
+]
 
 # Default models for testing
 OLLAMA_MODEL = _os.environ.get("BRYNHILD_OLLAMA_MODEL", "openai/gpt-oss-120b")
@@ -306,4 +311,3 @@ class TestProfileWithOpenRouter:
             response.thinking and len(response.thinking) > 0
         )
         assert has_output, "Should have content or thinking output"
-

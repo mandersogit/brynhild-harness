@@ -265,9 +265,7 @@ class TestProviderTypesRegistry:
         Fails if: Provider info dict missing required fields.
         """
         providers = api.get_available_providers()
-        openrouter_info = next(
-            (p for p in providers if p["name"] == "openrouter"), None
-        )
+        openrouter_info = next((p for p in providers if p["name"] == "openrouter"), None)
         assert openrouter_info is not None
         assert openrouter_info["type"] == "openrouter"
         assert openrouter_info["available"] is True
@@ -525,7 +523,10 @@ models:
                 # Binding should exist for the custom provider instance
                 binding = identity.get_binding("ollama-behemoth")
                 assert binding is not None
-                assert binding.model_id == "hf.co/LatitudeGames/Wayfarer-Large-70B-Llama-3.3-GGUF:Q4_K_M"
+                assert (
+                    binding.model_id
+                    == "hf.co/LatitudeGames/Wayfarer-Large-70B-Llama-3.3-GGUF:Q4_K_M"
+                )
 
     def test_native_model_id_for_custom_provider(self) -> None:
         """get_native_model_id should work with custom provider instances."""
@@ -686,4 +687,3 @@ class TestPluginProviderInstanceConfig:
 
             assert result is not None
             assert result.model == "my-model"
-

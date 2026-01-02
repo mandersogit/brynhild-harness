@@ -150,9 +150,7 @@ class TestLearnSkillLoadMode:
     """Tests for loading a specific skill (Level 2)."""
 
     @_pytest.mark.asyncio
-    async def test_load_mode_returns_skill_body(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_load_mode_returns_skill_body(self, tmp_path: _pathlib.Path) -> None:
         """Loading a skill should return its full body."""
         skill_dir = tmp_path / ".brynhild" / "skills" / "test-skill"
         _create_skill(
@@ -200,9 +198,7 @@ class TestLearnSkillLoadMode:
         assert "existing-skill" in result.error
 
     @_pytest.mark.asyncio
-    async def test_case_insensitive_skill_name(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_case_insensitive_skill_name(self, tmp_path: _pathlib.Path) -> None:
         """Skill name should be case-insensitive."""
         skill_dir = tmp_path / ".brynhild" / "skills" / "test-skill"
         _create_skill(skill_dir, "test-skill")
@@ -275,9 +271,7 @@ class TestLearnSkillInfoMode:
         assert "helper.py" in result.output
 
     @_pytest.mark.asyncio
-    async def test_info_mode_shows_none_when_empty(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_info_mode_shows_none_when_empty(self, tmp_path: _pathlib.Path) -> None:
         """Info mode should indicate when no resources are available."""
         skill_dir = tmp_path / ".brynhild" / "skills" / "test-skill"
         _create_skill(skill_dir, "test-skill")
@@ -295,9 +289,7 @@ class TestLearnSkillReferenceMode:
     """Tests for reference file retrieval (Level 3)."""
 
     @_pytest.mark.asyncio
-    async def test_get_reference_returns_content(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_get_reference_returns_content(self, tmp_path: _pathlib.Path) -> None:
         """Getting a reference should return its content."""
         skill_dir = tmp_path / ".brynhild" / "skills" / "test-skill"
         _create_skill(

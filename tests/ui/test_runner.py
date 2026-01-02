@@ -41,7 +41,9 @@ class MockProviderForRunner(api_base.LLMProvider):
         - output_tokens: int
         - tool_calls: list[dict] (optional)
         """
-        self._responses = responses or [{"text": "Mock response", "input_tokens": 100, "output_tokens": 50}]
+        self._responses = responses or [
+            {"text": "Mock response", "input_tokens": 100, "output_tokens": 50}
+        ]
         self._call_index = 0
 
     @property
@@ -71,9 +73,7 @@ class MockProviderForRunner(api_base.LLMProvider):
         tool_uses = []
         usage = None
 
-        async for event in self.stream(
-            messages, system=system, max_tokens=max_tokens, tools=tools
-        ):
+        async for event in self.stream(messages, system=system, max_tokens=max_tokens, tools=tools):
             if event.type == "text_delta" and event.text:
                 text_parts.append(event.text)
             elif event.type == "tool_use_start" and event.tool_use:
@@ -185,10 +185,17 @@ class TestRunnerTokenTracking:
         This test would have caught the bug that shipped.
         """
         # Two API calls with growing context
-        provider = MockProviderForRunner(responses=[
-            {"text": "Using tool...", "input_tokens": 1000, "output_tokens": 50, "tool_calls": [{"name": "MockTool"}]},
-            {"text": "Done", "input_tokens": 2500, "output_tokens": 100},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {
+                    "text": "Using tool...",
+                    "input_tokens": 1000,
+                    "output_tokens": 50,
+                    "tool_calls": [{"name": "MockTool"}],
+                },
+                {"text": "Done", "input_tokens": 2500, "output_tokens": 100},
+            ]
+        )
 
         registry = tools_registry.ToolRegistry()
         registry.register(MockToolForRunner())
@@ -222,10 +229,12 @@ class TestRunnerTokenTracking:
         Turn 2: generate 100 tokens
         Total after turn 2: 150 tokens
         """
-        provider = MockProviderForRunner(responses=[
-            {"text": "First response", "input_tokens": 1000, "output_tokens": 50},
-            {"text": "Second response", "input_tokens": 2000, "output_tokens": 100},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "First response", "input_tokens": 1000, "output_tokens": 50},
+                {"text": "Second response", "input_tokens": 2000, "output_tokens": 100},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -249,10 +258,12 @@ class TestRunnerTokenTracking:
     @_pytest.mark.asyncio
     async def test_reset_clears_token_counts(self) -> None:
         """reset() should zero both context and output tokens."""
-        provider = MockProviderForRunner(responses=[
-            {"text": "First", "input_tokens": 1000, "output_tokens": 50},
-            {"text": "After reset", "input_tokens": 500, "output_tokens": 25},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "First", "input_tokens": 1000, "output_tokens": 50},
+                {"text": "After reset", "input_tokens": 500, "output_tokens": 25},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -282,9 +293,11 @@ class TestRunnerTokenTracking:
         result["usage"]["output_tokens"] == cumulative output
         result["usage"]["total_tokens"] == context + output
         """
-        provider = MockProviderForRunner(responses=[
-            {"text": "Response", "input_tokens": 5000, "output_tokens": 200},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Response", "input_tokens": 5000, "output_tokens": 200},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -401,9 +414,11 @@ class TestRunnerMessageHistory:
     @_pytest.mark.asyncio
     async def test_assistant_response_added_to_history(self) -> None:
         """After run_streaming(), assistant response appears in _messages."""
-        provider = MockProviderForRunner(responses=[
-            {"text": "Hello! How can I help?", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Hello! How can I help?", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -423,10 +438,12 @@ class TestRunnerMessageHistory:
     @_pytest.mark.asyncio
     async def test_messages_accumulate_across_turns(self) -> None:
         """Multiple turns build up message history."""
-        provider = MockProviderForRunner(responses=[
-            {"text": "First response", "input_tokens": 100, "output_tokens": 20},
-            {"text": "Second response", "input_tokens": 200, "output_tokens": 30},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "First response", "input_tokens": 100, "output_tokens": 20},
+                {"text": "Second response", "input_tokens": 200, "output_tokens": 30},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -520,9 +537,11 @@ class TestRunnerSkillPreprocessing:
         import brynhild.skills as skills
         import brynhild.skills.skill as skill_module
 
-        provider = MockProviderForRunner(responses=[
-            {"text": "Skill acknowledged", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Skill acknowledged", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -565,9 +584,11 @@ class TestRunnerSkillPreprocessing:
         """Invalid skill name shows error."""
         import brynhild.skills as skills
 
-        provider = MockProviderForRunner(responses=[
-            {"text": "Response", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Response", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -587,15 +608,20 @@ class TestRunnerSkillPreprocessing:
         # Should have shown error
         output_text = output.getvalue()
         # Note: The error goes through show_info, which plain renderer outputs
-        assert "error" in output_text.lower() or "nonexistent" in output_text.lower() or \
-            conv_runner._messages[-1]["content"] != ""  # At minimum, something was sent
+        assert (
+            "error" in output_text.lower()
+            or "nonexistent" in output_text.lower()
+            or conv_runner._messages[-1]["content"] != ""
+        )  # At minimum, something was sent
 
     @_pytest.mark.asyncio
     async def test_no_skill_registry_processes_normally(self) -> None:
         """Without skill registry, /skill command is sent as-is."""
-        provider = MockProviderForRunner(responses=[
-            {"text": "Response", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Response", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -642,12 +668,14 @@ class MockConversationLogger:
         trigger_type: str,
         trigger_match: str | None = None,
     ) -> None:
-        self.skill_triggers.append({
-            "name": skill_name,
-            "content": skill_content,
-            "trigger_type": trigger_type,
-            "trigger_match": trigger_match,
-        })
+        self.skill_triggers.append(
+            {
+                "name": skill_name,
+                "content": skill_content,
+                "trigger_type": trigger_type,
+                "trigger_match": trigger_match,
+            }
+        )
 
     def log_event(self, event_type: str, **kwargs: _typing.Any) -> None:
         self.events.append((event_type, kwargs))
@@ -710,9 +738,11 @@ class TestRunnerLogging:
     @_pytest.mark.asyncio
     async def test_user_message_logged(self) -> None:
         """User messages are logged."""
-        provider = MockProviderForRunner(responses=[
-            {"text": "Response", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Response", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -740,9 +770,11 @@ class TestRunnerLogging:
         import brynhild.skills as skills
         import brynhild.skills.skill as skill_module
 
-        provider = MockProviderForRunner(responses=[
-            {"text": "Skill acknowledged", "input_tokens": 100, "output_tokens": 20},
-        ])
+        provider = MockProviderForRunner(
+            responses=[
+                {"text": "Skill acknowledged", "input_tokens": 100, "output_tokens": 20},
+            ]
+        )
 
         output = _io.StringIO()
         renderer = plain.PlainTextRenderer(output)
@@ -779,4 +811,3 @@ class TestRunnerLogging:
         assert len(logger.skill_triggers) == 1
         assert logger.skill_triggers[0]["name"] == "logged-skill"
         assert "logging test" in logger.skill_triggers[0]["content"].lower()
-

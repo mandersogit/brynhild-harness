@@ -39,9 +39,7 @@ class TestProfileIntegration:
 
     def test_pi02_profile_prefix_suffix_added(self) -> None:
         """PI-02: system_prompt_prefix and suffix in final prompt."""
-        with _mock.patch.object(
-            profiles_manager.ProfileManager, "resolve"
-        ) as mock_resolve:
+        with _mock.patch.object(profiles_manager.ProfileManager, "resolve") as mock_resolve:
             profile = profiles_types.ModelProfile(
                 name="gpt-test",
                 system_prompt_prefix="## Model Guidelines\n\nBe concise.",
@@ -87,9 +85,7 @@ class TestProfileIntegration:
 
     def test_pi04_profile_name_parameter_works(self) -> None:
         """PI-04: profile_name parameter loads and applies named profile."""
-        with _mock.patch.object(
-            profiles_manager.ProfileManager, "get_profile"
-        ) as mock_get:
+        with _mock.patch.object(profiles_manager.ProfileManager, "get_profile") as mock_get:
             profile = profiles_types.ModelProfile(
                 name="custom-profile",
                 system_prompt_prefix="[CUSTOM PREFIX]",
@@ -142,7 +138,9 @@ class TestProfileResolution:
 
         # Should resolve gpt-4 to gpt-family
         resolved = manager.resolve("gpt-4-turbo")
-        assert resolved.family == "gpt" or resolved.name == "gpt-family" or resolved.name == "default"
+        assert (
+            resolved.family == "gpt" or resolved.name == "gpt-family" or resolved.name == "default"
+        )
 
     def test_falls_back_to_default(self) -> None:
         """Unknown model falls back to default profile."""
@@ -153,7 +151,10 @@ class TestProfileResolution:
 
         # Should get default (may or may not exist based on builtins)
         assert resolved is not None
-        assert resolved.name in ["default", "completely-unknown-model-xyz"] or resolved.name is not None
+        assert (
+            resolved.name in ["default", "completely-unknown-model-xyz"]
+            or resolved.name is not None
+        )
 
 
 class TestProfileContextInjection:
@@ -161,9 +162,7 @@ class TestProfileContextInjection:
 
     def test_profile_injection_tracked(self) -> None:
         """Profile injections are tracked in context.injections."""
-        with _mock.patch.object(
-            profiles_manager.ProfileManager, "resolve"
-        ) as mock_resolve:
+        with _mock.patch.object(profiles_manager.ProfileManager, "resolve") as mock_resolve:
             profile = profiles_types.ModelProfile(
                 name="test-profile",
                 system_prompt_prefix="[PREFIX]",
@@ -179,9 +178,7 @@ class TestProfileContextInjection:
             )
 
             # Should have profile injections tracked
-            profile_injections = [
-                i for i in ctx.injections if i.source == "profile"
-            ]
+            profile_injections = [i for i in ctx.injections if i.source == "profile"]
             assert len(profile_injections) >= 1
 
     def test_profile_injection_logged(self, tmp_path: _pathlib.Path) -> None:
@@ -196,9 +193,7 @@ class TestProfileContextInjection:
             enabled=True,
         )
 
-        with _mock.patch.object(
-            profiles_manager.ProfileManager, "resolve"
-        ) as mock_resolve:
+        with _mock.patch.object(profiles_manager.ProfileManager, "resolve") as mock_resolve:
             profile = profiles_types.ModelProfile(
                 name="test-profile",
                 system_prompt_prefix="[PREFIX]",
@@ -219,4 +214,3 @@ class TestProfileContextInjection:
         log_content = log_file.read_text()
         assert "context_injection" in log_content
         assert '"source": "profile"' in log_content
-

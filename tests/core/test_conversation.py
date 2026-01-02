@@ -515,9 +515,7 @@ class FinishToolMockProvider(api_base.LLMProvider):
         tool_uses = []
         usage = None
 
-        async for event in self.stream(
-            messages, system=system, max_tokens=max_tokens, tools=tools
-        ):
+        async for event in self.stream(messages, system=system, max_tokens=max_tokens, tools=tools):
             if event.type == "text_delta" and event.text:
                 text_parts.append(event.text)
             elif event.type == "tool_use_start" and event.tool_use:
@@ -579,12 +577,14 @@ class TestFinishToolIntegration:
         """
         When model calls Finish tool, ConversationResult includes finish_result.
         """
-        provider = FinishToolMockProvider(responses=[
-            {
-                "text": "All done!",
-                "finish": {"status": "success", "summary": "Task completed successfully"},
-            },
-        ])
+        provider = FinishToolMockProvider(
+            responses=[
+                {
+                    "text": "All done!",
+                    "finish": {"status": "success", "summary": "Task completed successfully"},
+                },
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -607,16 +607,18 @@ class TestFinishToolIntegration:
         """
         Finish tool should end the processing loop.
         """
-        provider = FinishToolMockProvider(responses=[
-            {
-                "text": "Done",
-                "finish": {"status": "success", "summary": "Done"},
-            },
-            # This response should NOT be reached
-            {
-                "text": "This should not happen",
-            },
-        ])
+        provider = FinishToolMockProvider(
+            responses=[
+                {
+                    "text": "Done",
+                    "finish": {"status": "success", "summary": "Done"},
+                },
+                # This response should NOT be reached
+                {
+                    "text": "This should not happen",
+                },
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -640,15 +642,17 @@ class TestFinishToolIntegration:
         """
         Finish tool can include next_steps field.
         """
-        provider = FinishToolMockProvider(responses=[
-            {
-                "finish": {
-                    "status": "partial",
-                    "summary": "Did some work",
-                    "next_steps": "Please review and continue",
+        provider = FinishToolMockProvider(
+            responses=[
+                {
+                    "finish": {
+                        "status": "partial",
+                        "summary": "Did some work",
+                        "next_steps": "Please review and continue",
+                    },
                 },
-            },
-        ])
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -671,12 +675,14 @@ class TestFinishToolIntegration:
         """
         With require_finish=True, text-only response triggers reminder.
         """
-        provider = FinishToolMockProvider(responses=[
-            # First response: text only (should trigger reminder)
-            {"text": "Here's the answer"},
-            # Second response: with Finish
-            {"finish": {"status": "success", "summary": "Done"}},
-        ])
+        provider = FinishToolMockProvider(
+            responses=[
+                # First response: text only (should trigger reminder)
+                {"text": "Here's the answer"},
+                # Second response: with Finish
+                {"finish": {"status": "success", "summary": "Done"}},
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -791,14 +797,16 @@ class TestThinkingOnlyRecovery:
         """
         When model produces only thinking, processor should retry.
         """
-        provider = ThinkingOnlyMockProvider(responses=[
-            # First response: thinking only
-            {"thinking": "Let me think about this..."},
-            # Second response: thinking only
-            {"thinking": "Still thinking..."},
-            # Third response: actual text
-            {"text": "Here's the answer", "thinking": "Figured it out"},
-        ])
+        provider = ThinkingOnlyMockProvider(
+            responses=[
+                # First response: thinking only
+                {"thinking": "Let me think about this..."},
+                # Second response: thinking only
+                {"thinking": "Still thinking..."},
+                # Third response: actual text
+                {"text": "Here's the answer", "thinking": "Figured it out"},
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -823,13 +831,15 @@ class TestThinkingOnlyRecovery:
         After max retries, conversation ends even with thinking only.
         """
         # Provider that always returns only thinking
-        provider = ThinkingOnlyMockProvider(responses=[
-            {"thinking": "Thinking 1..."},
-            {"thinking": "Thinking 2..."},
-            {"thinking": "Thinking 3..."},
-            {"thinking": "Thinking 4..."},
-            {"thinking": "Thinking 5..."},
-        ])
+        provider = ThinkingOnlyMockProvider(
+            responses=[
+                {"thinking": "Thinking 1..."},
+                {"thinking": "Thinking 2..."},
+                {"thinking": "Thinking 3..."},
+                {"thinking": "Thinking 4..."},
+                {"thinking": "Thinking 5..."},
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -851,9 +861,11 @@ class TestThinkingOnlyRecovery:
         """
         Normal text response (with or without thinking) works fine.
         """
-        provider = ThinkingOnlyMockProvider(responses=[
-            {"text": "Hello!", "thinking": "I should be friendly"},
-        ])
+        provider = ThinkingOnlyMockProvider(
+            responses=[
+                {"text": "Hello!", "thinking": "I should be friendly"},
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -881,12 +893,14 @@ class TestThinkingOnlyRecovery:
         context about what it was trying to do, leading to repeated failures.
         """
         thinking_content = "I should call the Finish tool with success status."
-        provider = ThinkingOnlyMockProvider(responses=[
-            # First response: thinking only
-            {"thinking": thinking_content},
-            # Second response: actual text
-            {"text": "Done!", "thinking": "Now I'll respond"},
-        ])
+        provider = ThinkingOnlyMockProvider(
+            responses=[
+                # First response: thinking only
+                {"thinking": thinking_content},
+                # Second response: actual text
+                {"text": "Done!", "thinking": "Now I'll respond"},
+            ]
+        )
 
         callbacks = MockCallbacks()
 
@@ -914,8 +928,9 @@ class TestThinkingOnlyRecovery:
         for msg in second_call_messages:
             if msg.get("role") == "assistant" and msg.get("tool_calls"):
                 tool_calls = msg["tool_calls"]
-                if any(tc.get("function", {}).get("name") == "incomplete_response"
-                       for tc in tool_calls):
+                if any(
+                    tc.get("function", {}).get("name") == "incomplete_response" for tc in tool_calls
+                ):
                     thinking_only_assistant_msg = msg
                     break
 
@@ -1012,9 +1027,7 @@ class ToolLoopMockProvider(api_base.LLMProvider):
         tools: list[api_types.Tool] | None = None,
     ) -> _typing.AsyncIterator[api_types.StreamEvent]:
         # Delegate to complete for simplicity
-        response = await self.complete(
-            messages, system=system, max_tokens=max_tokens, tools=tools
-        )
+        response = await self.complete(messages, system=system, max_tokens=max_tokens, tools=tools)
         if response.tool_uses:
             for tu in response.tool_uses:
                 yield api_types.StreamEvent(type="tool_use_start", tool_use=tu)
@@ -1055,17 +1068,18 @@ class CancellableMockCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def on_text_complete(
-        self, full_text: str, thinking: str | None  # noqa: ARG002
+        self,
+        full_text: str,
+        thinking: str | None,  # noqa: ARG002
     ) -> None:
         pass
 
-    async def on_tool_call(
-        self, tool_call: _typing.Any
-    ) -> None:
+    async def on_tool_call(self, tool_call: _typing.Any) -> None:
         self.tool_calls_seen.append(tool_call.tool_name)
 
     async def request_tool_permission(
-        self, tool_call: _typing.Any  # noqa: ARG002
+        self,
+        tool_call: _typing.Any,  # noqa: ARG002
     ) -> bool:
         return True
 
@@ -1121,16 +1135,16 @@ class PermissionDenyingCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def on_text_complete(
-        self, full_text: str, thinking: str | None  # noqa: ARG002
+        self,
+        full_text: str,
+        thinking: str | None,  # noqa: ARG002
     ) -> None:
         pass
 
     async def on_tool_call(self, tool_call: _typing.Any) -> None:
         self.tool_calls_seen.append(tool_call.tool_name)
 
-    async def request_tool_permission(
-        self, tool_call: _typing.Any
-    ) -> bool:
+    async def request_tool_permission(self, tool_call: _typing.Any) -> bool:
         self.permission_requests.append(tool_call.tool_name)
         # Deny if tool name is in deny set
         return tool_call.tool_name not in self._deny_tools
@@ -1613,4 +1627,3 @@ class TestPermissionDenied:
         assert callbacks.tool_results[0][1] is True
 
         assert result.response_text == "Done!"
-

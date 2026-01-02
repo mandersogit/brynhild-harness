@@ -158,9 +158,7 @@ version: {version}
         )
         return plugin_dir
 
-    def test_entry_point_overrides_directory_plugin(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_entry_point_overrides_directory_plugin(self, tmp_path: _pathlib.Path) -> None:
         """Entry point plugin with same name overrides directory plugin."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -189,9 +187,7 @@ version: {version}
         assert plugins["shared-plugin"].version == "2.0.0"
         assert plugins["shared-plugin"].source == "entry_point"
 
-    def test_combines_directory_and_entry_point_plugins(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_combines_directory_and_entry_point_plugins(self, tmp_path: _pathlib.Path) -> None:
         """Both directory and entry point plugins are discovered."""
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -234,6 +230,7 @@ class TestDiscoverToolsFromEntryPoints:
 
     def test_loads_valid_tool_class(self) -> None:
         """Successfully loads tool class from entry point."""
+
         # Create a minimal tool class
         class MockTool:
             name = "MockTool"
@@ -443,4 +440,3 @@ class TestPluginMetadata:
         assert data["source"] == "entry_point"
         assert data["package_name"] == "brynhild-test"
         assert data["package_version"] == "2.0.0"
-

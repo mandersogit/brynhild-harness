@@ -49,9 +49,7 @@ class RecordingCallbacks(conversation.ConversationCallbacks):
         self.text_deltas.append(text)
         self.events.append(("text_delta", text))
 
-    async def on_text_complete(
-        self, full_text: str, thinking: str | None
-    ) -> None:
+    async def on_text_complete(self, full_text: str, thinking: str | None) -> None:
         self.events.append(("text_complete", (full_text, thinking)))
 
     async def on_tool_call(self, tool_call: ui_base.ToolCallDisplay) -> None:
@@ -119,9 +117,7 @@ class SemanticSearchTool(tools_base.Tool):
     def requires_permission(self) -> bool:
         return False  # Skip permission for tests
 
-    async def execute(
-        self, input: dict[str, _typing.Any]
-    ) -> tools_base.ToolResult:
+    async def execute(self, input: dict[str, _typing.Any]) -> tools_base.ToolResult:
         self.call_count += 1
         self.last_input = input
         return tools_base.ToolResult(
@@ -144,11 +140,11 @@ class TestToolRecoveryIntegration:
 
         # Simulate malformed response: thinking contains tool JSON, no tool_use event
         # This is what gpt-oss-120b sometimes does
-        malformed_thinking = '''Let me search for information about Python.
+        malformed_thinking = """Let me search for information about Python.
 
 I'll use the semantic_search tool to find relevant documentation.
 
-{"corpus_key": "docs", "query": "Python async await"}'''
+{"corpus_key": "docs", "query": "Python async await"}"""
 
         events1 = [
             # Thinking with embedded tool call JSON
@@ -478,7 +474,8 @@ I'll use the semantic_search tool to find relevant documentation.
             # recovery_policy defaults to "deny" for high_impact
 
             async def execute(
-                self, input: dict[str, _typing.Any]  # noqa: ARG002
+                self,
+                input: dict[str, _typing.Any],  # noqa: ARG002
             ) -> tools_base.ToolResult:
                 self.call_count += 1
                 return tools_base.ToolResult(success=True, output="executed")
@@ -588,9 +585,9 @@ class TestRecoveryHeuristics:
         registry.register(tool)
 
         # JSON is at the very end - simplest case
-        thinking = '''I need to search for information.
+        thinking = """I need to search for information.
 
-{"corpus_key": "docs", "query": "trailing json test"}'''
+{"corpus_key": "docs", "query": "trailing json test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -635,11 +632,11 @@ class TestRecoveryHeuristics:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''Searching now.
+        thinking = """Searching now.
 
 {"corpus_key": "docs", "query": "whitespace test"}
 
-'''  # Note trailing newlines
+"""  # Note trailing newlines
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -684,9 +681,9 @@ class TestRecoveryHeuristics:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''Let me search.
+        thinking = """Let me search.
 
-{"corpus_key": "docs", "query": "punctuation test"}.'''
+{"corpus_key": "docs", "query": "punctuation test"}."""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -731,10 +728,10 @@ class TestRecoveryHeuristics:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''Searching.
+        thinking = """Searching.
 
 {"corpus_key": "docs", "query": "comment test"}
-// This should find what we need'''
+// This should find what we need"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -779,9 +776,9 @@ class TestRecoveryHeuristics:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''<tool_call>
+        thinking = """<tool_call>
 {"corpus_key": "docs", "query": "xml tag test"}
-</tool_call>'''
+</tool_call>"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -826,11 +823,11 @@ class TestRecoveryHeuristics:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''Let me think about this.
+        thinking = """Let me think about this.
 
 {"corpus_key": "docs", "query": "middle json test"}
 
-That should give us the information we need to answer the question.'''
+That should give us the information we need to answer the question."""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -886,9 +883,9 @@ That should give us the information we need to answer the question.'''
         # JSON is missing "corpus_key" (required), only has "query"
         # Schema matching would fail, but context matching should work
         # because "semantic_search" is mentioned and "query" is a valid property
-        thinking = '''I'll use the semantic_search tool to find this.
+        thinking = """I'll use the semantic_search tool to find this.
 
-{"query": "context match test"}'''
+{"query": "context match test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -944,11 +941,11 @@ That should give us the information we need to answer the question.'''
 
         # IMPORTANT: "real query" comes FIRST, "example" comes LAST (closer to end)
         # This forces anti-pattern detection to skip the example JSON
-        thinking = '''Now let me actually search:
+        thinking = """Now let me actually search:
 {"corpus_key": "docs", "query": "real query"}
 
 Here's an example of the format:
-{"corpus_key": "example", "query": "should skip this"}'''
+{"corpus_key": "example", "query": "should skip this"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -998,14 +995,14 @@ Here's an example of the format:
         registry.register(tool)
 
         # Multiple JSON objects - only one matches the tool schema
-        thinking = '''Here's some data:
+        thinking = """Here's some data:
 {"unrelated": "data", "foo": "bar"}
 
 And now the search:
 {"corpus_key": "docs", "query": "correct tool match"}
 
 Some other JSON:
-{"different": "structure"}'''
+{"different": "structure"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1056,9 +1053,9 @@ Some other JSON:
         registry.register(tool)
 
         # "I will call" is an intent phrase - recovery should still work
-        thinking = '''I will call the search tool now.
+        thinking = """I will call the search tool now.
 
-{"corpus_key": "docs", "query": "intent phrase test"}'''
+{"corpus_key": "docs", "query": "intent phrase test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1108,9 +1105,9 @@ Some other JSON:
         registry.register(tool)
 
         # JSON with nested structure (query contains JSON-like content)
-        thinking = '''Search for config.
+        thinking = """Search for config.
 
-{"corpus_key": "configs", "query": "settings with {option: true}"}'''
+{"corpus_key": "configs", "query": "settings with {option: true}"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1156,10 +1153,10 @@ Some other JSON:
         registry.register(tool)
 
         # This is the exact pattern reported by CEGAI team
-        thinking = '''Let me analyze this request and search for relevant information.
+        thinking = """Let me analyze this request and search for relevant information.
 
 
-{"corpus_key": "knowledge_base", "query": "double newline pattern test"}'''
+{"corpus_key": "knowledge_base", "query": "double newline pattern test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1205,8 +1202,8 @@ Some other JSON:
         registry.register(tool)
 
         # JSON with wrong field names
-        thinking = '''Some data:
-{"wrong_field": "value", "also_wrong": "test"}'''
+        thinking = """Some data:
+{"wrong_field": "value", "also_wrong": "test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1242,8 +1239,8 @@ Some other JSON:
         registry = tools_registry.ToolRegistry()
         registry.register(tool)
 
-        thinking = '''Broken JSON:
-{"corpus_key": "docs", "query": broken}'''  # Missing quotes around 'broken'
+        thinking = """Broken JSON:
+{"corpus_key": "docs", "query": broken}"""  # Missing quotes around 'broken'
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1305,7 +1302,8 @@ Some other JSON:
                 return False
 
             async def execute(
-                self, input: dict[str, _typing.Any]  # noqa: ARG002
+                self,
+                input: dict[str, _typing.Any],  # noqa: ARG002
             ) -> tools_base.ToolResult:
                 self.call_count += 1
                 return tools_base.ToolResult(success=True, output="other result")
@@ -1317,8 +1315,8 @@ Some other JSON:
         registry.register(other_tool)
 
         # JSON matches semantic_search schema (corpus_key + query)
-        thinking = '''Searching:
-{"corpus_key": "docs", "query": "best match test"}'''
+        thinking = """Searching:
+{"corpus_key": "docs", "query": "best match test"}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1366,10 +1364,10 @@ Some other JSON:
 
         # Long analysis followed by JSON
         long_analysis = "This is a detailed analysis. " * 500  # ~15k chars
-        thinking = f'''{long_analysis}
+        thinking = f"""{long_analysis}
 
 Based on all this analysis, I need to search:
-{{"corpus_key": "docs", "query": "long thinking test"}}'''
+{{"corpus_key": "docs", "query": "long thinking test"}}"""
 
         events = [
             api_types.StreamEvent(type="thinking_delta", thinking=thinking),
@@ -1406,4 +1404,3 @@ Based on all this analysis, I need to search:
 
         assert tool.call_count == 1
         assert tool.last_input["query"] == "long thinking test"
-

@@ -39,7 +39,9 @@ class MockCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def on_text_complete(
-        self, full_text: str, thinking: str | None  # noqa: ARG002
+        self,
+        full_text: str,
+        thinking: str | None,  # noqa: ARG002
     ) -> None:
         pass
 
@@ -47,7 +49,8 @@ class MockCallbacks(conversation.ConversationCallbacks):
         pass
 
     async def request_tool_permission(
-        self, tool_call: _typing.Any  # noqa: ARG002
+        self,
+        tool_call: _typing.Any,  # noqa: ARG002
     ) -> bool:
         return True
 
@@ -89,9 +92,7 @@ class TestHookInjectionIntegration:
         mock_registry = _mock.MagicMock()
         mock_tool = _mock.AsyncMock()
         mock_tool.requires_permission = False
-        mock_tool.execute.return_value = _mock.MagicMock(
-            success=True, output="result", error=None
-        )
+        mock_tool.execute.return_value = _mock.MagicMock(success=True, output="result", error=None)
         mock_registry.get.return_value = mock_tool
 
         # Create processor
@@ -162,9 +163,7 @@ class TestHookInjectionIntegration:
         mock_registry = _mock.MagicMock()
         mock_tool = _mock.AsyncMock()
         mock_tool.requires_permission = False
-        mock_tool.execute.return_value = _mock.MagicMock(
-            success=True, output="result", error=None
-        )
+        mock_tool.execute.return_value = _mock.MagicMock(success=True, output="result", error=None)
         mock_registry.get.return_value = mock_tool
 
         # Create processor with logger
@@ -237,4 +236,3 @@ class TestInjectionMechanics:
 
         # No message should be added
         assert len(messages) == 0
-

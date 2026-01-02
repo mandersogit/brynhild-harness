@@ -93,9 +93,7 @@ class TestPluginManifest:
 
         # Over max length
         with _pytest.raises(ValueError, match="at most 1024"):
-            manifest.PluginManifest(
-                name="test", version="1.0.0", description="a" * 1025
-            )
+            manifest.PluginManifest(name="test", version="1.0.0", description="a" * 1025)
 
     def test_missing_required_field_raises_error(self) -> None:
         """Missing name or version raises ValidationError."""
@@ -108,9 +106,7 @@ class TestPluginManifest:
     def test_extra_fields_rejected(self) -> None:
         """Unknown fields in manifest are rejected."""
         with _pytest.raises(ValueError, match="Extra inputs"):
-            manifest.PluginManifest(
-                name="test", version="1.0.0", unknown_field="value"
-            )
+            manifest.PluginManifest(name="test", version="1.0.0", unknown_field="value")
 
 
 class TestLoadManifest:
@@ -158,9 +154,7 @@ commands:
         with _pytest.raises(ValueError, match="Empty manifest"):
             manifest.load_manifest(manifest_file)
 
-    def test_missing_required_field_raises_value_error(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_missing_required_field_raises_value_error(self, tmp_path: _pathlib.Path) -> None:
         """Missing required fields raise ValueError with details."""
         manifest_file = tmp_path / "plugin.yaml"
         manifest_file.write_text("description: Missing name and version")
@@ -185,9 +179,7 @@ class TestPlugin:
         assert plugin.version == "1.2.3"
         assert plugin.description == "Test description"
 
-    def test_plugin_path_properties_are_correct(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_plugin_path_properties_are_correct(self, tmp_path: _pathlib.Path) -> None:
         """Plugin computes correct paths for components."""
         m = manifest.PluginManifest(name="test", version="1.0.0")
         plugin = manifest.Plugin(manifest=m, path=tmp_path)
@@ -237,4 +229,3 @@ class TestPlugin:
         assert d["tools"] == ["tool"]
         assert d["hooks"] is True
         assert d["skills"] == ["skill"]
-

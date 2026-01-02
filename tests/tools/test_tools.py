@@ -214,10 +214,12 @@ class TestFileWriteTool:
     async def test_write_file(self, tmp_path: _pathlib.Path) -> None:
         """Should write content to file."""
         tool = tools.FileWriteTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "content": "hello world",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "content": "hello world",
+            }
+        )
 
         assert result.success is True
         assert (tmp_path / "test.txt").read_text() == "hello world"
@@ -226,10 +228,12 @@ class TestFileWriteTool:
     async def test_write_creates_directories(self, tmp_path: _pathlib.Path) -> None:
         """Should create parent directories."""
         tool = tools.FileWriteTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "subdir/nested/test.txt",
-            "content": "content",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "subdir/nested/test.txt",
+                "content": "content",
+            }
+        )
 
         assert result.success is True
         assert (tmp_path / "subdir/nested/test.txt").exists()
@@ -241,10 +245,12 @@ class TestFileWriteTool:
         test_file.write_text("original")
 
         tool = tools.FileWriteTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "content": "replaced",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "content": "replaced",
+            }
+        )
 
         assert result.success is True
         assert test_file.read_text() == "replaced"
@@ -265,11 +271,13 @@ class TestFileEditTool:
         test_file.write_text("hello world")
 
         tool = tools.FileEditTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "old_string": "world",
-            "new_string": "everyone",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "old_string": "world",
+                "new_string": "everyone",
+            }
+        )
 
         assert result.success is True
         assert test_file.read_text() == "hello everyone"
@@ -281,11 +289,13 @@ class TestFileEditTool:
         test_file.write_text("hello world")
 
         tool = tools.FileEditTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "old_string": "missing",
-            "new_string": "new",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "old_string": "missing",
+                "new_string": "new",
+            }
+        )
 
         assert result.success is False
         assert result.error is not None
@@ -298,11 +308,13 @@ class TestFileEditTool:
         test_file.write_text("foo bar foo")
 
         tool = tools.FileEditTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "old_string": "foo",
-            "new_string": "baz",
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "old_string": "foo",
+                "new_string": "baz",
+            }
+        )
 
         assert result.success is False
         assert result.error is not None
@@ -315,12 +327,14 @@ class TestFileEditTool:
         test_file.write_text("foo bar foo")
 
         tool = tools.FileEditTool(base_dir=tmp_path)
-        result = await tool.execute({
-            "file_path": "test.txt",
-            "old_string": "foo",
-            "new_string": "baz",
-            "replace_all": True,
-        })
+        result = await tool.execute(
+            {
+                "file_path": "test.txt",
+                "old_string": "foo",
+                "new_string": "baz",
+                "replace_all": True,
+            }
+        )
 
         assert result.success is True
         assert test_file.read_text() == "baz bar baz"
@@ -475,4 +489,3 @@ class TestGlobTool:
 
         assert result.success is True
         assert "no files found" in result.output.lower()
-

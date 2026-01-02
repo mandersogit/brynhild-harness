@@ -83,9 +83,7 @@ This skill helps with debugging.
         assert "Test Skill" in result.skill_injection
         assert "full body of the test skill" in result.skill_injection.lower()
 
-    def test_explicit_skill_with_message(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_explicit_skill_with_message(self, skill_registry: skills.SkillRegistry) -> None:
         """/skill <name> followed by message should inject skill and pass message."""
         result = skills.preprocess_for_skills(
             "/skill test-skill help me with commits",
@@ -96,9 +94,7 @@ This skill helps with debugging.
         assert result.skill_name == "test-skill"
         assert result.user_message == "help me with commits"
 
-    def test_unknown_skill_returns_error(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_unknown_skill_returns_error(self, skill_registry: skills.SkillRegistry) -> None:
         """Unknown skill name should return error with available skills."""
         result = skills.preprocess_for_skills(
             "/skill nonexistent",
@@ -129,9 +125,7 @@ This skill helps with debugging.
         assert "Test content" in formatted
         assert "activated" in formatted.lower()
 
-    def test_normal_message_not_processed(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_normal_message_not_processed(self, skill_registry: skills.SkillRegistry) -> None:
         """Normal messages should pass through unchanged."""
         result = skills.preprocess_for_skills(
             "I need help with my commit planning",
@@ -172,10 +166,7 @@ class TestSkillInjectionLogging:
         # Read and verify log
         import json as _json
 
-        events = [
-            _json.loads(line)
-            for line in log_file.read_text().strip().split("\n")
-        ]
+        events = [_json.loads(line) for line in log_file.read_text().strip().split("\n")]
 
         # Find the skill trigger event
         skill_events = [e for e in events if e.get("source") == "skill_trigger"]
@@ -193,9 +184,7 @@ class TestSkillInjectionLogging:
 class TestConversationContextWithSkills:
     """Tests for ConversationContext including skill registry."""
 
-    def test_context_includes_skill_registry(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_context_includes_skill_registry(self, tmp_path: _pathlib.Path) -> None:
         """ConversationContext should include skill registry for runtime triggering."""
         # Create a skill
         skill_dir = tmp_path / ".brynhild" / "skills" / "ctx-skill"
@@ -222,9 +211,7 @@ Body here.
         assert "ctx-skill" in skill_names
         assert ctx.skill_registry.get_skill("ctx-skill") is not None
 
-    def test_context_skill_registry_can_trigger(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_context_skill_registry_can_trigger(self, tmp_path: _pathlib.Path) -> None:
         """Skill registry from context should support triggering."""
         # Create a skill
         skill_dir = tmp_path / ".brynhild" / "skills" / "trigger-skill"
@@ -271,9 +258,7 @@ Body
         )
         return skills.SkillRegistry(project_root=tmp_path)
 
-    def test_case_insensitive_command(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_case_insensitive_command(self, skill_registry: skills.SkillRegistry) -> None:
         """/Skill and /SKILL should work."""
         result = skills.preprocess_for_skills(
             "/SKILL my-skill",
@@ -281,9 +266,7 @@ Body
         )
         assert result.skill_injection is not None
 
-    def test_extra_whitespace_handled(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_extra_whitespace_handled(self, skill_registry: skills.SkillRegistry) -> None:
         """Extra whitespace should be handled."""
         result = skills.preprocess_for_skills(
             "/skill   my-skill   rest of message",
@@ -292,9 +275,7 @@ Body
         assert result.skill_injection is not None
         assert result.user_message.strip() == "rest of message"
 
-    def test_multiline_message_after_command(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_multiline_message_after_command(self, skill_registry: skills.SkillRegistry) -> None:
         """Multiline message after /skill should be preserved."""
         result = skills.preprocess_for_skills(
             "/skill my-skill\nLine 1\nLine 2",
@@ -304,9 +285,7 @@ Body
         assert "Line 1" in result.user_message
         assert "Line 2" in result.user_message
 
-    def test_slash_not_at_start_not_command(
-        self, skill_registry: skills.SkillRegistry
-    ) -> None:
+    def test_slash_not_at_start_not_command(self, skill_registry: skills.SkillRegistry) -> None:
         """Slash command not at start should not trigger."""
         result = skills.preprocess_for_skills(
             "Please use /skill my-skill",
@@ -381,9 +360,7 @@ class TestLearnSkillToolIntegration:
         assert "LearnSkill" in tool_names
 
     @_pytest.mark.asyncio
-    async def test_learnskill_lists_builtin_skills(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_learnskill_lists_builtin_skills(self, tmp_path: _pathlib.Path) -> None:
         """LearnSkill() should list builtin skills."""
         skill_registry = skills.SkillRegistry(project_root=tmp_path)
         tool = skill_tool.LearnSkillTool(skill_registry=skill_registry)
@@ -394,9 +371,7 @@ class TestLearnSkillToolIntegration:
         assert "commit-helper" in result.output
 
     @_pytest.mark.asyncio
-    async def test_learnskill_loads_builtin_skill(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_learnskill_loads_builtin_skill(self, tmp_path: _pathlib.Path) -> None:
         """LearnSkill(skill="commit-helper") should load the skill."""
         skill_registry = skills.SkillRegistry(project_root=tmp_path)
         tool = skill_tool.LearnSkillTool(skill_registry=skill_registry)

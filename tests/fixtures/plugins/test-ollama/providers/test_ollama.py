@@ -90,7 +90,7 @@ class Provider:
         )
 
         # Add marker to response content to prove plugin was used
-        if hasattr(response, 'content') and response.content:
+        if hasattr(response, "content") and response.content:
             # Modify the response to add our marker
             response.content = f"[TEST-PLUGIN-RESPONSE] {response.content}"
 

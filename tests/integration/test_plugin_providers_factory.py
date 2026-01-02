@@ -163,6 +163,7 @@ class TestBuiltinProvidersPriority:
         ):
             # Reset the loaded flag to force a reload attempt
             import brynhild.api.factory as factory
+
             factory._plugin_providers_loaded = False
 
             # Should still be able to get providers
@@ -171,4 +172,3 @@ class TestBuiltinProvidersPriority:
 
             assert "openrouter" in names
             assert "ollama" in names
-

@@ -3,7 +3,6 @@
 Tests for the Pydantic models in brynhild.config.types.
 """
 
-
 import pydantic as _pydantic
 import pytest as _pytest
 
@@ -25,29 +24,35 @@ class TestConfigBaseIntrospection:
 
     def test_get_extra_fields_with_extras(self) -> None:
         """Should return dict of extra fields when present."""
-        config = types.BehaviorConfig.model_validate({
-            "max_tokens": 4096,
-            "typo_field": "value1",
-            "another_unknown": 42,
-        })
+        config = types.BehaviorConfig.model_validate(
+            {
+                "max_tokens": 4096,
+                "typo_field": "value1",
+                "another_unknown": 42,
+            }
+        )
         extras = config.get_extra_fields()
         assert extras == {"typo_field": "value1", "another_unknown": 42}
         assert config.has_extra_fields()
 
     def test_collect_all_extra_fields_flat(self) -> None:
         """Should collect extra fields with dotted paths."""
-        config = types.BehaviorConfig.model_validate({
-            "verboes": True,  # typo
-            "max_tokens": 4096,
-        })
+        config = types.BehaviorConfig.model_validate(
+            {
+                "verboes": True,  # typo
+                "max_tokens": 4096,
+            }
+        )
         all_extras = config.collect_all_extra_fields()
         assert all_extras == {"verboes": True}
 
     def test_collect_all_extra_fields_with_prefix(self) -> None:
         """Should use prefix for dotted paths."""
-        config = types.BehaviorConfig.model_validate({
-            "typo": "value",
-        })
+        config = types.BehaviorConfig.model_validate(
+            {
+                "typo": "value",
+            }
+        )
         all_extras = config.collect_all_extra_fields(prefix="behavior")
         assert all_extras == {"behavior.typo": "value"}
 
@@ -66,25 +71,23 @@ class TestConfigBaseIntrospection:
         class NestedTestConfig(types.ConfigBase):
             """Test config with nested ConfigBase field."""
 
-            behavior: types.BehaviorConfig = _pydantic.Field(
-                default_factory=types.BehaviorConfig
-            )
-            sandbox: types.SandboxConfig = _pydantic.Field(
-                default_factory=types.SandboxConfig
-            )
+            behavior: types.BehaviorConfig = _pydantic.Field(default_factory=types.BehaviorConfig)
+            sandbox: types.SandboxConfig = _pydantic.Field(default_factory=types.SandboxConfig)
 
         # Create with extra fields at multiple levels
-        config = NestedTestConfig.model_validate({
-            "top_level_typo": "should appear",
-            "behavior": {
-                "max_tokens": 4096,
-                "verboes": True,  # typo in nested config
-            },
-            "sandbox": {
-                "enabled": True,
-                "unknwon_sandbox_field": 123,  # typo in different nested config
-            },
-        })
+        config = NestedTestConfig.model_validate(
+            {
+                "top_level_typo": "should appear",
+                "behavior": {
+                    "max_tokens": 4096,
+                    "verboes": True,  # typo in nested config
+                },
+                "sandbox": {
+                    "enabled": True,
+                    "unknwon_sandbox_field": 123,  # typo in different nested config
+                },
+            }
+        )
 
         all_extras = config.collect_all_extra_fields()
 
@@ -110,16 +113,18 @@ class TestConfigBaseIntrospection:
         class Root(types.ConfigBase):
             level1: Level1 = _pydantic.Field(default_factory=Level1)
 
-        config = Root.model_validate({
-            "root_extra": "r",
-            "level1": {
-                "level1_extra": "l1",
-                "level2": {
-                    "name": "custom",
-                    "level2_extra": "l2",
+        config = Root.model_validate(
+            {
+                "root_extra": "r",
+                "level1": {
+                    "level1_extra": "l1",
+                    "level2": {
+                        "name": "custom",
+                        "level2_extra": "l2",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         all_extras = config.collect_all_extra_fields()
 
@@ -267,66 +272,84 @@ class TestSandboxConfigPathParsing:
 
     def test_colon_delimited_string(self) -> None:
         """Should parse colon-delimited string like Unix PATH."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "/Users/me/git:/tmp:/var/data",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "/Users/me/git:/tmp:/var/data",
+            }
+        )
         assert config.allowed_paths == ["/Users/me/git", "/tmp", "/var/data"]
 
     def test_single_path_string(self) -> None:
         """Should accept a single path as string."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "/Users/me/git",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "/Users/me/git",
+            }
+        )
         assert config.allowed_paths == ["/Users/me/git"]
 
     def test_json_array_string(self) -> None:
         """Should accept JSON array for backwards compatibility."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": '["/Users/me/git", "/tmp"]',
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": '["/Users/me/git", "/tmp"]',
+            }
+        )
         assert config.allowed_paths == ["/Users/me/git", "/tmp"]
 
     def test_list_passthrough(self) -> None:
         """Should pass through lists unchanged."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": ["/path1", "/path2"],
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": ["/path1", "/path2"],
+            }
+        )
         assert config.allowed_paths == ["/path1", "/path2"]
 
     def test_empty_string(self) -> None:
         """Should handle empty string as empty list."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "",
+            }
+        )
         assert config.allowed_paths == []
 
     def test_whitespace_string(self) -> None:
         """Should handle whitespace-only string as empty list."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "   ",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "   ",
+            }
+        )
         assert config.allowed_paths == []
 
     def test_json_empty_array(self) -> None:
         """Should handle JSON empty array."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "[]",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "[]",
+            }
+        )
         assert config.allowed_paths == []
 
     def test_colon_delimited_with_whitespace(self) -> None:
         """Whitespace around colons is NOT trimmed (paths can have spaces)."""
         # Note: we don't trim because paths might legitimately have spaces
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "/path one:/path two",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "/path one:/path two",
+            }
+        )
         assert config.allowed_paths == ["/path one", "/path two"]
 
     def test_malformed_json_falls_through_to_colon(self) -> None:
         """Malformed JSON starting with [ falls through to colon parsing."""
-        config = types.SandboxConfig.model_validate({
-            "allowed_paths": "[not valid json",
-        })
+        config = types.SandboxConfig.model_validate(
+            {
+                "allowed_paths": "[not valid json",
+            }
+        )
         # Falls through to colon parsing, no colon so single path
         assert config.allowed_paths == ["[not valid json"]
 
@@ -436,9 +459,7 @@ class TestProviderInstanceConfig:
 
     def test_custom_base_url(self) -> None:
         """base_url should accept a custom URL."""
-        config = types.ProviderInstanceConfig(
-            type="ollama", base_url="http://localhost:11434"
-        )
+        config = types.ProviderInstanceConfig(type="ollama", base_url="http://localhost:11434")
         assert config.base_url == "http://localhost:11434"
 
     def test_extra_fields_allowed(self) -> None:

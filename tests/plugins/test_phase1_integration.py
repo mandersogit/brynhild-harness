@@ -170,4 +170,3 @@ class TestPhase1ContextBuildAsync:
 
             result = await builder.build_async("Base prompt.")
             assert "Test Plugin Coding Standards" in result.system_prompt
-

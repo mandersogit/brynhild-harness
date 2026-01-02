@@ -127,9 +127,7 @@ class TestOllamaBasicChat:
         assert len(full_text) > 0
 
     @_pytest.mark.asyncio
-    async def test_system_prompt_respected(
-        self, provider: ollama_provider.OllamaProvider
-    ) -> None:
+    async def test_system_prompt_respected(self, provider: ollama_provider.OllamaProvider) -> None:
         """Provider respects system prompt."""
         response = await provider.complete(
             messages=[{"role": "user", "content": "What is your name?"}],
@@ -145,9 +143,7 @@ class TestOllamaMultiTurn:
     """Test multi-turn conversation with Ollama."""
 
     @_pytest.mark.asyncio
-    async def test_multi_turn_conversation(
-        self, provider: ollama_provider.OllamaProvider
-    ) -> None:
+    async def test_multi_turn_conversation(self, provider: ollama_provider.OllamaProvider) -> None:
         """Provider maintains context across turns."""
         messages = [
             {"role": "user", "content": "My favorite color is blue. Remember that."},
@@ -188,4 +184,3 @@ class TestOllamaFactory:
             max_tokens=50,
         )
         assert response.content
-

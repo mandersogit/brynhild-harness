@@ -32,7 +32,16 @@ class TestRequiredFields:
             if role in ("tool", "tool_result"):
                 messages = [
                     {"role": "user", "content": "Hi"},
-                    {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]},
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "tc1",
+                                "type": "function",
+                                "function": {"name": "test", "arguments": "{}"},
+                            }
+                        ],
+                    },
                     {"role": role, "tool_call_id": "tc1", "content": "result"},
                 ]
             elif role == "system":
@@ -61,7 +70,16 @@ class TestRequiredFields:
         """Assistant with tool_calls but no content should pass."""
         messages = [
             {"role": "user", "content": "Hi"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "test", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "result"},
         ]
         # Should not raise
@@ -71,7 +89,16 @@ class TestRequiredFields:
         """Tool result messages must have tool_call_id."""
         messages = [
             {"role": "user", "content": "Hi"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "test", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "content": "result"},  # Missing tool_call_id
         ]
         with _pytest.raises(validators.MessageValidationError) as exc_info:
@@ -117,7 +144,16 @@ class TestTurnTaking:
         """Tool results between assistant and user should pass."""
         messages = [
             {"role": "user", "content": "What's the weather?"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "weather", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "Sunny, 72F"},
             {"role": "assistant", "content": "It's sunny and 72 degrees!"},
         ]
@@ -127,7 +163,16 @@ class TestTurnTaking:
         """After assistant tool_calls, next must be tool result."""
         messages = [
             {"role": "user", "content": "What's the weather?"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "weather", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "user", "content": "Never mind"},  # Should be tool result first
         ]
         with _pytest.raises(validators.MessageValidationError) as exc_info:
@@ -142,7 +187,16 @@ class TestToolCallConsistency:
         """Tool result with unknown ID should fail."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "test", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc2", "content": "result"},  # tc2 doesn't exist
         ]
         with _pytest.raises(validators.MessageValidationError) as exc_info:
@@ -153,10 +207,21 @@ class TestToolCallConsistency:
         """Matching tool_call_ids should pass."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "tool_calls": [
-                {"id": "tc1", "type": "function", "function": {"name": "test1", "arguments": "{}"}},
-                {"id": "tc2", "type": "function", "function": {"name": "test2", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "test1", "arguments": "{}"},
+                    },
+                    {
+                        "id": "tc2",
+                        "type": "function",
+                        "function": {"name": "test2", "arguments": "{}"},
+                    },
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "result1"},
             {"role": "tool", "tool_call_id": "tc2", "content": "result2"},
         ]
@@ -166,8 +231,21 @@ class TestToolCallConsistency:
         """Synthetic thinking-only IDs should be allowed."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "tool_calls": [{"id": "thinking-only-abc123", "type": "function", "function": {"name": "incomplete_response", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "thinking-only-abc123", "content": "ERROR: thinking only"},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "thinking-only-abc123",
+                        "type": "function",
+                        "function": {"name": "incomplete_response", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "thinking-only-abc123",
+                "content": "ERROR: thinking only",
+            },
         ]
         validators.validate_message_structure(messages)
 
@@ -234,7 +312,16 @@ class TestEmptyContent:
         """Tool results with empty content should fail."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "test", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": ""},  # Empty result
         ]
         with _pytest.raises(validators.MessageValidationError) as exc_info:
@@ -258,7 +345,10 @@ class TestFeedbackOrdering:
         """Feedback after user message (not assistant) should fail."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "user", "content": "You did not call the Finish tool."},  # Should follow assistant
+            {
+                "role": "user",
+                "content": "You did not call the Finish tool.",
+            },  # Should follow assistant
         ]
         with _pytest.raises(validators.MessageValidationError) as exc_info:
             validators.validate_message_structure(messages)
@@ -270,7 +360,10 @@ class TestFeedbackOrdering:
         messages = [
             {"role": "user", "content": "Do something"},
             {"role": "assistant", "content": "I did something"},
-            {"role": "user", "content": "You did not call the Finish tool. Please call Finish now."},
+            {
+                "role": "user",
+                "content": "You did not call the Finish tool. Please call Finish now.",
+            },
         ]
         validators.validate_message_structure(messages)
 
@@ -278,8 +371,21 @@ class TestFeedbackOrdering:
         """Thinking-only feedback should follow assistant."""
         messages = [
             {"role": "user", "content": "Hello"},
-            {"role": "assistant", "tool_calls": [{"id": "thinking-only-abc", "type": "function", "function": {"name": "incomplete_response", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "thinking-only-abc", "content": "ERROR: Your response contained only thinking"},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "thinking-only-abc",
+                        "type": "function",
+                        "function": {"name": "incomplete_response", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "thinking-only-abc",
+                "content": "ERROR: Your response contained only thinking",
+            },
         ]
         validators.validate_message_structure(messages)
 
@@ -297,10 +403,13 @@ class TestToolCallResultPairs:
     def test_matched_pairs(self) -> None:
         """Properly matched pairs should be counted."""
         messages = [
-            {"role": "assistant", "tool_calls": [
-                {"id": "tc1", "type": "function", "function": {"name": "a", "arguments": "{}"}},
-                {"id": "tc2", "type": "function", "function": {"name": "b", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": "tc1", "type": "function", "function": {"name": "a", "arguments": "{}"}},
+                    {"id": "tc2", "type": "function", "function": {"name": "b", "arguments": "{}"}},
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "r1"},
             {"role": "tool", "tool_call_id": "tc2", "content": "r2"},
         ]
@@ -314,10 +423,13 @@ class TestToolCallResultPairs:
     def test_orphan_call(self) -> None:
         """Unresolved tool calls should be reported."""
         messages = [
-            {"role": "assistant", "tool_calls": [
-                {"id": "tc1", "type": "function", "function": {"name": "a", "arguments": "{}"}},
-                {"id": "tc2", "type": "function", "function": {"name": "b", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": "tc1", "type": "function", "function": {"name": "a", "arguments": "{}"}},
+                    {"id": "tc2", "type": "function", "function": {"name": "b", "arguments": "{}"}},
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "r1"},
             # tc2 has no result
         ]
@@ -365,4 +477,3 @@ class TestNonStrictMode:
         assert len(violations) >= 2
         assert any("empty_content" in v for v in violations)
         assert any("consecutive_user_messages" in v for v in violations)
-

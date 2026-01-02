@@ -144,10 +144,7 @@ class TestDeepChainMapSettingsSourceMergeOrder:
         """Verify the complete override chain: project > user > builtin."""
         # Builtin sets all values
         builtin_config = tmp_path / "builtin.yaml"
-        builtin_config.write_text(
-            "version: 100\n"
-            "name: builtin-name\n"
-        )
+        builtin_config.write_text("version: 100\nname: builtin-name\n")
 
         # User overrides version only
         user_config = tmp_path / "user.yaml"
@@ -275,11 +272,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         # Create user config with nested dict
         user_config_file = tmp_path / "user_config.yaml"
         user_config_file.write_text(
-            "version: 1\n"
-            "models:\n"
-            "  default: user-model\n"
-            "  favorites:\n"
-            "    model-a: true\n"
+            "version: 1\nmodels:\n  default: user-model\n  favorites:\n    model-a: true\n"
         )
 
         # Create project config with additional nested values
@@ -288,11 +281,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         project_config_dir = project_root / ".brynhild"
         project_config_dir.mkdir()
         project_config_file = project_config_dir / "config.yaml"
-        project_config_file.write_text(
-            "models:\n"
-            "  favorites:\n"
-            "    model-b: true\n"
-        )
+        project_config_file.write_text("models:\n  favorites:\n    model-b: true\n")
 
         source = sources.DeepChainMapSettingsSource(
             NestedSettings,
@@ -317,22 +306,13 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         # Builtin: provides base structure
         builtin_config = tmp_path / "builtin.yaml"
         builtin_config.write_text(
-            "version: 1\n"
-            "models:\n"
-            "  favorites:\n"
-            "    from-builtin: true\n"
-            "behavior:\n"
-            "  timeout: 30\n"
+            "version: 1\nmodels:\n  favorites:\n    from-builtin: true\nbehavior:\n  timeout: 30\n"
         )
 
         # User: adds to favorites, adds new behavior key
         user_config = tmp_path / "user.yaml"
         user_config.write_text(
-            "models:\n"
-            "  favorites:\n"
-            "    from-user: true\n"
-            "behavior:\n"
-            "  verbose: true\n"
+            "models:\n  favorites:\n    from-user: true\nbehavior:\n  verbose: true\n"
         )
 
         # Project: adds to favorites, adds another behavior key
@@ -342,11 +322,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         project_config_dir.mkdir()
         project_config_file = project_config_dir / "config.yaml"
         project_config_file.write_text(
-            "models:\n"
-            "  favorites:\n"
-            "    from-project: true\n"
-            "behavior:\n"
-            "  debug: true\n"
+            "models:\n  favorites:\n    from-project: true\nbehavior:\n  debug: true\n"
         )
 
         source = sources.DeepChainMapSettingsSource(
@@ -369,9 +345,9 @@ class TestDeepChainMapSettingsSourceNestedMerge:
 
         # All three layers contributed unique behavior keys
         behavior = result.get("behavior", {})
-        assert behavior.get("timeout") == 30    # from builtin
+        assert behavior.get("timeout") == 30  # from builtin
         assert behavior.get("verbose") is True  # from user
-        assert behavior.get("debug") is True    # from project
+        assert behavior.get("debug") is True  # from project
 
     def test_deep_nested_merge_multiple_levels(
         self,
@@ -394,11 +370,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         # User: adds sibling at deep level
         user_config = tmp_path / "user.yaml"
         user_config.write_text(
-            "models:\n"
-            "  registry:\n"
-            "    anthropic:\n"
-            "      claude-opus:\n"
-            "        context: 200000\n"
+            "models:\n  registry:\n    anthropic:\n      claude-opus:\n        context: 200000\n"
         )
 
         # Project: adds to a different branch
@@ -408,11 +380,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         project_config_dir.mkdir()
         project_config_file = project_config_dir / "config.yaml"
         project_config_file.write_text(
-            "models:\n"
-            "  registry:\n"
-            "    local:\n"
-            "      ollama-llama:\n"
-            "        context: 32000\n"
+            "models:\n  registry:\n    local:\n      ollama-llama:\n        context: 32000\n"
         )
 
         source = sources.DeepChainMapSettingsSource(
@@ -469,8 +437,7 @@ class TestDeepChainMapSettingsSourceNestedMerge:
         project_config_dir.mkdir()
         project_config_file = project_config_dir / "config.yaml"
         project_config_file.write_text(
-            "models:\n"
-            "  default: project-model\n"  # scalar override
+            "models:\n  default: project-model\n"  # scalar override
         )
 
         source = sources.DeepChainMapSettingsSource(
@@ -721,6 +688,7 @@ class TestDeepChainMapSettingsSourceGetFieldValue:
         # Our defaults has models: { default: ... }
         # DCM returns MutableProxy which is a Mapping
         import collections.abc
+
         assert isinstance(value, collections.abc.Mapping)
         assert is_complex is True
 

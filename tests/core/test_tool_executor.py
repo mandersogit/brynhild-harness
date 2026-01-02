@@ -238,4 +238,3 @@ class TestToolExecutor:
         assert len(callbacks.tool_calls) == 1
         assert len(callbacks.permission_requests) == 1
         assert callbacks.tool_calls[0].tool_name == "MockTool"
-

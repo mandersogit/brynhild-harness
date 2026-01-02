@@ -1,6 +1,5 @@
 """Tests for the Textual TUI application."""
 
-
 import pytest as _pytest
 
 import brynhild.api.base as api_base
@@ -316,4 +315,3 @@ class TestPermissionScreen:
 
         # Should be Screen[bool | None]
         assert args == (bool | None,)
-

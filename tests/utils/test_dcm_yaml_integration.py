@@ -978,4 +978,3 @@ class TestDcmDeleteSetCyclesIntegration:
         # Delete again
         del chain["outer"]["inner"]
         assert "inner" not in chain["outer"]
-

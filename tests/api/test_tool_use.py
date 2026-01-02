@@ -148,9 +148,7 @@ class TestFormatAssistantToolCallIntegration:
 
             def to_tool_call_dict(self) -> dict[str, _typing.Any]:
                 # Can't mutate frozen dataclass, so we use a class variable
-                TrackedToolUse._call_count = getattr(
-                    TrackedToolUse, "_call_count", 0
-                ) + 1
+                TrackedToolUse._call_count = getattr(TrackedToolUse, "_call_count", 0) + 1
                 return super().to_tool_call_dict()
 
         TrackedToolUse._call_count = 0
@@ -230,4 +228,3 @@ class TestFormatAssistantToolCallIntegration:
 
         # Extended ToolUse - has extra field
         assert result["tool_calls"][1]["extra"] == "custom"
-

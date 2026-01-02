@@ -69,4 +69,3 @@ def test_config_path_lists_files(
     assert result.exit_code == 0
     # Should list built-in defaults (always exists)
     assert "Built-in defaults" in result.output
-

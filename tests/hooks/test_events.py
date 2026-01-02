@@ -201,19 +201,23 @@ class TestHookResult:
 
     def test_from_dict_block_with_message(self) -> None:
         """from_dict parses block action with message."""
-        result = events.HookResult.from_dict({
-            "action": "block",
-            "message": "Blocked by hook",
-        })
+        result = events.HookResult.from_dict(
+            {
+                "action": "block",
+                "message": "Blocked by hook",
+            }
+        )
         assert result.action == events.HookAction.BLOCK
         assert result.message == "Blocked by hook"
 
     def test_from_dict_with_modifications(self) -> None:
         """from_dict parses modifications."""
-        result = events.HookResult.from_dict({
-            "action": "continue",
-            "modified_input": {"command": "safe-command"},
-        })
+        result = events.HookResult.from_dict(
+            {
+                "action": "continue",
+                "modified_input": {"command": "safe-command"},
+            }
+        )
         assert result.action == events.HookAction.CONTINUE
         assert result.modified_input == {"command": "safe-command"}
 
@@ -239,4 +243,3 @@ class TestHookResult:
         result = events.HookResult.construct_continue()
         d = result.to_dict()
         assert d == {"action": "continue"}
-

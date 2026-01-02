@@ -151,9 +151,7 @@ class TestSkill:
 
     def test_properties_expose_frontmatter(self, tmp_path: _pathlib.Path) -> None:
         """Properties delegate to frontmatter."""
-        s = self._make_skill(
-            tmp_path, name="my-skill", description="My description"
-        )
+        s = self._make_skill(tmp_path, name="my-skill", description="My description")
         assert s.name == "my-skill"
         assert s.description == "My description"
 
@@ -211,9 +209,7 @@ class TestSkill:
 
     def test_get_metadata_for_prompt(self, tmp_path: _pathlib.Path) -> None:
         """get_metadata_for_prompt returns compact format."""
-        s = self._make_skill(
-            tmp_path, name="debugging", description="Debug systematically"
-        )
+        s = self._make_skill(tmp_path, name="debugging", description="Debug systematically")
         meta = s.get_metadata_for_prompt()
         assert "**debugging**" in meta
         assert "Debug systematically" in meta
@@ -283,4 +279,3 @@ Do the thing.
 
         with _pytest.raises(ValueError, match="must have YAML frontmatter"):
             skill.load_skill(skill_dir)
-

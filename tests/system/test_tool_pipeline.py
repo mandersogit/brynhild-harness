@@ -367,4 +367,3 @@ class TestToolPipelineSystem:
         assert len(tool.captured_inputs) == 1
         assert tool.captured_inputs[0]["filename"] == "test.py"
         assert tool.captured_inputs[0]["line_count"] == 42
-

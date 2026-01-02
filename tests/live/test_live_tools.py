@@ -98,9 +98,7 @@ class TestLiveToolCalling:
             _pytest.skip(f"Model {provider.model} does not support tools")
 
         response = await provider.complete(
-            messages=[
-                {"role": "user", "content": "What is 123 + 456? Use the calculator."}
-            ],
+            messages=[{"role": "user", "content": "What is 123 + 456? Use the calculator."}],
             tools=[CALCULATOR_TOOL],
             max_tokens=200,
         )
@@ -139,4 +137,3 @@ class TestLiveToolCalling:
         tool_events = [e for e in events if e.type == "tool_use_start"]
         text_events = [e for e in events if e.type in ("text_delta", "thinking_delta")]
         assert len(tool_events) > 0 or len(text_events) > 0, "Should have tool or text events"
-

@@ -210,9 +210,7 @@ description: Plugin without hooks
         # Should not raise
         lifecycle.fire_plugin_init_sync(plugin, project_root=tmp_path)
 
-    def test_plugin_with_empty_hooks_does_not_error(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_plugin_with_empty_hooks_does_not_error(self, tmp_path: _pathlib.Path) -> None:
         """Plugin with empty hooks.yaml doesn't cause errors."""
         import brynhild.plugins.lifecycle as lifecycle
         import brynhild.plugins.loader as loader
@@ -253,7 +251,4 @@ hooks: {}
         lifecycle.fire_plugin_init_for_all_sync([plugin], project_root=FIXTURES_DIR)
 
         # Plugin should not be tracked for shutdown
-        assert not any(
-            name == "test-complete" for name, _ in lifecycle._initialized_plugins
-        )
-
+        assert not any(name == "test-complete" for name, _ in lifecycle._initialized_plugins)

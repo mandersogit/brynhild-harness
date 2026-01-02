@@ -114,9 +114,9 @@ class TestSensitivePathBlocking:
         with _pytest.raises(sandbox.PathValidationError) as exc_info:
             sandbox.validate_path(ssh_dir, config, operation="read")
 
-        assert "sensitive" in str(exc_info.value).lower() or "protected" in str(
-            exc_info.value
-        ).lower()
+        assert (
+            "sensitive" in str(exc_info.value).lower() or "protected" in str(exc_info.value).lower()
+        )
 
     def test_blocks_aws_credentials(self, tmp_path: _pathlib.Path) -> None:
         """~/.aws should be blocked."""
@@ -150,9 +150,7 @@ class TestSensitivePathBlocking:
         with _pytest.raises(sandbox.PathValidationError):
             sandbox.validate_path(gnupg, config, operation="read")
 
-    def test_blocks_subdirectory_of_sensitive_path(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_blocks_subdirectory_of_sensitive_path(self, tmp_path: _pathlib.Path) -> None:
         """Subdirectories of sensitive paths should also be blocked."""
         config = sandbox.SandboxConfig(project_root=tmp_path)
         target = _pathlib.Path.home() / ".ssh" / "id_rsa"
@@ -352,9 +350,7 @@ class TestConvenienceFunctions:
         config = sandbox.SandboxConfig(project_root=tmp_path)
 
         assert sandbox.is_path_safe(tmp_path / "file.txt", config, "write") is True
-        assert (
-            sandbox.is_path_safe(_pathlib.Path.home() / ".ssh", config, "read") is False
-        )
+        assert sandbox.is_path_safe(_pathlib.Path.home() / ".ssh", config, "read") is False
 
 
 class TestCustomBlockedPaths:
@@ -446,4 +442,3 @@ class TestSandboxUnavailableError:
         error_msg = str(exc_info.value)
         assert "--dangerously-skip-sandbox" in error_msg
         assert "BRYNHILD_DANGEROUSLY_SKIP_SANDBOX" in error_msg
-

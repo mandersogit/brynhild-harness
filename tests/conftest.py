@@ -54,6 +54,7 @@ def pytest_configure(config: _pytest.Config) -> None:  # noqa: F811 - shadows im
         print(f"  BRYNHILD_OLLAMA_MODEL = {ollama_model}")
         print("=" * 60)
 
+
 # Environment keys that should be cleared for isolated tests
 ENV_KEYS_TO_CLEAR = [
     "OPENROUTER_API_KEY",
@@ -644,9 +645,7 @@ class RealisticUsageMockProvider(api_base.LLMProvider):
         tool_uses = []
         usage = None
 
-        async for event in self.stream(
-            messages, system=system, max_tokens=max_tokens, tools=tools
-        ):
+        async for event in self.stream(messages, system=system, max_tokens=max_tokens, tools=tools):
             if event.type == "text_delta" and event.text:
                 text_parts.append(event.text)
             elif event.type == "tool_use_start" and event.tool_use:
@@ -689,9 +688,7 @@ class RealisticUsageMockProvider(api_base.LLMProvider):
             )
             stop_reason = "tool_use"
         else:
-            yield api_types.StreamEvent(
-                type="text_delta", text=f"Response for call {current_call}"
-            )
+            yield api_types.StreamEvent(type="text_delta", text=f"Response for call {current_call}")
             stop_reason = "stop"
 
         yield api_types.StreamEvent(

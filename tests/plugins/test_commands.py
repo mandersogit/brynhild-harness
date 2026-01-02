@@ -261,9 +261,7 @@ name: {name}
         """Aliases are registered as separate entries."""
         commands_dir = tmp_path / "commands"
         commands_dir.mkdir()
-        self._create_command_file(
-            commands_dir / "build.md", "build", aliases=["b", "make"]
-        )
+        self._create_command_file(commands_dir / "build.md", "build", aliases=["b", "make"])
 
         loader = commands.CommandLoader()
         cmds = loader.load_from_directory(commands_dir)
@@ -298,11 +296,8 @@ name: {name}
         assert "test" in cmds
         assert cmds["test"].plugin_name == "my-plugin"
 
-    def test_nonexistent_directory_returns_empty(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_nonexistent_directory_returns_empty(self, tmp_path: _pathlib.Path) -> None:
         """Non-existent commands/ directory returns empty dict."""
         loader = commands.CommandLoader()
         cmds = loader.load_from_directory(tmp_path / "nonexistent")
         assert cmds == {}
-

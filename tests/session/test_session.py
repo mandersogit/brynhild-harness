@@ -67,7 +67,10 @@ class TestValidateSessionId:
     def test_accepts_long_names(self) -> None:
         """Accepts longer session names (up to 100 chars)."""
         assert session.validate_session_id("abcd12345") == "abcd12345"
-        assert session.validate_session_id("session-2024-01-01-my-project") == "session-2024-01-01-my-project"
+        assert (
+            session.validate_session_id("session-2024-01-01-my-project")
+            == "session-2024-01-01-my-project"
+        )
 
     def test_rejects_too_long(self) -> None:
         """Rejects IDs over 100 chars."""
@@ -94,17 +97,13 @@ class TestValidateSessionId:
         with _pytest.raises(session.InvalidSessionIdError):
             session.validate_session_id("abc:1234")
 
-    def test_manager_rejects_invalid_on_load(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_manager_rejects_invalid_on_load(self, tmp_path: _pathlib.Path) -> None:
         """SessionManager.load rejects invalid session IDs."""
         manager = session.SessionManager(tmp_path / "sessions")
         with _pytest.raises(session.InvalidSessionIdError):
             manager.load("../../../etc/passwd")
 
-    def test_manager_rejects_invalid_on_delete(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_manager_rejects_invalid_on_delete(self, tmp_path: _pathlib.Path) -> None:
         """SessionManager.delete rejects invalid session IDs."""
         manager = session.SessionManager(tmp_path / "sessions")
         with _pytest.raises(session.InvalidSessionIdError):

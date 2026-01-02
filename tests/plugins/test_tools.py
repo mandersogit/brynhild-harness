@@ -50,9 +50,7 @@ class Tool:
         else:
             raise AssertionError("Expected ToolLoadError")
 
-    def test_syntax_error_raises_tool_load_error(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_syntax_error_raises_tool_load_error(self, tmp_path: _pathlib.Path) -> None:
         """Python syntax error raises ToolLoadError."""
         tool_file = tmp_path / "bad_syntax.py"
         tool_file.write_text("def broken(:\n    pass")
@@ -228,9 +226,7 @@ class Tool:
 
         assert "my_tool" in loaded
 
-    def test_nonexistent_directory_returns_empty(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    def test_nonexistent_directory_returns_empty(self, tmp_path: _pathlib.Path) -> None:
         """Non-existent tools/ directory returns empty dict."""
         loader = tools.ToolLoader()
         loaded = loader.load_from_directory(tmp_path / "nonexistent")
@@ -247,4 +243,3 @@ class Tool:
 
         loaded = loader.get_loaded_tools()
         assert "tool_a" in loaded
-

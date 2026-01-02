@@ -45,13 +45,12 @@ class MockCallbacks(conversation.ConversationCallbacks):
     async def on_text_complete(self, full_text: str, thinking: str | None) -> None:
         pass
 
-    async def on_tool_call(
-        self, tool_call: _typing.Any
-    ) -> None:
+    async def on_tool_call(self, tool_call: _typing.Any) -> None:
         pass
 
     async def request_tool_permission(
-        self, tool_call: _typing.Any  # noqa: ARG002
+        self,
+        tool_call: _typing.Any,  # noqa: ARG002
     ) -> bool:
         return True
 
@@ -190,9 +189,7 @@ class TestHookInjectionIntegration:
         mock_registry = _mock.MagicMock()
         mock_tool = _mock.AsyncMock()
         mock_tool.requires_permission = False
-        mock_tool.execute.return_value = _mock.MagicMock(
-            success=True, output="result", error=None
-        )
+        mock_tool.execute.return_value = _mock.MagicMock(success=True, output="result", error=None)
         mock_registry.get.return_value = mock_tool
 
         processor = conversation.ConversationProcessor(
@@ -218,7 +215,10 @@ class TestHookInjectionIntegration:
         # Create mock hook manager that returns inject on post_tool_use
         mock_hook_manager = _mock.AsyncMock(spec=hooks_manager.HookManager)
 
-        def dispatch_side_effect(event: hooks_events.HookEvent, ctx: _typing.Any) -> hooks_events.HookResult:  # noqa: ARG001
+        def dispatch_side_effect(
+            event: hooks_events.HookEvent,
+            ctx: _typing.Any,  # noqa: ARG001
+        ) -> hooks_events.HookResult:
             if event == hooks_events.HookEvent.POST_TOOL_USE:
                 return hooks_events.HookResult(
                     action=hooks_events.HookAction.CONTINUE,
@@ -232,9 +232,7 @@ class TestHookInjectionIntegration:
         mock_registry = _mock.MagicMock()
         mock_tool = _mock.AsyncMock()
         mock_tool.requires_permission = False
-        mock_tool.execute.return_value = _mock.MagicMock(
-            success=True, output="result", error=None
-        )
+        mock_tool.execute.return_value = _mock.MagicMock(success=True, output="result", error=None)
         mock_registry.get.return_value = mock_tool
 
         processor = conversation.ConversationProcessor(
@@ -256,9 +254,7 @@ class TestInjectionLogging:
     """Test that injections are logged correctly."""
 
     @_pytest.mark.asyncio
-    async def test_pre_tool_use_injection_logged(
-        self, tmp_path: _pathlib.Path
-    ) -> None:
+    async def test_pre_tool_use_injection_logged(self, tmp_path: _pathlib.Path) -> None:
         """inject_system_message from pre_tool_use is logged."""
         log_file = tmp_path / "test.jsonl"
         logger = conversation_logger.ConversationLogger(
@@ -279,9 +275,7 @@ class TestInjectionLogging:
         mock_registry = _mock.MagicMock()
         mock_tool = _mock.AsyncMock()
         mock_tool.requires_permission = False
-        mock_tool.execute.return_value = _mock.MagicMock(
-            success=True, output="result", error=None
-        )
+        mock_tool.execute.return_value = _mock.MagicMock(success=True, output="result", error=None)
         mock_registry.get.return_value = mock_tool
 
         processor = conversation.ConversationProcessor(
@@ -303,4 +297,3 @@ class TestInjectionLogging:
         assert "context_injection" in log_content
         assert '"source": "hook"' in log_content
         assert "pre_tool_use" in log_content
-

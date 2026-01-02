@@ -5,7 +5,6 @@ These tests verify the cell-width-aware padding functions work correctly
 for consistent terminal display across different emoji/icon widths.
 """
 
-
 import brynhild.ui.icons as icons
 
 
@@ -51,6 +50,7 @@ class TestEmojiCellWidths:
     def test_bolt_measures_wider_than_one(self) -> None:
         """⚡ (BOLT) should measure as wider than 1 cell."""
         import rich.cells as rich_cells
+
         width = rich_cells.cell_len(icons.ICON_BOLT)
         # Most terminal fonts render ⚡ as 1 or 2 cells
         assert width >= 1
@@ -58,6 +58,7 @@ class TestEmojiCellWidths:
     def test_warning_may_include_variant_selector(self) -> None:
         """⚠️ includes variant selector, may render wider."""
         import rich.cells as rich_cells
+
         width = rich_cells.cell_len(icons.ICON_WARNING)
         # ⚠️ can be 1-3 cells depending on terminal/font
         assert width >= 1
@@ -160,4 +161,3 @@ class TestEdgeCases:
         result = icons.cell_ljust(text, 5)
         # Should not crash and should add padding
         assert len(result) >= len(text)
-
