@@ -211,8 +211,15 @@ class DcmMapping(_abc.MutableMapping[str, _typing.Any]):
 
         Unlike normal dict deletion, this places a DELETE marker so
         the deletion can be preserved when used as a DCM layer.
+
+        Raises:
+            KeyError: If key doesn't exist or is already deleted.
         """
-        if key not in self._data and key not in self:
+        # Key doesn't exist at all
+        if key not in self._data:
+            raise KeyError(key)
+        # Key exists but is already marked DELETE (standard mapping semantics)
+        if is_delete(self._data[key]):
             raise KeyError(key)
         self._data[key] = DELETE
 
