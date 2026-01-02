@@ -1,10 +1,12 @@
 """
-Tests for DeepChainMap 2.0 features.
+Internal implementation tests for DeepChainMap.
 
-These tests verify the new immutability and mutation semantics:
+These tests verify internal behavior including:
 - front_layer for user overrides (including DELETE markers for deletions)
 - Path-based operations
-- MutableProxy for natural dict syntax
+- MutableProxy behavior
+- Caching behavior
+- Layer management internals
 """
 
 import pytest as _pytest

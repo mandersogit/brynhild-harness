@@ -2,8 +2,8 @@
 Edge case tests for DeepChainMap.
 
 These tests verify robustness and document edge case behaviors that
-may not be obvious from the basic tests. Organized by category per
-the test plan in workflow/deep-chain-map-test-plan.md.
+may not be obvious from the basic tests. Includes stress tests,
+serialization, thread safety, and unusual input handling.
 """
 
 import copy as _copy

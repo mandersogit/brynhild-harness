@@ -1,4 +1,9 @@
-"""Tests for DeepChainMap."""
+"""
+Contract tests for DeepChainMap public API.
+
+These tests verify the public interface and documented behavior that
+users rely on. Any changes breaking these tests indicate API changes.
+"""
 
 import pytest as _pytest
 
