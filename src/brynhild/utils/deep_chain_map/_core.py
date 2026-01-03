@@ -353,7 +353,18 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         if merge and isinstance(value, dict):
             existing = current.get(final_key)
             # Don't merge with DELETE markers
-            if isinstance(existing, dict) and not _yaml_markers.is_delete(existing):
+            if _yaml_markers.is_replace(existing):
+                # Preserve replace semantics - merge into the marker's value
+                # Type narrowing: existing is ReplaceMarker after is_replace check
+                marker = _typing.cast(_yaml_markers.ReplaceMarker, existing)
+                inner = marker.value
+                if isinstance(inner, dict):
+                    merged = self._deep_merge_dicts(inner, value)
+                    current[final_key] = _yaml_markers.ReplaceMarker(merged)
+                else:
+                    # Inner was non-dict, replace entirely but keep marker
+                    current[final_key] = _yaml_markers.ReplaceMarker(_copy.deepcopy(value))
+            elif isinstance(existing, dict) and not _yaml_markers.is_delete(existing):
                 current[final_key] = self._deep_merge_dicts(existing, value)
             else:
                 current[final_key] = _copy.deepcopy(value)
@@ -427,6 +438,7 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         Check if a path has DELETE marker in front_layer.
 
         Returns True if any prefix of the path is marked with DELETE.
+        Traverses into ReplaceMarker values to find nested DELETE markers.
 
         Args:
             path: Tuple of keys to check.
@@ -437,6 +449,9 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         raw_data = self._front_layer._raw_data()
         current: _typing.Any = raw_data
         for key in path:
+            # Handle ReplaceMarker - traverse into its value
+            if _yaml_markers.is_replace(current):
+                current = current.value
             if not isinstance(current, dict):
                 return False
             if key not in current:
@@ -1009,21 +1024,35 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
         """
         Recursively apply list_ops to lists in the structure.
 
+        Also normalizes list elements: converts Mapping types to plain dicts
+        to ensure to_dict() and get_mutable() return JSON-serializable structures.
+
         Args:
             value: The value to process.
             path: Current path for list_ops lookup.
             seen: Set of object ids to detect circular references.
 
         Returns:
-            Value with list operations applied.
+            Value with list operations applied and elements normalized.
         """
         if seen is None:
             seen = set()
 
         if isinstance(value, list):
+            # Normalize list elements (convert Mapping to dict, recurse)
+            normalized = []
+            for item in value:
+                if isinstance(item, _abc.Mapping):
+                    # Convert to dict and recurse
+                    normalized.append(self._apply_all_list_ops(dict(item), path, seen))
+                elif isinstance(item, list):
+                    # Recurse into nested lists
+                    normalized.append(self._apply_all_list_ops(item, path, seen))
+                else:
+                    normalized.append(item)
             if path in self._list_ops:
-                return _operations.apply_operations(value, self._list_ops[path])
-            return value
+                return _operations.apply_operations(normalized, self._list_ops[path])
+            return normalized
         # Check Mapping (not just dict) to handle DcmMapping and other types
         elif isinstance(value, _abc.Mapping):
             obj_id = id(value)
@@ -1325,7 +1354,11 @@ class DeepChainMap(_typing.MutableMapping[str, _typing.Any]):
 
                 # Handle YAML ReplaceMarker - no deep merge
                 if _yaml_markers.is_replace(value):
-                    result[key] = _copy.deepcopy(value.value)
+                    unwrapped = _copy.deepcopy(value.value)
+                    # Clean up any nested markers (DELETE, ReplaceMarker) inside
+                    if isinstance(unwrapped, dict):
+                        unwrapped = self._apply_yaml_markers(unwrapped, (key,))
+                    result[key] = unwrapped
                     new_provenance[key] = layer_idx
                     continue
 
