@@ -669,3 +669,145 @@ class TestInteractionBugs:
         level2["value"] = "modified"
         assert d["level1"]["level2"]["value"] == "modified"
 
+
+# =============================================================================
+# AUDIT V4: P0-1 Nested ReplaceMarker + nested deletes leak DELETE markers
+# =============================================================================
+
+
+class TestP0V4_1_MarkerLeakage:
+    """
+    P0-1: DELETE markers inside ReplaceMarker.value should be cleaned up.
+
+    These tests verify that DELETE markers don't leak into merged results.
+    """
+
+    def test_replace_path_then_delete_nested_cleans_markers(self) -> None:
+        """DELETE inside ReplaceMarker.value should be cleaned up."""
+        d = dcm.DeepChainMap({"config": {"nested": {"original": 1}}})
+        d.replace_path(("config", "nested"), {"a": 1, "b": 2})
+        d.delete_path(("config", "nested", "a"))
+
+        result = dict(d["config"]["nested"])
+
+        # "a" should be absent, no DELETE objects visible
+        assert "a" not in result
+        assert result == {"b": 2}
+        assert dcm.DELETE not in result.values()
+
+    def test_is_deleted_traverses_replace_marker(self) -> None:
+        """_is_deleted_in_front_layer should traverse ReplaceMarker values."""
+        d = dcm.DeepChainMap({})
+        d.replace_path(("config",), {"a": 1})
+        d.delete_path(("config", "a"))
+
+        # Should return True when DELETE is inside ReplaceMarker.value
+        assert d._is_deleted_in_front_layer(("config", "a"))
+
+
+# =============================================================================
+# AUDIT V4: P0-2 _set_at_path drops replace semantics
+# =============================================================================
+
+
+class TestP0V4_2_ReplaceSemanticsPersist:
+    """
+    P0-2: set_path(merge=True) on a replaced path should preserve ReplaceMarker.
+
+    Tests verify replace semantics persist through subsequent merges.
+    """
+
+    def test_set_path_merge_preserves_replace_marker(self) -> None:
+        """set_path(merge=True) on replaced path preserves ReplaceMarker."""
+        d = dcm.DeepChainMap({"a": {"x": "source", "y": "source"}})
+        d.replace_path(("a",), {"z": "replaced"})
+        d.set_path(("a",), {"w": "merged"}, merge=True)
+
+        result = dict(d["a"])
+
+        # Source values "x" and "y" should NOT merge through
+        assert "x" not in result
+        assert "y" not in result
+        # Only replaced + merged values
+        assert result == {"z": "replaced", "w": "merged"}
+
+
+# =============================================================================
+# AUDIT V4: P1-1 Lists of DcmMapping not normalized
+# =============================================================================
+
+
+class TestP1V4_1_ListNormalization:
+    """
+    P1-1: List elements should be normalized to plain dicts.
+
+    Tests verify that DcmMapping instances in lists become plain dicts.
+    """
+
+    def test_to_dict_list_elements_are_plain_dict(self) -> None:
+        """to_dict() normalizes list elements to plain dict."""
+        yaml_content = """
+items:
+  - name: first
+    value: 1
+  - name: second
+    value: 2
+"""
+        data = _yaml.load(yaml_content, Loader=dcm.DcmLoader)
+        d = dcm.DeepChainMap(data)
+
+        result = d.to_dict()
+
+        # All list elements should be plain dict
+        for item in result["items"]:
+            assert type(item) is dict
+
+        # Should be JSON-serializable
+        import json as _json
+        _json.dumps(result)  # Should not raise
+
+    def test_get_mutable_list_elements_are_plain_dict(self) -> None:
+        """get_mutable() normalizes list elements to plain dict."""
+        yaml_content = """
+items:
+  - name: first
+"""
+        data = _yaml.load(yaml_content, Loader=dcm.DcmLoader)
+        d = dcm.DeepChainMap(data)
+
+        result = d.get_mutable("items")
+        first_item = result[0]
+
+        # List element should be plain dict
+        assert type(first_item) is dict
+
+
+# =============================================================================
+# AUDIT V4: P1-2 freeze() idempotence (CONTRACT TEST - not a bug)
+# =============================================================================
+
+
+class TestP1V4_2_FreezeIdempotence:
+    """
+    P1-2: freeze() should be idempotent (return same object if already frozen).
+
+    This is a CONTRACT TEST, not an inverse test.
+    The implementation is correct; we're documenting the expected behavior.
+    """
+
+    def test_freeze_mapping_idempotent(self) -> None:
+        """Freezing an already-frozen mapping returns the same object."""
+        data = {"a": 1, "b": {"c": 2}}
+        frozen1 = _frozen.freeze(data)
+        frozen2 = _frozen.freeze(frozen1)
+
+        assert frozen2 is frozen1  # Same object, not wrapped again
+
+    def test_freeze_sequence_idempotent(self) -> None:
+        """Freezing an already-frozen sequence returns the same object."""
+        data = [1, 2, {"a": 3}]
+        frozen1 = _frozen.freeze(data)
+        frozen2 = _frozen.freeze(frozen1)
+
+        assert frozen2 is frozen1  # Same object, not wrapped again
+
