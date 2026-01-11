@@ -1,14 +1,24 @@
 """
-Slash command parsing from markdown files.
+Slash command parsing from markdown files and entry points.
 
 Commands are defined in plugin commands/ directories as markdown files
 with YAML frontmatter. The frontmatter defines metadata, and the body
 is the command template injected as a system message.
+
+Entry point plugins can register commands via:
+    [project.entry-points."brynhild.commands"]
+    my-command = "my_package.commands:get_command"
+
+The function should return either:
+    - A Command instance
+    - A dict with 'name' and 'body' keys (plus optional metadata)
 """
 
 from __future__ import annotations
 
 import dataclasses as _dataclasses
+import importlib.metadata as _meta
+import logging as _logging
 import os as _os
 import pathlib as _pathlib
 import re as _re
@@ -16,6 +26,8 @@ import typing as _typing
 
 import pydantic as _pydantic
 import yaml as _yaml
+
+_logger = _logging.getLogger(__name__)
 
 # Regex to extract YAML frontmatter from markdown
 _FRONTMATTER_RE = _re.compile(
@@ -264,4 +276,99 @@ class CommandLoader:
         """
         commands_dir = plugin_path / "commands"
         return self.load_from_directory(commands_dir, plugin_name)
+
+
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled."""
+    import os as _os
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1", "true", "yes"
+    )
+
+
+def discover_commands_from_entry_points() -> dict[str, Command]:
+    """
+    Discover commands registered via the 'brynhild.commands' entry point group.
+
+    Entry point format in pyproject.toml:
+        [project.entry-points."brynhild.commands"]
+        my-command = "my_package.commands:get_command"
+
+    The function should return:
+        - A Command instance, OR
+        - A dict with 'name' and 'body' keys (and optional metadata)
+
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
+    Returns:
+        Dict mapping command name to Command instance.
+        Includes aliases as separate entries pointing to the same command.
+    """
+    if _entry_points_disabled():
+        _logger.debug("Entry point command discovery disabled by environment variable")
+        return {}
+
+    commands: dict[str, Command] = {}
+
+    eps = _meta.entry_points(group="brynhild.commands")
+
+    for ep in eps:
+        try:
+            command_provider = ep.load()
+
+            # Call if callable, otherwise use as-is
+            result = command_provider() if callable(command_provider) else command_provider
+
+            if isinstance(result, Command):
+                command = result
+            elif isinstance(result, dict):
+                # Build Command from dict
+                if "name" not in result:
+                    _logger.warning(
+                        "Entry point '%s' dict missing required 'name' key",
+                        ep.name,
+                    )
+                    continue
+
+                frontmatter = CommandFrontmatter(
+                    name=result["name"],
+                    description=result.get("description", ""),
+                    aliases=result.get("aliases", []),
+                    args=result.get("args", ""),
+                )
+                command = Command(
+                    frontmatter=frontmatter,
+                    body=result.get("body", ""),
+                    path=_pathlib.Path("<entry-point>"),
+                    plugin_name=f"entry_point:{ep.name}",
+                )
+            else:
+                _logger.warning(
+                    "Entry point '%s' returned unexpected type: %s "
+                    "(expected Command or dict)",
+                    ep.name,
+                    type(result).__name__,
+                )
+                continue
+
+            # Primary name
+            commands[command.name] = command
+            # Aliases
+            for alias in command.aliases:
+                commands[alias] = command
+
+            _logger.debug(
+                "Discovered command '%s' from entry point '%s' (package: %s)",
+                command.name,
+                ep.name,
+                getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+            )
+        except Exception as e:
+            _logger.warning(
+                "Failed to load command from entry point '%s': %s",
+                ep.name,
+                e,
+            )
+
+    return commands
 

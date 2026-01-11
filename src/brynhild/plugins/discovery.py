@@ -67,6 +67,17 @@ def get_plugin_search_paths(
     return paths
 
 
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled.
+
+    Controlled by BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS environment variable.
+    Useful for testing and debugging.
+    """
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1", "true", "yes"
+    )
+
+
 def discover_from_entry_points() -> dict[str, manifest.Plugin]:
     """
     Discover plugins registered via setuptools entry points.
@@ -83,9 +94,15 @@ def discover_from_entry_points() -> dict[str, manifest.Plugin]:
         - A Plugin instance (fully configured)
         - A PluginManifest instance (wrapped automatically)
 
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
     Returns:
         Dict mapping plugin name to Plugin instance.
     """
+    if _entry_points_disabled():
+        _logger.debug("Entry point plugin discovery disabled by environment variable")
+        return {}
+
     plugins: dict[str, manifest.Plugin] = {}
 
     # Python 3.10+ supports the group= keyword argument

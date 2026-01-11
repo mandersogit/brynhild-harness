@@ -241,6 +241,14 @@ class ToolLoader:
         return dict(self._loaded_tools)
 
 
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled."""
+    import os as _os
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1", "true", "yes"
+    )
+
+
 def discover_tools_from_entry_points() -> dict[str, ToolClass]:
     """
     Discover individual tools registered via entry points.
@@ -253,9 +261,15 @@ def discover_tools_from_entry_points() -> dict[str, ToolClass]:
         [project.entry-points."brynhild.tools"]
         MyTool = "my_package.tools:MyTool"
 
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
     Returns:
         Dict mapping tool name to Tool class.
     """
+    if _entry_points_disabled():
+        _logger.debug("Entry point tool discovery disabled by environment variable")
+        return {}
+
     tools: dict[str, ToolClass] = {}
 
     # Python 3.10+ supports the group= keyword argument

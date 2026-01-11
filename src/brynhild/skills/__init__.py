@@ -11,14 +11,16 @@ Skill discovery locations (in priority order, lowest to highest):
 1. Builtin skills (shipped with brynhild package)
 2. ~/.config/brynhild/skills/ - User skills (global)
 3. $BRYNHILD_SKILL_PATH - Custom paths (colon-separated)
-4. Plugin-bundled skills - Skills bundled in plugins
-5. Project .brynhild/skills/ - Project-local skills
+4. Plugin-bundled skills - Skills from directory-based plugins
+5. Entry point skills - Skills from packaged plugins (brynhild.skills)
+6. Project .brynhild/skills/ - Project-local skills
 
 Based on Anthropic's Agent Skills Spec and obra/superpowers.
 """
 
 from brynhild.skills.discovery import (
     SkillDiscovery,
+    discover_skills_from_entry_points,
     get_global_skills_path,
     get_plugin_skill_paths,
     get_project_skills_path,
@@ -49,6 +51,7 @@ __all__ = [
     "parse_skill_markdown",
     # Discovery
     "SkillDiscovery",
+    "discover_skills_from_entry_points",
     "get_global_skills_path",
     "get_plugin_skill_paths",
     "get_project_skills_path",

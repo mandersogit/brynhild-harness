@@ -5,20 +5,33 @@ Rules are discovered from multiple sources and concatenated:
 - AGENTS.md - Standard multi-framework rules file
 - rules.md / .brynhild/rules.md - Brynhild-specific rules
 - .cursorrules - Cross-tool compatibility
-- Plugin rules (rules/*.md in plugin directories)
+- Plugin rules (rules/*.md in plugin directories or brynhild.rules entry points)
 
 Discovery walks from current directory to root, collecting
 rules at each level. Global rules (~/.config/brynhild/rules/)
 are loaded first, then plugin rules, then project rules override.
+
+Entry point plugins can register rules via:
+    [project.entry-points."brynhild.rules"]
+    my-rules = "my_package.rules:get_rules"
+
+The function should return either:
+    - A string (the rule content)
+    - A list of strings (multiple rule contents)
+    - A dict with 'content' key (and optional 'name' for identification)
 """
 
 from __future__ import annotations
 
+import importlib.metadata as _meta
+import logging as _logging
 import pathlib as _pathlib
 import typing as _typing
 
 if _typing.TYPE_CHECKING:
     import brynhild.plugins.manifest as _manifest
+
+_logger = _logging.getLogger(__name__)
 
 # Rule file names to search for, in priority order
 # RULE_FILES = [
@@ -131,6 +144,8 @@ def load_plugin_rules(
     """
     Load rules from a plugin's rules/ directory.
 
+    Note: Entry-point plugins should use 'brynhild.rules' entry points instead.
+
     Args:
         plugin: Plugin to load rules from.
 
@@ -140,6 +155,10 @@ def load_plugin_rules(
     rules: list[tuple[_pathlib.Path, str]] = []
 
     if not plugin.has_rules():
+        return rules
+
+    # Entry-point plugins don't have filesystem paths
+    if plugin.is_packaged:
         return rules
 
     rules_dir = plugin.rules_path
@@ -158,6 +177,93 @@ def load_plugin_rules(
                 rules.append((rule_path, content))
             except OSError:
                 continue
+
+    return rules
+
+
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled."""
+    import os as _os
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1", "true", "yes"
+    )
+
+
+def discover_rules_from_entry_points() -> list[tuple[str, str]]:
+    """
+    Discover rules registered via the 'brynhild.rules' entry point group.
+
+    Entry point format in pyproject.toml:
+        [project.entry-points."brynhild.rules"]
+        my-rules = "my_package.rules:get_rules"
+
+    The function should return:
+        - A string (the rule content)
+        - A list of strings (multiple rule contents)
+        - A dict with 'content' key (and optional 'name' for identification)
+
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
+    Returns:
+        List of (name, content) tuples for each rule.
+    """
+    if _entry_points_disabled():
+        _logger.debug("Entry point rules discovery disabled by environment variable")
+        return []
+
+    rules: list[tuple[str, str]] = []
+
+    eps = _meta.entry_points(group="brynhild.rules")
+
+    for ep in eps:
+        try:
+            rule_provider = ep.load()
+
+            # Call if callable, otherwise use as-is
+            result = rule_provider() if callable(rule_provider) else rule_provider
+
+            if isinstance(result, str):
+                # Single rule string
+                rules.append((ep.name, result))
+            elif isinstance(result, list):
+                # List of rule strings
+                for i, rule_content in enumerate(result):
+                    if isinstance(rule_content, str):
+                        rules.append((f"{ep.name}_{i}", rule_content))
+                    elif isinstance(rule_content, dict) and "content" in rule_content:
+                        name = rule_content.get("name", f"{ep.name}_{i}")
+                        rules.append((name, rule_content["content"]))
+            elif isinstance(result, dict):
+                # Dict with content key
+                if "content" in result:
+                    name = result.get("name", ep.name)
+                    rules.append((name, result["content"]))
+                else:
+                    _logger.warning(
+                        "Entry point '%s' dict missing 'content' key",
+                        ep.name,
+                    )
+                    continue
+            else:
+                _logger.warning(
+                    "Entry point '%s' returned unexpected type: %s "
+                    "(expected str, list, or dict)",
+                    ep.name,
+                    type(result).__name__,
+                )
+                continue
+
+            _logger.debug(
+                "Discovered rules from entry point '%s' (package: %s)",
+                ep.name,
+                getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+            )
+        except Exception as e:
+            _logger.warning(
+                "Failed to load rules from entry point '%s': %s",
+                ep.name,
+                e,
+            )
 
     return rules
 
@@ -241,8 +347,9 @@ class RulesManager:
 
         Rules are concatenated in priority order:
         1. Global rules (lowest priority)
-        2. Plugin rules (medium priority)
-        3. Project rules from root to current dir (highest priority)
+        2. Directory-based plugin rules
+        3. Entry point rules (brynhild.rules)
+        4. Project rules from root to current dir (highest priority)
 
         Results are cached; use force_reload=True to refresh.
 
@@ -268,11 +375,15 @@ class RulesManager:
             for _, content in load_global_rules():
                 parts.append(content.strip())
 
-        # Plugin rules (medium priority)
+        # Directory-based plugin rules
         for plugin in self._plugins:
             if plugin.enabled and plugin.has_rules():
                 for _, content in load_plugin_rules(plugin):
                     parts.append(content.strip())
+
+        # Entry point rules (higher priority than directory plugins)
+        for _name, content in discover_rules_from_entry_points():
+            parts.append(content.strip())
 
         # Project rules (highest priority)
         for rule_path in discover_rule_files(self._project_root):

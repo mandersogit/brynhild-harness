@@ -311,6 +311,14 @@ def load_all_plugin_providers() -> dict[str, ProviderClass]:
     return get_all_plugin_providers()
 
 
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled."""
+    import os as _os
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1", "true", "yes"
+    )
+
+
 def discover_providers_from_entry_points() -> dict[str, ProviderClass]:
     """
     Discover individual providers registered via entry points.
@@ -322,9 +330,15 @@ def discover_providers_from_entry_points() -> dict[str, ProviderClass]:
         [project.entry-points."brynhild.providers"]
         my-provider = "my_package.providers:MyProvider"
 
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
     Returns:
         Dict mapping provider name to Provider class.
     """
+    if _entry_points_disabled():
+        _logger.debug("Entry point provider discovery disabled by environment variable")
+        return {}
+
     providers: dict[str, ProviderClass] = {}
 
     # Python 3.10+ supports the group= keyword argument
