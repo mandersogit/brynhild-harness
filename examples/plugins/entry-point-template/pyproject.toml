@@ -1,0 +1,76 @@
+# Brynhild Entry-Point Plugin Template
+#
+# This is a template for creating installable Brynhild plugins.
+# Rename 'brynhild_my_plugin' to your package name throughout.
+#
+# Install in development mode: pip install -e .
+# Install from PyPI: pip install brynhild-my-plugin
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brynhild-my-plugin"
+version = "0.1.0"
+description = "Example Brynhild plugin demonstrating all entry point features"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+
+# Add brynhild as a dependency
+dependencies = ["brynhild>=0.1.0"]
+
+# Optional dev dependencies
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+# ============================================================================
+# Entry Points - How Brynhild Discovers Your Plugin
+# ============================================================================
+#
+# Each group below registers a different plugin feature.
+# Remove any sections you don't need.
+
+[project.entry-points."brynhild.plugins"]
+# Main plugin manifest - declares plugin metadata
+# Returns: PluginManifest or dict
+my-plugin = "brynhild_my_plugin:get_manifest"
+
+[project.entry-points."brynhild.tools"]
+# Individual tools - REQUIRED if your plugin provides tools
+# Returns: Tool class (not instance)
+greeter = "brynhild_my_plugin.tools:GreeterTool"
+counter = "brynhild_my_plugin.tools:CounterTool"
+
+[project.entry-points."brynhild.providers"]
+# LLM providers - for alternative backends
+# Returns: LLMProvider class (not instance)
+# my-provider = "brynhild_my_plugin.providers:MyProvider"
+
+[project.entry-points."brynhild.hooks"]
+# Hook configurations - for pre/post tool hooks
+# Returns: HooksConfig instance, dict, or callable returning either
+my-hooks = "brynhild_my_plugin.hooks:get_hooks"
+
+[project.entry-points."brynhild.skills"]
+# Skills - behavioral guidance for the LLM
+# Returns: Skill instance, dict, or callable returning either
+my-skill = "brynhild_my_plugin.skills:get_skill"
+
+[project.entry-points."brynhild.commands"]
+# Slash commands - custom /commands
+# Returns: Command instance, dict, or callable returning either
+my-command = "brynhild_my_plugin.commands:get_command"
+
+[project.entry-points."brynhild.rules"]
+# Rules - project-specific instructions
+# Returns: str, list[str], or callable returning either
+my-rules = "brynhild_my_plugin.rules:get_rules"
+
+# Package configuration
+[tool.setuptools]
+packages = ["brynhild_my_plugin"]
+package-dir = { "" = "src" }
+
