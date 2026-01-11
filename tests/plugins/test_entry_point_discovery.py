@@ -8,15 +8,24 @@ Tests verify that:
 - Entry point plugins override directory plugins with same name
 - Invalid entry points are logged but don't stop discovery
 - Package metadata (name, version) is captured for entry point plugins
+
+NOTE: Entry point discovery is disabled by default in tests. These tests
+use the enable_entry_point_plugins fixture to re-enable it for testing.
 """
 
 import pathlib as _pathlib
 import unittest.mock as _mock
 
+import pytest as _pytest
+
 import brynhild.plugins.discovery as discovery
 import brynhild.plugins.manifest as manifest
 import brynhild.plugins.providers as providers
 import brynhild.plugins.tools as tools
+
+# Apply enable_entry_point_plugins fixture to all tests in this module
+# NOTE: pytestmark must NOT have underscore prefix - it's a pytest convention
+pytestmark = _pytest.mark.usefixtures("enable_entry_point_plugins")
 
 
 class TestDiscoverFromEntryPoints:

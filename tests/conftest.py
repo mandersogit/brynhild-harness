@@ -34,6 +34,11 @@ def pytest_configure(config: _pytest.Config) -> None:  # noqa: F811 - shadows im
     # This allows tests to run even if the user's .env has legacy vars
     _os.environ["BRYNHILD_SKIP_MIGRATION_CHECK"] = "1"
 
+    # Disable entry point plugin discovery by default in tests
+    # This isolates tests from any plugins installed in the development environment
+    # Individual tests can override this by setting the env var to empty string
+    _os.environ["BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS"] = "1"
+
     # Check if we're running ollama_local tests
     markexpr = config.getoption("-m", default="")
     if "ollama_local" in str(markexpr):
@@ -794,6 +799,31 @@ _TEST_PLUGIN_SITE_PACKAGES = _pathlib.Path(__file__).parent / "fixtures" / "site
 
 
 @_pytest.fixture
+def enable_entry_point_plugins() -> _typing.Generator[None, None, None]:
+    """
+    Fixture to re-enable entry point plugin discovery for a specific test.
+
+    By default, entry point plugins are disabled in tests (see pytest_configure).
+    Use this fixture for tests that need to test entry point discovery behavior
+    with real installed plugins.
+
+    IMPORTANT: Tests using this fixture may be affected by plugins installed
+    in the development environment. For isolated tests, use mocks instead.
+
+    Usage:
+        def test_real_plugin_discovery(enable_entry_point_plugins):
+            # Entry point plugins are now discoverable
+            plugins = discover_from_entry_points()
+    """
+    old_value = _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "")
+    _os.environ["BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS"] = ""
+    try:
+        yield
+    finally:
+        _os.environ["BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS"] = old_value
+
+
+@_pytest.fixture
 def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
     """
     Fixture that makes the test plugin discoverable via entry points.
@@ -801,6 +831,9 @@ def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
     Uses a permanent fixture directory (tests/fixtures/site-packages/) that
     contains a pre-built package with .dist-info. The fixture simply adds
     this directory as a site-packages location and invalidates caches.
+
+    NOTE: This fixture also enables entry point discovery (which is disabled
+    by default in tests) so the test plugin can be found.
 
     This approach:
     - Uses site.addsitedir() for proper site-packages semantics
@@ -819,6 +852,10 @@ def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
     site_packages = _TEST_PLUGIN_SITE_PACKAGES
     site_packages_str = str(site_packages)
 
+    # Re-enable entry point discovery for this test
+    old_disable_value = _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "")
+    _os.environ["BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS"] = ""
+
     # Add as a site-packages directory (processes .pth files if any exist)
     _site.addsitedir(site_packages_str)
 
@@ -827,12 +864,15 @@ def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
 
     # Remove any cached modules from previous test runs
     for mod_name in list(_sys.modules.keys()):
-        if mod_name.startswith("brynhild_test_plugin"):
+        if mod_name.startswith(("brynhild_test_plugin", "brynhild_test_complete")):
             del _sys.modules[mod_name]
 
     try:
         yield site_packages
     finally:
+        # Restore entry point discovery setting
+        _os.environ["BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS"] = old_disable_value
+
         # Cleanup: remove from sys.path
         # site.addsitedir adds to sys.path, so we remove from there
         if site_packages_str in _sys.path:
@@ -841,7 +881,7 @@ def installed_test_plugin() -> _typing.Generator[_pathlib.Path, None, None]:
         # Invalidate caches again so subsequent tests don't see the plugin
         _importlib.invalidate_caches()
 
-        # Remove cached modules
+        # Remove cached modules (both test plugins)
         for mod_name in list(_sys.modules.keys()):
-            if mod_name.startswith("brynhild_test_plugin"):
+            if mod_name.startswith(("brynhild_test_plugin", "brynhild_test_complete")):
                 del _sys.modules[mod_name]
