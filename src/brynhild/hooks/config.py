@@ -38,6 +38,14 @@ class HookDefinition(_pydantic.BaseModel):
     - When to fire (event type and match conditions)
     - What to execute (command, script, or prompt)
     - How to handle results
+
+    Required fields:
+    - name: Unique identifier for this hook
+    - type: One of "command", "script", or "prompt"
+
+    For type="command": provide `command` (shell command to run)
+    For type="script": provide `script` (path to Python script)
+    For type="prompt": provide `prompt` (LLM prompt template)
     """
 
     model_config = _pydantic.ConfigDict(extra="forbid")
@@ -45,7 +53,13 @@ class HookDefinition(_pydantic.BaseModel):
     name: str
     """Unique identifier for this hook."""
 
-    type: _typing.Literal["command", "script", "prompt"]
+    type: _typing.Literal["command", "script", "prompt"] = _pydantic.Field(
+        ...,
+        description=(
+            "Hook type. Must be one of: 'command' (run shell command), "
+            "'script' (run Python script file), or 'prompt' (LLM prompt)"
+        ),
+    )
     """Hook type: command (shell), script (Python), or prompt (LLM)."""
 
     # Trigger conditions
@@ -78,15 +92,50 @@ class HookDefinition(_pydantic.BaseModel):
     enabled: bool = True
     """Whether this hook is enabled."""
 
+    @_pydantic.model_validator(mode="before")
+    @classmethod
+    def _validate_type_present(cls, data: _typing.Any) -> _typing.Any:
+        """Provide helpful error message when 'type' field is missing."""
+        if isinstance(data, dict) and "type" not in data:
+            valid_types = ("command", "script", "prompt")
+            raise ValueError(
+                f"'type' field is required. Must be one of: {', '.join(repr(t) for t in valid_types)}. "
+                "Use 'command' for shell commands, 'script' for Python scripts, "
+                "'prompt' for LLM prompts."
+            )
+        return data
+
+    @_pydantic.field_validator("type", mode="before")
+    @classmethod
+    def _validate_type_value(cls, v: _typing.Any) -> str:
+        """Provide helpful error message for invalid type values."""
+        valid_types = ("command", "script", "prompt")
+        if v not in valid_types:
+            raise ValueError(
+                f"Invalid hook type '{v}'. Must be one of: {', '.join(repr(t) for t in valid_types)}. "
+                "Use 'command' for shell commands, 'script' for Python scripts, "
+                "'prompt' for LLM prompts."
+            )
+        return str(v)
+
     @_pydantic.model_validator(mode="after")
     def _validate_type_fields(self) -> HookDefinition:
         """Validate that the right fields are set for the hook type."""
         if self.type == "command" and not self.command:
-            raise ValueError("command hooks must specify 'command' field")
+            raise ValueError(
+                "Hook type 'command' requires the 'command' field with the shell command to run. "
+                "Example: command: \"echo 'Hello'\""
+            )
         if self.type == "script" and not self.script:
-            raise ValueError("script hooks must specify 'script' field")
+            raise ValueError(
+                "Hook type 'script' requires the 'script' field with the path to a Python script. "
+                "Example: script: \"./scripts/my_hook.py\""
+            )
         if self.type == "prompt" and not self.prompt:
-            raise ValueError("prompt hooks must specify 'prompt' field")
+            raise ValueError(
+                "Hook type 'prompt' requires the 'prompt' field with the LLM prompt template. "
+                "Example: prompt: \"Analyze this: {{context}}\""
+            )
         return self
 
 

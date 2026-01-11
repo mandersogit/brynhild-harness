@@ -25,7 +25,7 @@ class TestHookDefinition:
 
     def test_command_hook_requires_command(self) -> None:
         """Command hook must have command field."""
-        with _pytest.raises(ValueError, match="command hooks must specify"):
+        with _pytest.raises(ValueError, match="Hook type 'command' requires"):
             config.HookDefinition(
                 name="test-hook",
                 type="command",
@@ -42,7 +42,7 @@ class TestHookDefinition:
 
     def test_script_hook_requires_script(self) -> None:
         """Script hook must have script field."""
-        with _pytest.raises(ValueError, match="script hooks must specify"):
+        with _pytest.raises(ValueError, match="Hook type 'script' requires"):
             config.HookDefinition(
                 name="test-hook",
                 type="script",
@@ -59,7 +59,7 @@ class TestHookDefinition:
 
     def test_prompt_hook_requires_prompt(self) -> None:
         """Prompt hook must have prompt field."""
-        with _pytest.raises(ValueError, match="prompt hooks must specify"):
+        with _pytest.raises(ValueError, match="Hook type 'prompt' requires"):
             config.HookDefinition(
                 name="test-hook",
                 type="prompt",
