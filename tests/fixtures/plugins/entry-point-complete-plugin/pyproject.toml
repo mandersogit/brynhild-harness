@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brynhild-test-complete"
+version = "0.0.1"
+description = "Comprehensive test plugin exercising ALL entry point features"
+requires-python = ">=3.11"
+dependencies = []
+
+# =============================================================================
+# PLUGIN MANIFEST (brynhild.plugins)
+# =============================================================================
+# Registers the overall plugin with Brynhild.
+[project.entry-points."brynhild.plugins"]
+test-complete = "brynhild_test_complete:register"
+
+# =============================================================================
+# TOOLS (brynhild.tools)
+# =============================================================================
+# Individual tool classes for direct registration.
+[project.entry-points."brynhild.tools"]
+TestEcho = "brynhild_test_complete.tools:EchoTool"
+TestCounter = "brynhild_test_complete.tools:CounterTool"
+
+# =============================================================================
+# PROVIDERS (brynhild.providers)
+# =============================================================================
+# LLM provider classes.
+[project.entry-points."brynhild.providers"]
+test-mock = "brynhild_test_complete.providers:MockProvider"
+
+# =============================================================================
+# HOOKS (brynhild.hooks)
+# =============================================================================
+# Hook configurations that run before/after tool execution.
+[project.entry-points."brynhild.hooks"]
+test-hooks = "brynhild_test_complete.hooks:get_hooks"
+
+# =============================================================================
+# SKILLS (brynhild.skills)
+# =============================================================================
+# Skill definitions for specialized behaviors.
+[project.entry-points."brynhild.skills"]
+test-skill = "brynhild_test_complete.skills:get_skill"
+
+# =============================================================================
+# COMMANDS (brynhild.commands)
+# =============================================================================
+# Slash commands for user interaction.
+[project.entry-points."brynhild.commands"]
+test-cmd = "brynhild_test_complete.commands:get_command"
+
+# =============================================================================
+# RULES (brynhild.rules)
+# =============================================================================
+# Project rules for LLM guidance.
+[project.entry-points."brynhild.rules"]
+test-rules = "brynhild_test_complete.rules:get_rules"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brynhild_test_complete"]
+
