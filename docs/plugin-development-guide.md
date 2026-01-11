@@ -2,6 +2,8 @@
 
 This guide covers how to develop plugins for Brynhild, from initial setup to testing and deployment.
 
+> **⚠️ Deprecation Notice**: Directory-based plugins (using `plugin.yaml` and filesystem directories) are **deprecated** in favor of entry-point plugins (pip-installable packages). Directory-based plugins will be removed in a future major version. For new plugins, use the [Packaged Plugins](#packaged-plugins-entry-points) approach.
+
 ## Overview
 
 Brynhild plugins can extend the system with:
@@ -10,10 +12,15 @@ Brynhild plugins can extend the system with:
 - **Commands** - Custom slash commands (e.g., `/deploy`, `/summarize`)
 - **Skills** - Behavioral guidance for the LLM (e.g., coding standards, personas)
 - **Hooks** - Event handlers (e.g., pre/post tool execution)
+- **Rules** - Project-specific instructions and guidelines
 
 ## Quick Start
 
-### 1. Create Plugin Structure
+**For new plugins, skip to [Packaged Plugins (Entry Points)](#packaged-plugins-entry-points).**
+
+The following directory-based approach is deprecated but still supported:
+
+### 1. Create Plugin Structure (Deprecated)
 
 ```bash
 mkdir -p my-plugin/tools
@@ -217,21 +224,25 @@ dependencies = [
     # Add your plugin's dependencies here
 ]
 
-# Register the plugin via entry points
+# Register the plugin manifest (metadata, lifecycle)
 [project.entry-points."brynhild.plugins"]
 my-plugin = "brynhild_my_plugin:register"
 
-# Optional: Register individual tools directly
+# REQUIRED for tools: Register each tool class directly
+# Packaged plugins don't have a tools/ directory, so this is how
+# Brynhild discovers your tools. Without this, your tools won't load!
 [project.entry-points."brynhild.tools"]
 MyTool = "brynhild_my_plugin.tools.my_tool:Tool"
 
-# Optional: Register individual providers directly
+# Register providers (if your plugin provides any)
 [project.entry-points."brynhild.providers"]
 my-provider = "brynhild_my_plugin.providers.my_provider:Provider"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/brynhild_my_plugin"]
 ```
+
+> **⚠️ Important**: For packaged plugins, the `brynhild.tools` entry point is **required** for each tool you want to expose. Unlike directory-based plugins (which load tools from `tools/*.py` files), packaged plugins have no filesystem path for Brynhild to scan. The entry point IS how your tools get discovered.
 
 #### 3. Register Function
 
@@ -267,25 +278,238 @@ brynhild chat "Use MyTool to do something"
 
 ### Entry Point Groups
 
-| Group | Purpose | Value Format |
-|-------|---------|--------------|
-| `brynhild.plugins` | Full plugin registration | `module:register_function` |
-| `brynhild.tools` | Individual tool class | `module.path:ToolClass` |
-| `brynhild.providers` | Individual provider class | `module.path:ProviderClass` |
+| Group | Purpose | Value Format | Returns |
+|-------|---------|--------------|---------|
+| `brynhild.plugins` | Plugin manifest/metadata | `module:register_function` | `PluginManifest` or `Plugin` |
+| `brynhild.tools` | Tool class registration | `module.path:ToolClass` | Tool class |
+| `brynhild.providers` | Provider class registration | `module.path:ProviderClass` | Provider class |
+| `brynhild.hooks` | Hook configuration | `module:get_hooks` | `HooksConfig` or dict |
+| `brynhild.skills` | Skill definition | `module:get_skill` | `Skill` or dict |
+| `brynhild.commands` | Slash command | `module:get_command` | `Command` or dict |
+| `brynhild.rules` | Project rules | `module:get_rules` | string, list, or dict |
 
-### Full Plugin vs Individual Components
+### Understanding Entry Points for Packaged Plugins
 
-**Full Plugin** (`brynhild.plugins`):
-- Use when you have multiple tools, providers, commands, or skills
-- Provides a `PluginManifest` with all metadata
-- Single entry point for the entire plugin
+**Why do packaged plugins need explicit entry points?**
 
-**Individual Components** (`brynhild.tools`, `brynhild.providers`):
-- Use for simple single-tool or single-provider packages
-- No manifest required — just register the class directly
-- Lighter weight for simple use cases
+Directory-based plugins (in `~/.config/brynhild/plugins/` or `BRYNHILD_PLUGIN_PATH`) have a `tools/` folder that Brynhild scans at runtime. But packaged plugins installed via pip don't have a predictable filesystem location — they're inside a wheel/egg in `site-packages`.
+
+**Entry points solve this**: They tell Python "this package provides X at import path Y", letting Brynhild discover your components without knowing where files are.
+
+### What You Need
+
+| Plugin Type | `plugins` | `tools` | `providers` | `hooks` | `skills` | `commands` | `rules` |
+|-------------|-----------|---------|-------------|---------|----------|------------|---------|
+| **Single tool** | Optional | ✅ | — | — | — | — | — |
+| **Single provider** | Optional | — | ✅ | — | — | — | — |
+| **Full plugin** | ✅ Recommended | If has tools | If has providers | If has hooks | If has skills | If has commands | If has rules |
+
+**Note**: Each component type needs its own entry point. A plugin with tools AND hooks needs BOTH `brynhild.tools` AND `brynhild.hooks` entry points.
+
+### Full Plugin Entry Points
+
+For a complete plugin with tools, you need BOTH entry point types:
+
+```toml
+# Plugin manifest — provides name, version, description, lifecycle hooks
+[project.entry-points."brynhild.plugins"]
+my-plugin = "brynhild_my_plugin:register"
+
+# Tool registration — makes each tool discoverable
+# Without these, your tools WON'T be loaded even if declared in the manifest!
+[project.entry-points."brynhild.tools"]
+MyTool = "brynhild_my_plugin.tools.my_tool:Tool"
+AnotherTool = "brynhild_my_plugin.tools.another:Tool"
+```
+
+The manifest's `tools=["MyTool", "AnotherTool"]` declares what the plugin provides. The `brynhild.tools` entry points tell Python where to find them.
+
+### Registering Hooks via Entry Points
+
+```toml
+[project.entry-points."brynhild.hooks"]
+my-hooks = "my_package:get_hooks"
+```
+
+```python
+# my_package/__init__.py
+import brynhild.hooks.config as hooks_config
+
+def get_hooks() -> hooks_config.HooksConfig:
+    """Return hooks configuration."""
+    return hooks_config.HooksConfig(
+        hooks={
+            "pre_tool_use": [
+                hooks_config.HookDefinition(
+                    name="log-tool",
+                    type="command",  # REQUIRED: "command", "script", or "prompt"
+                    command="echo 'Using tool: $BRYNHILD_TOOL_NAME'",
+                    enabled=True,
+                    timeout=hooks_config.HookTimeoutConfig(seconds=30),
+                ),
+            ],
+        }
+    )
+```
+
+**HookDefinition required fields:**
+- `name` - Unique identifier for the hook
+- `type` - One of: `"command"`, `"script"`, `"prompt"`
+- For `type="command"`: provide `command`
+- For `type="script"`: provide `script` (path to Python file)
+- For `type="prompt"`: provide `prompt` (LLM prompt template)
+
+**Optional fields:**
+- `enabled` - Whether the hook is active (default: True)
+- `timeout` - `HookTimeoutConfig(seconds=N, on_timeout="block"|"continue")`
+- `match` - Dict of conditions for when to trigger
+
+Or return a dict:
+
+```python
+def get_hooks() -> dict:
+    return {
+        "hooks": {
+            "pre_tool_use": [
+                {
+                    "name": "log-tool",
+                    "type": "command",  # REQUIRED
+                    "command": "echo 'Tool used'",
+                    "timeout": {"seconds": 30},  # Dict format for timeout
+                }
+            ]
+        }
+    }
+```
+
+### Registering Skills via Entry Points
+
+```toml
+[project.entry-points."brynhild.skills"]
+my-skill = "my_package.skills:get_skill"
+```
+
+```python
+# my_package/skills.py
+def get_skill() -> dict:
+    """Return skill definition."""
+    return {
+        "name": "my-skill",  # REQUIRED: lowercase, hyphens allowed
+        "description": "Helps with X when the user asks about Y",  # REQUIRED
+        "body": """
+# My Skill
+
+Instructions for the LLM when this skill is activated...
+""",
+        "allowed_tools": ["Read", "Write"],  # Optional: pre-approved tools
+    }
+```
+
+**Skill name requirements:**
+- Must be lowercase
+- Can contain hyphens (not underscores)
+- Pattern: `^[a-z0-9][a-z0-9-]*[a-z0-9]$` (or single character)
+
+Or return a `Skill` instance directly:
+
+```python
+import pathlib
+import brynhild.skills.skill as skill_module
+
+def get_skill() -> skill_module.Skill:
+    return skill_module.Skill(
+        frontmatter=skill_module.SkillFrontmatter(
+            name="my-skill",
+            description="Helps with X when user asks about Y",
+        ),
+        body="# My Skill\n\nInstructions for the LLM...",
+        path=pathlib.Path("<entry-point>"),
+        source="entry_point",
+    )
+```
+
+### Registering Commands via Entry Points
+
+```toml
+[project.entry-points."brynhild.commands"]
+my-command = "my_package.commands:get_command"
+```
+
+```python
+# my_package/commands.py
+def get_command() -> dict:
+    """Return slash command definition."""
+    return {
+        "name": "deploy",  # REQUIRED: command name (user types /deploy)
+        "description": "Deploy the current project",  # Shown in /help
+        "aliases": ["d", "ship"],  # Alternative names
+        "args": "[environment]",  # Argument syntax shown to user
+        "body": """
+Deploy the project to {{args}} environment.
+
+Current directory: {{cwd}}
+""",
+    }
+```
+
+**Template variables in `body`:**
+- `{{args}}` - Arguments passed to the command
+- `{{cwd}}` - Current working directory
+- `{{env.VAR_NAME}}` - Environment variables
+
+Or return a `Command` instance directly:
+
+```python
+import pathlib
+import brynhild.plugins.commands as commands_module
+
+def get_command() -> commands_module.Command:
+    return commands_module.Command(
+        frontmatter=commands_module.CommandFrontmatter(
+            name="deploy",
+            description="Deploy the current project",
+            aliases=["d", "ship"],
+            args="[environment]",
+        ),
+        body="Deploy to {{args}}...",
+        path=pathlib.Path("<entry-point>"),
+        plugin_name="my-plugin",
+    )
+```
+
+### Registering Rules via Entry Points
+
+```toml
+[project.entry-points."brynhild.rules"]
+my-rules = "my_package.rules:get_rules"
+```
+
+```python
+# my_package/rules.py
+def get_rules() -> str:
+    """Return project rules."""
+    return """
+# Coding Standards
+
+1. Use type hints for all functions
+2. Write tests for new features
+3. Follow PEP 8
+"""
+```
+
+Or return multiple rules:
+
+```python
+def get_rules() -> list[str]:
+    return [
+        "# Rule 1\n...",
+        "# Rule 2\n...",
+    ]
+```
 
 ### Example: Minimal Tool-Only Package
+
+For a simple single-tool package, you only need the `brynhild.tools` entry point — no manifest required:
 
 ```toml
 # pyproject.toml for a single-tool package
@@ -294,6 +518,7 @@ name = "brynhild-calculator"
 version = "1.0.0"
 dependencies = ["brynhild>=0.2.0"]
 
+# Just the tool entry point — no brynhild.plugins needed for tool-only packages
 [project.entry-points."brynhild.tools"]
 Calculator = "brynhild_calculator:Calculator"
 ```
@@ -323,6 +548,28 @@ class Calculator:
             return ToolResult(success=False, output="", error=str(e))
 ```
 
+### Verifying Your Plugin Works
+
+**Always test that Brynhild can actually discover your tools:**
+
+```bash
+# After pip install -e . or pip install your-package
+
+# Check if your tools are listed
+brynhild tools list
+
+# Check plugin registration (if using brynhild.plugins)
+brynhild plugins list
+
+# Try using the tool
+brynhild chat "Use Calculator to evaluate 2 + 2"
+```
+
+If your tool doesn't appear in `brynhild tools list`, check:
+1. Is the `brynhild.tools` entry point in your `pyproject.toml`?
+2. Is the import path correct? Test it manually: `python -c "from your_package.tools:Tool"`
+3. Does the class have `name`, `description`, `input_schema`, and `execute()`?
+
 ### Publishing to PyPI
 
 ```bash
@@ -351,66 +598,91 @@ Key points:
 
 ### Providers
 
-Providers implement the `LLMProvider` interface:
+Providers implement the `LLMProvider` interface. The base class has abstract methods you must implement:
 
 ```python
 # providers/my_provider.py
 from __future__ import annotations
 import typing as _typing
 
-try:
-    import brynhild.api.base as _base
-    ProviderBase = _base.LLMProvider
-except ImportError:
-    class ProviderBase:
-        pass
+import brynhild.api.base as _base
+import brynhild.api.types as _types
 
-class Provider(ProviderBase):
+
+class Provider(_base.LLMProvider):
+    """Custom LLM provider."""
+
+    # Class attribute for provider identification (used in entry point discovery)
     PROVIDER_NAME = "my-provider"
 
     def __init__(
         self,
-        api_key: str | None = None,
+        *,
         model: str = "default-model",
+        api_key: str | None = None,
         **kwargs: _typing.Any,
     ) -> None:
-        self._api_key = api_key
         self._model = model
+        self._api_key = api_key
 
+    # REQUIRED: Abstract property - must implement
     @property
     def name(self) -> str:
         return "my-provider"
 
+    # REQUIRED: Abstract property - must implement
     @property
     def model(self) -> str:
         return self._model
 
+    @property
     def supports_tools(self) -> bool:
         return True
 
-    def supports_reasoning(self) -> bool:
-        return False
+    @property
+    def supports_streaming(self) -> bool:
+        return True
 
+    # REQUIRED: Abstract method
     async def complete(
         self,
-        messages: list[dict[str, _typing.Any]],
+        messages: list[_types.Message],
+        *,
+        tools: list[_types.Tool] | None = None,
         **kwargs: _typing.Any,
-    ) -> _typing.Any:
-        # Implement completion logic
-        ...
+    ) -> _types.CompletionResponse:
+        """Return a completion response."""
+        # Your API call logic here
+        return _types.CompletionResponse(
+            id="response-id",
+            content="Response text",
+            tool_uses=[],  # List of ToolUse if the LLM wants to call tools
+            stop_reason="stop",
+            usage=_types.Usage(input_tokens=100, output_tokens=50),
+        )
 
+    # REQUIRED: Abstract method
     async def stream(
         self,
-        messages: list[dict[str, _typing.Any]],
+        messages: list[_types.Message],
+        *,
+        tools: list[_types.Tool] | None = None,
         **kwargs: _typing.Any,
-    ) -> _typing.AsyncIterator[_typing.Any]:
-        # Implement streaming logic
-        ...
-
-    async def close(self) -> None:
-        # Cleanup resources
-        pass
+    ) -> _typing.AsyncIterator[_types.StreamEvent]:
+        """Yield streaming events."""
+        yield _types.StreamEvent(type="text_delta", text="Response")
+        yield _types.StreamEvent(
+            type="message_stop",
+            stop_reason="stop",
+            usage=_types.Usage(input_tokens=100, output_tokens=50),
+        )
 ```
+
+**Required implementations:**
+- `name` property - Provider identifier
+- `model` property - Current model being used
+- `complete()` method - Non-streaming completion
+- `stream()` method - Streaming completion
 
 ### Commands
 
@@ -637,7 +909,7 @@ Plugin 'my-plugin' not found
 - Verify `plugin.yaml` exists and is valid YAML
 - Run `brynhild plugins paths` to see search paths
 
-#### Tool Not Loading
+#### Tool Not Loading (Directory Plugin)
 
 ```
 Failed to load tool 'my_tool' from plugin 'my-plugin'
@@ -647,6 +919,42 @@ Failed to load tool 'my_tool' from plugin 'my-plugin'
 - Ensure class is named `Tool`
 - Verify interface methods are correct (properties vs attributes)
 - Check import errors with `python -c "from tools.my_tool import Tool"`
+
+#### Tool Not Loading (Packaged Plugin)
+
+```
+Entry point plugin 'my-plugin' declares tools that were NOT loaded: ['MyTool']
+```
+
+**This error means you're missing `brynhild.tools` entry points.**
+
+Packaged plugins (installed via pip) cannot load tools from a `tools/` directory — they have no filesystem path for Brynhild to scan. You **must** register each tool via an entry point:
+
+```toml
+# Add this to your pyproject.toml
+[project.entry-points."brynhild.tools"]
+MyTool = "your_package.tools.my_tool:Tool"
+```
+
+**Solutions:**
+1. Add `brynhild.tools` entry point for each tool in `pyproject.toml`
+2. Verify the import path is correct: `python -c "from your_package.tools.my_tool import Tool"`
+3. Re-install the package: `pip install -e .` (entry points are only read at install time)
+4. Check `brynhild tools list` to verify the tool appears
+
+#### Tool Appears in Manifest But Not in `brynhild tools list`
+
+This usually means the entry point is missing or has the wrong import path.
+
+**Diagnosis:**
+```bash
+# Check what entry points Python sees from your package
+python -c "import importlib.metadata; print(list(importlib.metadata.entry_points(group='brynhild.tools')))"
+```
+
+If your tool doesn't appear, either:
+- The entry point isn't in `pyproject.toml`, or
+- You need to reinstall after editing `pyproject.toml`: `pip install -e .`
 
 #### Interface Mismatch
 
