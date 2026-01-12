@@ -224,3 +224,122 @@ class TestHelperFunctions:
         """Project plugins path is .brynhild/plugins."""
         path = discovery.get_project_plugins_path(tmp_path)
         assert path == tmp_path / ".brynhild" / "plugins"
+
+
+class TestOrphanProviderDiscovery:
+    """Tests for synthetic plugin creation for orphan providers."""
+
+    def test_orphan_provider_creates_synthetic_plugin(self) -> None:
+        """Orphan provider (brynhild.providers without brynhild.plugins) creates synthetic plugin."""
+        # Mock entry points: no brynhild.plugins, but has brynhild.providers
+        mock_provider_ep = _mock.MagicMock()
+        mock_provider_ep.name = "test-provider"
+        mock_provider_ep.dist = _mock.MagicMock()
+        mock_provider_ep.dist.name = "brynhild-test-provider"
+        mock_provider_ep.dist.version = "1.0.0"
+
+        # Provider class has docstring
+        mock_provider_cls = _mock.MagicMock()
+        mock_provider_cls.__doc__ = "Test provider for unit tests"
+        mock_provider_ep.load.return_value = mock_provider_cls
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.plugins":
+                return []  # No plugins registered
+            elif group == "brynhild.providers":
+                return [mock_provider_ep]  # One orphan provider
+            return []
+
+        with (
+            _mock.patch("brynhild.plugins.discovery._entry_points_disabled", return_value=False),
+            _mock.patch("brynhild.plugins.discovery._meta.entry_points", mock_entry_points),
+        ):
+            plugins = discovery.discover_from_entry_points()
+
+        # Should have synthetic plugin for the orphan provider
+        assert "test-provider" in plugins
+        plugin = plugins["test-provider"]
+        assert plugin.name == "test-provider"
+        assert plugin.version == "1.0.0"
+        assert plugin.source == "entry_point_provider"
+        assert plugin.package_name == "brynhild-test-provider"
+        assert "Test provider" in plugin.description
+        assert plugin.manifest.providers == ["test-provider"]
+
+    def test_provider_with_matching_plugin_not_duplicated(self) -> None:
+        """Provider that has a matching brynhild.plugins entry is not duplicated."""
+        import brynhild.plugins.manifest as manifest
+
+        # Mock brynhild.plugins entry
+        mock_plugin_ep = _mock.MagicMock()
+        mock_plugin_ep.name = "my-plugin"
+        mock_plugin_manifest = manifest.PluginManifest(
+            name="my-plugin",
+            version="2.0.0",
+            description="Real plugin",
+            providers=["my-plugin"],
+        )
+        mock_plugin = manifest.Plugin(
+            manifest=mock_plugin_manifest,
+            path=_pathlib.Path("<entry-point>"),
+        )
+        mock_plugin_ep.load.return_value = lambda: mock_plugin
+
+        # Mock brynhild.providers entry with same name
+        mock_provider_ep = _mock.MagicMock()
+        mock_provider_ep.name = "my-plugin"  # Same name as plugin
+        mock_provider_ep.dist = _mock.MagicMock()
+        mock_provider_ep.dist.name = "brynhild-my-plugin"
+        mock_provider_ep.dist.version = "2.0.0"
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.plugins":
+                return [mock_plugin_ep]
+            elif group == "brynhild.providers":
+                return [mock_provider_ep]
+            return []
+
+        with (
+            _mock.patch("brynhild.plugins.discovery._entry_points_disabled", return_value=False),
+            _mock.patch("brynhild.plugins.discovery._meta.entry_points", mock_entry_points),
+        ):
+            plugins = discovery.discover_from_entry_points()
+
+        # Should have only one plugin (from brynhild.plugins, not synthetic)
+        assert "my-plugin" in plugins
+        assert len(plugins) == 1
+        plugin = plugins["my-plugin"]
+        assert plugin.version == "2.0.0"
+        # Should be from entry_point (not entry_point_provider)
+        assert plugin.source == "entry_point"
+
+    def test_orphan_provider_without_docstring(self) -> None:
+        """Orphan provider without docstring gets default description."""
+        mock_provider_ep = _mock.MagicMock()
+        mock_provider_ep.name = "no-doc-provider"
+        mock_provider_ep.dist = _mock.MagicMock()
+        mock_provider_ep.dist.name = "brynhild-no-doc"
+        mock_provider_ep.dist.version = "0.1.0"
+
+        # Provider class has no docstring
+        mock_provider_cls = _mock.MagicMock()
+        mock_provider_cls.__doc__ = None
+        mock_provider_ep.load.return_value = mock_provider_cls
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.plugins":
+                return []
+            elif group == "brynhild.providers":
+                return [mock_provider_ep]
+            return []
+
+        with (
+            _mock.patch("brynhild.plugins.discovery._entry_points_disabled", return_value=False),
+            _mock.patch("brynhild.plugins.discovery._meta.entry_points", mock_entry_points),
+        ):
+            plugins = discovery.discover_from_entry_points()
+
+        assert "no-doc-provider" in plugins
+        plugin = plugins["no-doc-provider"]
+        # Should have fallback description
+        assert "Provider:" in plugin.description or "no-doc-provider" in plugin.description

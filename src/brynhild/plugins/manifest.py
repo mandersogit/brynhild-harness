@@ -99,7 +99,7 @@ class PluginManifest(_pydantic.BaseModel):
 
 
 # Type alias for plugin source
-PluginSource = _typing.Literal["directory", "entry_point"]
+PluginSource = _typing.Literal["directory", "entry_point", "entry_point_provider"]
 
 
 @_dataclasses.dataclass

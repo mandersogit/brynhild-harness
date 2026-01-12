@@ -86,6 +86,10 @@ def discover_from_entry_points() -> dict[str, manifest.Plugin]:
     plugins. Each entry point should reference a callable that returns
     either a Plugin or PluginManifest instance.
 
+    Also scans 'brynhild.providers' and creates synthetic plugin entries
+    for providers that don't have a corresponding brynhild.plugins entry.
+    This ensures orphan providers appear in `brynhild plugin list`.
+
     Entry point format in pyproject.toml:
         [project.entry-points."brynhild.plugins"]
         my-plugin = "my_package:register"
@@ -105,7 +109,7 @@ def discover_from_entry_points() -> dict[str, manifest.Plugin]:
 
     plugins: dict[str, manifest.Plugin] = {}
 
-    # Python 3.10+ supports the group= keyword argument
+    # 1. Load from brynhild.plugins (primary entry point group)
     eps = _meta.entry_points(group="brynhild.plugins")
 
     for ep in eps:
@@ -127,6 +131,30 @@ def discover_from_entry_points() -> dict[str, manifest.Plugin]:
         except Exception as e:
             _logger.warning(
                 "Failed to load plugin from entry point '%s': %s",
+                ep.name,
+                e,
+            )
+
+    # 2. Create synthetic entries for orphan providers (brynhild.providers without brynhild.plugins)
+    provider_eps = _meta.entry_points(group="brynhild.providers")
+
+    for ep in provider_eps:
+        # Skip if we already have a plugin with this name
+        if ep.name in plugins:
+            continue
+
+        try:
+            synthetic = _create_synthetic_plugin_for_provider(ep)
+            if synthetic is not None:
+                plugins[synthetic.name] = synthetic
+                _logger.debug(
+                    "Created synthetic plugin entry for orphan provider '%s' from package '%s'",
+                    ep.name,
+                    getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+                )
+        except Exception as e:
+            _logger.warning(
+                "Failed to create synthetic plugin for provider '%s': %s",
                 ep.name,
                 e,
             )
@@ -172,6 +200,65 @@ def _load_plugin_from_entry_point(
 
     # Attach entry point metadata
     plugin.source = "entry_point"
+    if ep.dist:
+        plugin.package_name = ep.dist.name
+        plugin.package_version = ep.dist.version
+
+    return plugin
+
+
+def _create_synthetic_plugin_for_provider(
+    ep: _meta.EntryPoint,
+) -> manifest.Plugin | None:
+    """
+    Create a synthetic Plugin for an orphan provider entry point.
+
+    When a package registers a provider via brynhild.providers but not
+    brynhild.plugins, we create a synthetic plugin entry so it appears
+    in `brynhild plugin list`.
+
+    Args:
+        ep: The entry point from brynhild.providers group.
+
+    Returns:
+        Synthetic Plugin instance, or None if creation fails.
+    """
+    # Try to load provider class for metadata extraction
+    try:
+        provider_cls = ep.load()
+    except Exception:
+        # Can't load the provider, create minimal entry anyway
+        provider_cls = None
+
+    # Extract description from provider docstring
+    description = ""
+    if provider_cls is not None:
+        doc = getattr(provider_cls, "__doc__", None)
+        if doc:
+            # Use first line of docstring
+            description = doc.strip().split("\n")[0]
+
+    if not description:
+        description = f"Provider: {ep.name}"
+
+    # Get version from package
+    version = "0.0.0"
+    if ep.dist:
+        version = ep.dist.version
+
+    # Create synthetic manifest
+    synth_manifest = manifest.PluginManifest(
+        name=ep.name,
+        version=version,
+        description=description,
+        providers=[ep.name],  # Just the provider, no tools/hooks/skills
+    )
+
+    plugin = manifest.Plugin(
+        manifest=synth_manifest,
+        path=_pathlib.Path("<entry-point-provider>"),
+    )
+    plugin.source = "entry_point_provider"
     if ep.dist:
         plugin.package_name = ep.dist.name
         plugin.package_version = ep.dist.version

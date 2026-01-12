@@ -106,9 +106,14 @@ class TestDiscoverFromEntryPoints:
         mock_ep.load.return_value = lambda: "not a plugin"  # Invalid return
         mock_ep.dist = None
 
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.plugins":
+                return [mock_ep]
+            return []  # No providers
+
         with _mock.patch(
             "importlib.metadata.entry_points",
-            return_value=[mock_ep],
+            mock_entry_points,
         ):
             result = discovery.discover_from_entry_points()
 
@@ -120,9 +125,14 @@ class TestDiscoverFromEntryPoints:
         mock_ep.name = "failing-plugin"
         mock_ep.load.side_effect = ImportError("Module not found")
 
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.plugins":
+                return [mock_ep]
+            return []  # No providers
+
         with _mock.patch(
             "importlib.metadata.entry_points",
-            return_value=[mock_ep],
+            mock_entry_points,
         ):
             result = discovery.discover_from_entry_points()
 
