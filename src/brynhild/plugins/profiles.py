@@ -1,9 +1,18 @@
 """
 Plugin profile loading.
 
-This module discovers and loads ModelProfile definitions from plugin
-directories. Plugins can provide profiles in a `profiles/` subdirectory
-containing YAML files.
+This module discovers and loads ModelProfile definitions from:
+1. Plugin directories (profiles/ subdirectory with YAML files)
+2. Entry points (brynhild.profiles entry point group)
+
+Entry point format in pyproject.toml:
+    [project.entry-points."brynhild.profiles"]
+    my-profile = "my_package.profiles:get_profile"
+
+The function should return:
+    - A ModelProfile instance
+    - A dict with profile data (will be passed to ModelProfile.from_dict())
+    - A list of either of the above
 
 Profile priority (later overrides earlier):
 1. Builtin profiles (from brynhild.profiles.builtin)
@@ -17,7 +26,9 @@ with the same name, a ProfileCollisionError is raised. Use user profiles
 
 from __future__ import annotations
 
+import importlib.metadata as _meta
 import logging as _logging
+import os as _os
 import pathlib as _pathlib
 
 import yaml as _yaml
@@ -33,6 +44,15 @@ class ProfileCollisionError(Exception):
     """Raised when two plugins provide profiles with the same name."""
 
     pass
+
+
+def _entry_points_disabled() -> bool:
+    """Check if entry point plugin discovery is disabled."""
+    return _os.environ.get("BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 # Global registry of plugin profiles (cached after first load)
@@ -85,12 +105,87 @@ def load_profiles_from_directory(
     return loaded_profiles
 
 
+def discover_profiles_from_entry_points() -> dict[str, profile_types.ModelProfile]:
+    """
+    Discover profiles registered via the 'brynhild.profiles' entry point group.
+
+    Entry point format in pyproject.toml:
+        [project.entry-points."brynhild.profiles"]
+        my-profile = "my_package.profiles:get_profile"
+
+    The function should return:
+        - A ModelProfile instance
+        - A dict with profile data (passed to ModelProfile.from_dict())
+        - A list of either of the above
+
+    Can be disabled by setting BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS=1.
+
+    Returns:
+        Dict mapping profile name to ModelProfile instance.
+    """
+    if _entry_points_disabled():
+        _logger.debug("Entry point profiles discovery disabled by environment variable")
+        return {}
+
+    profiles: dict[str, profile_types.ModelProfile] = {}
+
+    eps = _meta.entry_points(group="brynhild.profiles")
+
+    for ep in eps:
+        try:
+            profile_provider = ep.load()
+
+            # Call if callable, otherwise use as-is
+            result = profile_provider() if callable(profile_provider) else profile_provider
+
+            # Handle single profile or list of profiles
+            items = result if isinstance(result, list) else [result]
+
+            for item in items:
+                if isinstance(item, profile_types.ModelProfile):
+                    profile = item
+                elif isinstance(item, dict):
+                    # Build ModelProfile from dict
+                    if "name" not in item:
+                        _logger.warning(
+                            "Entry point '%s' dict missing required 'name' key",
+                            ep.name,
+                        )
+                        continue
+                    profile = profile_types.ModelProfile.from_dict(item)
+                else:
+                    _logger.warning(
+                        "Entry point '%s' returned unexpected type: %s "
+                        "(expected ModelProfile, dict, or list)",
+                        ep.name,
+                        type(item).__name__,
+                    )
+                    continue
+
+                profiles[profile.name] = profile
+                _logger.debug(
+                    "Discovered profile '%s' from entry point '%s' (package: %s)",
+                    profile.name,
+                    ep.name,
+                    getattr(ep.dist, "name", "unknown") if ep.dist else "unknown",
+                )
+        except Exception as e:
+            _logger.warning(
+                "Failed to load profile from entry point '%s': %s",
+                ep.name,
+                e,
+            )
+
+    return profiles
+
+
 def load_all_plugin_profiles() -> dict[str, profile_types.ModelProfile]:
     """
-    Discover and load all profiles from plugin directories.
+    Discover and load all profiles from plugins.
 
-    Searches plugin paths for `profiles/` subdirectories and loads
-    any YAML files found within them.
+    Sources (in order):
+    1. Plugin directories (profiles/ subdirectory with YAML files)
+    2. Entry points (brynhild.profiles entry point group)
 
     Returns:
         Dict mapping profile name to ModelProfile instance.
@@ -164,6 +259,20 @@ def load_all_plugin_profiles() -> dict[str, profile_types.ModelProfile]:
                 _logger.warning(
                     "Failed to process plugin %s for profiles: %s", plugin_dir, e
                 )
+
+    # Also load profiles from entry points (highest priority)
+    entry_point_profiles = discover_profiles_from_entry_points()
+    for profile_name, profile in entry_point_profiles.items():
+        if profile_name in _plugin_profiles:
+            existing_source = _profile_sources.get(profile_name, "unknown")
+            raise ProfileCollisionError(
+                f"Profile '{profile_name}' from entry point conflicts with "
+                f"profile from plugin '{existing_source}'. Plugin profiles must "
+                f"have unique names. Use user profiles "
+                f"(~/.config/brynhild/profiles/) to override."
+            )
+        _plugin_profiles[profile_name] = profile
+        _profile_sources[profile_name] = "entry_point"
 
     return _plugin_profiles
 

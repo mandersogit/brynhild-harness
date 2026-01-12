@@ -1,5 +1,6 @@
 """Tests for plugin-supplied model profiles."""
 
+import os as _os
 import pathlib as _pathlib
 import unittest.mock as _mock
 
@@ -373,3 +374,287 @@ description: Profile from {plugin_name}
 
             assert "model-0" in profiles
             assert "model-1" in profiles
+
+
+class TestDiscoverProfilesFromEntryPoints:
+    """Tests for entry-point based profile discovery."""
+
+    def setup_method(self) -> None:
+        """Clear cache before each test."""
+        plugin_profiles.clear_cache()
+
+    def teardown_method(self) -> None:
+        """Clear cache after each test."""
+        plugin_profiles.clear_cache()
+
+    def test_disabled_by_environment_variable(self) -> None:
+        """Entry point discovery can be disabled via env var."""
+        with _mock.patch.dict(
+            _os.environ, {"BRYNHILD_DISABLE_ENTRY_POINT_PLUGINS": "1"}
+        ):
+            result = plugin_profiles.discover_profiles_from_entry_points()
+            assert result == {}
+
+    def test_loads_model_profile_instance(self) -> None:
+        """Entry point returning ModelProfile instance is loaded correctly."""
+        test_profile = profile_types.ModelProfile(
+            name="ep-profile",
+            family="test",
+            description="Profile from entry point",
+            default_temperature=0.7,
+        )
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "ep-profile"
+        mock_ep.load.return_value = lambda: test_profile
+        mock_ep.dist = _mock.MagicMock()
+        mock_ep.dist.name = "test-package"
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+
+            assert "ep-profile" in profiles
+            assert profiles["ep-profile"].name == "ep-profile"
+            assert profiles["ep-profile"].default_temperature == 0.7
+
+    def test_loads_profile_from_dict(self) -> None:
+        """Entry point returning dict is converted to ModelProfile."""
+        profile_dict = {
+            "name": "dict-profile",
+            "family": "test",
+            "description": "Profile from dict",
+            "default_temperature": 0.6,
+        }
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "dict-profile"
+        mock_ep.load.return_value = lambda: profile_dict
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+
+            assert "dict-profile" in profiles
+            assert profiles["dict-profile"].name == "dict-profile"
+            assert profiles["dict-profile"].default_temperature == 0.6
+
+    def test_loads_list_of_profiles(self) -> None:
+        """Entry point returning list of profiles loads all."""
+        profile1 = profile_types.ModelProfile(
+            name="list-profile-1",
+            family="test",
+        )
+        profile2_dict = {
+            "name": "list-profile-2",
+            "family": "test",
+        }
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "multi-profiles"
+        mock_ep.load.return_value = lambda: [profile1, profile2_dict]
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+
+            assert "list-profile-1" in profiles
+            assert "list-profile-2" in profiles
+
+    def test_skips_dict_without_name(self) -> None:
+        """Dict without 'name' key is skipped with warning."""
+        profile_dict = {
+            "family": "test",
+            "description": "Missing name",
+        }
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "invalid-profile"
+        mock_ep.load.return_value = lambda: profile_dict
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+            assert profiles == {}
+
+    def test_handles_non_callable(self) -> None:
+        """Non-callable entry point value is used directly."""
+        test_profile = profile_types.ModelProfile(
+            name="static-profile",
+            family="test",
+        )
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "static-profile"
+        mock_ep.load.return_value = test_profile  # Not callable
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+            assert "static-profile" in profiles
+
+    def test_handles_load_error(self) -> None:
+        """Entry point that fails to load is skipped."""
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "broken-profile"
+        mock_ep.load.side_effect = ImportError("Module not found")
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            # Should not raise, just skip the broken entry point
+            profiles = plugin_profiles.discover_profiles_from_entry_points()
+            assert profiles == {}
+
+
+class TestEntryPointProfileIntegration:
+    """Integration tests for entry-point profiles with load_all_plugin_profiles."""
+
+    def setup_method(self) -> None:
+        """Clear cache before each test."""
+        plugin_profiles.clear_cache()
+
+    def teardown_method(self) -> None:
+        """Clear cache after each test."""
+        plugin_profiles.clear_cache()
+
+    def test_entry_point_profiles_loaded_by_load_all(self) -> None:
+        """Entry point profiles are included in load_all_plugin_profiles."""
+        test_profile = profile_types.ModelProfile(
+            name="ep-integrated",
+            family="test",
+        )
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "ep-integrated"
+        mock_ep.load.return_value = lambda: test_profile
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles.discovery.get_plugin_search_paths",
+            return_value=[],
+        ), _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            profiles = plugin_profiles.load_all_plugin_profiles()
+            assert "ep-integrated" in profiles
+
+    def test_entry_point_collision_with_directory_profile(
+        self, tmp_path: _pathlib.Path
+    ) -> None:
+        """Entry point profile colliding with directory profile raises error."""
+        # Create directory-based plugin with profile
+        plugin_dir = tmp_path / "plugins" / "dir-plugin"
+        plugin_dir.mkdir(parents=True)
+
+        manifest = plugin_dir / "plugin.yaml"
+        manifest.write_text("name: dir-plugin\nversion: 1.0.0\n")
+
+        profiles_dir = plugin_dir / "profiles"
+        profiles_dir.mkdir()
+
+        profile_yaml = profiles_dir / "collision.yaml"
+        profile_yaml.write_text("name: collision-profile\nfamily: test\n")
+
+        # Create entry point with same profile name
+        ep_profile = profile_types.ModelProfile(
+            name="collision-profile",
+            family="test",
+        )
+
+        mock_ep = _mock.MagicMock()
+        mock_ep.name = "collision-profile"
+        mock_ep.load.return_value = lambda: ep_profile
+        mock_ep.dist = None
+
+        def mock_entry_points(group: str) -> list:
+            if group == "brynhild.profiles":
+                return [mock_ep]
+            return []
+
+        with _mock.patch(
+            "brynhild.plugins.profiles.discovery.get_plugin_search_paths",
+            return_value=[tmp_path / "plugins"],
+        ), _mock.patch(
+            "brynhild.plugins.profiles._entry_points_disabled",
+            return_value=False,
+        ), _mock.patch(
+            "brynhild.plugins.profiles._meta.entry_points",
+            mock_entry_points,
+        ):
+            with _pytest.raises(plugin_profiles.ProfileCollisionError) as exc_info:
+                plugin_profiles.load_all_plugin_profiles()
+
+            assert "collision-profile" in str(exc_info.value)

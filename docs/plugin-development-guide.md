@@ -287,6 +287,7 @@ brynhild chat "Use MyTool to do something"
 | `brynhild.skills` | Skill definition | `module:get_skill` | `Skill` or dict |
 | `brynhild.commands` | Slash command | `module:get_command` | `Command` or dict |
 | `brynhild.rules` | Project rules | `module:get_rules` | string, list, or dict |
+| `brynhild.profiles` | Model profiles | `module:get_profiles` | `ModelProfile`, dict, or list |
 
 ### Understanding Entry Points for Packaged Plugins
 
@@ -298,11 +299,11 @@ Directory-based plugins (in `~/.config/brynhild/plugins/` or `BRYNHILD_PLUGIN_PA
 
 ### What You Need
 
-| Plugin Type | `plugins` | `tools` | `providers` | `hooks` | `skills` | `commands` | `rules` |
-|-------------|-----------|---------|-------------|---------|----------|------------|---------|
-| **Single tool** | Optional | ✅ | — | — | — | — | — |
-| **Single provider** | Optional | — | ✅ | — | — | — | — |
-| **Full plugin** | ✅ Recommended | If has tools | If has providers | If has hooks | If has skills | If has commands | If has rules |
+| Plugin Type | `plugins` | `tools` | `providers` | `hooks` | `skills` | `commands` | `rules` | `profiles` |
+|-------------|-----------|---------|-------------|---------|----------|------------|---------|------------|
+| **Single tool** | Optional | ✅ | — | — | — | — | — | — |
+| **Single provider** | Optional | — | ✅ | — | — | — | — | If has profiles |
+| **Full plugin** | ✅ Recommended | If has tools | If has providers | If has hooks | If has skills | If has commands | If has rules | If has profiles |
 
 **Note**: Each component type needs its own entry point. A plugin with tools AND hooks needs BOTH `brynhild.tools` AND `brynhild.hooks` entry points.
 
@@ -504,6 +505,49 @@ def get_rules() -> list[str]:
     return [
         "# Rule 1\n...",
         "# Rule 2\n...",
+    ]
+```
+
+### Registering Profiles via Entry Points
+
+```toml
+[project.entry-points."brynhild.profiles"]
+my-profiles = "my_package.profiles:get_profiles"
+```
+
+```python
+# my_package/profiles.py
+import brynhild.profiles.types as profile_types
+
+def get_profiles() -> profile_types.ModelProfile:
+    """Return a model profile."""
+    return profile_types.ModelProfile(
+        name="my-custom-model",
+        family="custom",
+        description="Custom model profile for my provider",
+        default_temperature=0.7,
+        supports_tools=True,
+    )
+```
+
+Or return multiple profiles:
+
+```python
+def get_profiles() -> list[dict]:
+    """Return multiple profiles as dicts."""
+    return [
+        {
+            "name": "my-model-fast",
+            "family": "custom",
+            "description": "Fast variant",
+            "default_temperature": 0.5,
+        },
+        {
+            "name": "my-model-quality",
+            "family": "custom",
+            "description": "High quality variant",
+            "default_temperature": 0.8,
+        },
     ]
 ```
 
