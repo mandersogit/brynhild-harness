@@ -124,6 +124,28 @@ class TestCLIBasics:
         data = _json.loads(result.output)
         assert data["models"]["default"] == "custom-model"
 
+    def test_provider_option_accepts_any_valid_provider(self) -> None:
+        """--provider should accept any known provider (builtin or plugin)."""
+        # Test with ollama (builtin, was previously missing from click.Choice list)
+        result = self.runner.invoke(
+            cli.cli, ["--provider", "ollama", "config", "show", "--json"]
+        )
+        assert result.exit_code == 0
+        data = _json.loads(result.output)
+        assert data["providers"]["default"] == "ollama"
+
+    def test_provider_option_rejects_unknown_provider(self) -> None:
+        """--provider should reject unknown provider with helpful error."""
+        result = self.runner.invoke(
+            cli.cli, ["--provider", "nonexistent-provider", "config"]
+        )
+        assert result.exit_code != 0
+        # Should mention the unknown provider
+        assert "nonexistent-provider" in result.output
+        # Should list available providers
+        assert "Available:" in result.output
+        assert "openrouter" in result.output
+
     def test_chat_without_prompt_fails_with_clear_error(self) -> None:
         """Chat command without prompt should fail with helpful error message."""
         result = self.runner.invoke(cli.cli, ["chat"])

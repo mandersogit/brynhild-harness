@@ -88,9 +88,9 @@ def _validate_sandbox_availability(settings: config.Settings) -> None:
 )
 @_click.option(
     "--provider",
-    type=_click.Choice(["anthropic", "openrouter", "bedrock", "vertex"]),
+    type=str,
     default=None,
-    help="LLM provider to use",
+    help="LLM provider to use (e.g., openrouter, ollama, or plugin provider)",
 )
 @_click.option(
     "--model",
@@ -178,7 +178,17 @@ def cli(
     # Load settings from environment, then override with CLI args
     settings = config.Settings()
 
+    # Validate provider after plugins are loaded (can't use click.Choice at parse time)
     if provider:
+        import brynhild.api.factory as factory
+
+        available = factory.get_available_provider_names(load_plugins=True)
+        if provider not in available:
+            raise _click.BadParameter(
+                f"Unknown provider '{provider}'. "
+                f"Available: {', '.join(sorted(available))}",
+                param_hint="'--provider'",
+            )
         settings.provider = provider
     if model:
         settings.model = model
