@@ -29,6 +29,7 @@ typos and unknown keys. Use `get_extra_fields()` to inspect unknown fields.
 import typing as _typing
 
 import pydantic as _pydantic
+import pydantic_settings as _pydantic_settings
 
 # =============================================================================
 # Base class with introspection
@@ -232,7 +233,10 @@ class SandboxConfig(ConfigBase):
     allow_network: bool = False
     """Allow network access in sandbox."""
 
-    allowed_paths: list[str] = _pydantic.Field(default_factory=list)
+    allowed_paths: _typing.Annotated[
+        list[str],
+        _pydantic_settings.NoDecode,  # Prevent pydantic-settings from JSON-decoding env vars
+    ] = _pydantic.Field(default_factory=list)
     """Additional paths where writes are allowed."""
 
     # Note: dangerously_skip_* are NOT in config - CLI only
@@ -240,7 +244,11 @@ class SandboxConfig(ConfigBase):
     @_pydantic.field_validator("allowed_paths", mode="before")
     @classmethod
     def _parse_allowed_paths(cls, v: _typing.Any) -> list[str]:
-        """Parse allowed_paths from colon-delimited string or JSON array."""
+        """Parse allowed_paths from colon-delimited string or JSON array.
+
+        With NoDecode, pydantic-settings passes the raw string to us, and we
+        handle both colon-delimited (Unix convention) and JSON array formats.
+        """
         return _parse_colon_or_json_list(v)
 
 

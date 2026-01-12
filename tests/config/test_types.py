@@ -364,6 +364,56 @@ class TestSandboxConfigPathParsing:
         assert config.allowed_paths == ["/a", "/b"]
 
 
+class TestSandboxConfigEnvVarParsing:
+    """Tests for allowed_paths parsing from environment variables.
+
+    These tests verify that the model_validator correctly handles colon-delimited
+    strings from env vars before pydantic-settings tries to JSON-parse them.
+    """
+
+    def test_colon_delimited_from_env_var(
+        self, monkeypatch: _pytest.MonkeyPatch
+    ) -> None:
+        """Colon-delimited should work when set as environment variable."""
+        monkeypatch.setenv("BRYNHILD_SANDBOX__ALLOWED_PATHS", "/path/one:/path/two")
+
+        # Must test via Settings since that's where pydantic-settings processing happens
+        import brynhild.config.settings as settings
+
+        # Clear any cached settings
+        s = settings.Settings.construct_without_dotenv()
+        assert s.sandbox.allowed_paths == ["/path/one", "/path/two"]
+
+    def test_single_path_from_env_var(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """Single path should work when set as environment variable."""
+        monkeypatch.setenv("BRYNHILD_SANDBOX__ALLOWED_PATHS", "/single/path")
+
+        import brynhild.config.settings as settings
+
+        s = settings.Settings.construct_without_dotenv()
+        assert s.sandbox.allowed_paths == ["/single/path"]
+
+    def test_json_array_from_env_var(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """JSON array should still work when set as environment variable."""
+        monkeypatch.setenv(
+            "BRYNHILD_SANDBOX__ALLOWED_PATHS", '["/path/one", "/path/two"]'
+        )
+
+        import brynhild.config.settings as settings
+
+        s = settings.Settings.construct_without_dotenv()
+        assert s.sandbox.allowed_paths == ["/path/one", "/path/two"]
+
+    def test_empty_string_from_env_var(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """Empty string should result in empty list."""
+        monkeypatch.setenv("BRYNHILD_SANDBOX__ALLOWED_PATHS", "")
+
+        import brynhild.config.settings as settings
+
+        s = settings.Settings.construct_without_dotenv()
+        assert s.sandbox.allowed_paths == []
+
+
 # =============================================================================
 # LoggingConfig Tests
 # =============================================================================
