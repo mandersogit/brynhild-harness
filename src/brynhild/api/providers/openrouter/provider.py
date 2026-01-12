@@ -267,6 +267,59 @@ class OpenRouterProvider(base.LLMProvider):
         """OpenRouter's recommended format for reasoning is a separate field."""
         return "reasoning_field"
 
+    def translate_reasoning_level(
+        self,
+        level: base.ReasoningLevel | None = None,
+    ) -> dict[str, _typing.Any]:
+        """
+        Translate unified reasoning level to OpenRouter's `reasoning` parameter.
+
+        OpenRouter supports:
+        - reasoning.effort: "none"|"minimal"|"low"|"medium"|"high"|"xhigh"
+        - reasoning.max_tokens: integer budget (for models that support it)
+        - reasoning.enabled: boolean
+
+        We map our standard levels to `effort`:
+        - "off" → "none"
+        - "minimal" → "minimal"
+        - "low" → "low"
+        - "medium" → "medium"
+        - "high" → "high"
+        - "maximum" → "xhigh"
+        - "auto" → {} (let OpenRouter decide)
+
+        Raw values (prefixed with "raw:") are passed through directly as effort.
+        """
+        if not self.supports_reasoning():
+            return {}
+
+        effective_level = level if level is not None else self.get_reasoning_level()
+
+        # Parse raw prefix
+        parsed_level, is_raw = base.parse_reasoning_level(effective_level)
+
+        # "auto" means let the provider/model decide
+        if parsed_level == "auto":
+            return {}
+
+        # Map standard levels to OpenRouter effort values
+        effort_map = {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "maximum": "xhigh",
+        }
+
+        if is_raw:
+            # Raw value - pass through directly
+            effort = parsed_level
+        else:
+            effort = effort_map.get(parsed_level, parsed_level)
+
+        return {"reasoning": {"effort": effort}}
+
     def _get_reasoning_format(self) -> base.ReasoningFormat:
         """Get the reasoning format to use, checking user override first."""
         import brynhild.config as config
@@ -527,6 +580,11 @@ class OpenRouterProvider(base.LLMProvider):
         # Enable reasoning traces for supported models
         if self.supports_reasoning():
             payload["include_reasoning"] = True
+
+        # Add reasoning level parameters (effort control)
+        reasoning_params = self.translate_reasoning_level()
+        if reasoning_params:
+            payload.update(reasoning_params)
 
         # Provider preferences
         provider_prefs: dict[str, _typing.Any] = {}

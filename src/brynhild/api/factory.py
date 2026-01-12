@@ -134,6 +134,19 @@ def create_provider(
     if load_plugins:
         _ensure_plugin_providers_loaded()
 
+    # Resolve model alias early (before provider selection)
+    if model:
+        try:
+            import brynhild.config as config
+
+            settings = config.Settings()
+            resolved = settings.resolve_model_alias(model)
+            if resolved != model:
+                _logger.debug("Resolved model alias '%s' → '%s'", model, resolved)
+                model = resolved
+        except Exception:
+            pass  # Use original model name if settings unavailable
+
     # Determine provider instance name
     if provider is None:
         # Try config first
@@ -154,9 +167,11 @@ def create_provider(
         if _os.environ.get("OPENROUTER_API_KEY"):
             provider = "openrouter"
         else:
+            available = get_available_provider_names(load_plugins=load_plugins)
             raise ValueError(
-                "No provider specified and no API keys found. "
-                "Set providers.default in config or OPENROUTER_API_KEY."
+                "No provider configured. "
+                "Use --provider, set providers.default in config, or set an API key. "
+                f"Available: {', '.join(sorted(available))}"
             )
 
     # Get provider type from config

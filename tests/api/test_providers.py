@@ -91,6 +91,65 @@ class TestProviderFactory:
         with _pytest.raises(ValueError, match="Unknown provider"):
             api.create_provider(provider="unknown")
 
+    def test_no_provider_error_is_provider_agnostic(self) -> None:
+        """Error when no provider configured should not mention specific provider."""
+        # Clean environment of all API keys and provider settings
+        clean_env = {
+            k: v
+            for k, v in _os.environ.items()
+            if not k.endswith("_API_KEY")
+            and not k.startswith("BRYNHILD_PROVIDER")
+        }
+
+        # Mock Settings to have no default provider
+        mock_settings = _mock.MagicMock()
+        mock_settings.providers.default = None
+
+        with (
+            _mock.patch.dict(_os.environ, clean_env, clear=True),
+            _mock.patch("brynhild.config.Settings", return_value=mock_settings),
+            _pytest.raises(ValueError) as exc_info,
+        ):
+            api.create_provider()
+
+        error_msg = str(exc_info.value)
+        # Should NOT mention specific provider API keys
+        assert "OPENROUTER_API_KEY" not in error_msg
+        # Should be generic and helpful
+        assert "No provider configured" in error_msg
+        assert "Available:" in error_msg
+
+
+class TestModelAliasResolution:
+    """Tests for model alias resolution in create_provider."""
+
+    def test_model_alias_resolved(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """Model alias should be resolved before provider creation."""
+        # Set up config with alias via env var
+        monkeypatch.setenv("BRYNHILD_MODELS__ALIASES__short", "actual/full-model-name")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+        provider = api.create_provider(provider="openrouter", model="short")
+        # The alias should have been resolved
+        assert provider.model == "actual/full-model-name"
+
+    def test_unknown_model_passthrough(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """Unknown model names should pass through unchanged."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+        provider = api.create_provider(provider="openrouter", model="unknown-model")
+        assert provider.model == "unknown-model"
+
+    def test_model_alias_with_slash(self, monkeypatch: _pytest.MonkeyPatch) -> None:
+        """Model alias with provider prefix should work."""
+        monkeypatch.setenv(
+            "BRYNHILD_MODELS__ALIASES__haiku", "anthropic/claude-haiku-4-5"
+        )
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+        provider = api.create_provider(provider="openrouter", model="haiku")
+        assert provider.model == "anthropic/claude-haiku-4-5"
+
 
 class TestStreamEvent:
     """Tests for StreamEvent type."""
@@ -289,11 +348,155 @@ class TestReasoningLevelBase:
                 mock_warn.assert_not_called()
 
     def test_provider_translate_reasoning_level_base_returns_empty(self) -> None:
-        """Base translate_reasoning_level should return empty dict."""
+        """Base LLMProvider.translate_reasoning_level should return empty dict."""
+        # Base class method returns {} - providers override with their own logic
+        params = base.LLMProvider.translate_reasoning_level(None, "high")
+        assert params == {}
+
+
+class TestOpenRouterReasoningLevel:
+    """Tests for OpenRouter reasoning level translation."""
+
+    @_pytest.fixture
+    def provider(self) -> api.LLMProvider:
+        """Create OpenRouter provider with a reasoning-capable model."""
         with _mock.patch.dict(_os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
-            provider = api.create_provider(provider="openrouter")
-            params = provider.translate_reasoning_level("high")
-            assert params == {}
+            return api.create_provider(provider="openrouter", model="openai/gpt-oss-120b")
+
+    @_pytest.fixture
+    def non_reasoning_provider(self) -> api.LLMProvider:
+        """Create OpenRouter provider with a model that doesn't support reasoning."""
+        with _mock.patch.dict(_os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False):
+            return api.create_provider(provider="openrouter", model="anthropic/claude-haiku-4.5")
+
+    def test_translate_auto_returns_empty(self, provider: api.LLMProvider) -> None:
+        """auto level should return empty dict (let provider decide)."""
+        params = provider.translate_reasoning_level("auto")
+        assert params == {}
+
+    def test_translate_off_to_none(self, provider: api.LLMProvider) -> None:
+        """off level should map to effort: none."""
+        params = provider.translate_reasoning_level("off")
+        assert params == {"reasoning": {"effort": "none"}}
+
+    def test_translate_minimal(self, provider: api.LLMProvider) -> None:
+        """minimal level should map to effort: minimal."""
+        params = provider.translate_reasoning_level("minimal")
+        assert params == {"reasoning": {"effort": "minimal"}}
+
+    def test_translate_low(self, provider: api.LLMProvider) -> None:
+        """low level should map to effort: low."""
+        params = provider.translate_reasoning_level("low")
+        assert params == {"reasoning": {"effort": "low"}}
+
+    def test_translate_medium(self, provider: api.LLMProvider) -> None:
+        """medium level should map to effort: medium."""
+        params = provider.translate_reasoning_level("medium")
+        assert params == {"reasoning": {"effort": "medium"}}
+
+    def test_translate_high(self, provider: api.LLMProvider) -> None:
+        """high level should map to effort: high."""
+        params = provider.translate_reasoning_level("high")
+        assert params == {"reasoning": {"effort": "high"}}
+
+    def test_translate_maximum_to_xhigh(self, provider: api.LLMProvider) -> None:
+        """maximum level should map to effort: xhigh."""
+        params = provider.translate_reasoning_level("maximum")
+        assert params == {"reasoning": {"effort": "xhigh"}}
+
+    def test_translate_raw_passthrough(self, provider: api.LLMProvider) -> None:
+        """Raw values should be passed through as effort."""
+        params = provider.translate_reasoning_level("raw:custom-effort")
+        assert params == {"reasoning": {"effort": "custom-effort"}}
+
+    def test_non_reasoning_model_returns_empty(
+        self, non_reasoning_provider: api.LLMProvider
+    ) -> None:
+        """Non-reasoning models should return empty dict."""
+        params = non_reasoning_provider.translate_reasoning_level("high")
+        assert params == {}
+
+
+class TestOllamaReasoningLevel:
+    """Tests for Ollama reasoning level translation."""
+
+    @_pytest.fixture
+    def gpt_oss_provider(self) -> api.LLMProvider:
+        """Create Ollama provider with a GPT-OSS model (string think levels)."""
+        # Ollama doesn't require API key
+        return api.create_provider(provider="ollama", model="gpt-oss-120b")
+
+    @_pytest.fixture
+    def deepseek_provider(self) -> api.LLMProvider:
+        """Create Ollama provider with a DeepSeek R1 model (boolean think)."""
+        return api.create_provider(provider="ollama", model="deepseek-r1:latest")
+
+    @_pytest.fixture
+    def non_reasoning_provider(self) -> api.LLMProvider:
+        """Create Ollama provider with a model that doesn't support reasoning."""
+        return api.create_provider(provider="ollama", model="llama3:latest")
+
+    def test_gpt_oss_translate_auto_returns_empty(
+        self, gpt_oss_provider: api.LLMProvider
+    ) -> None:
+        """auto level should return empty dict (let model decide)."""
+        params = gpt_oss_provider.translate_reasoning_level("auto")
+        assert params == {}
+
+    def test_gpt_oss_translate_off_to_low(
+        self, gpt_oss_provider: api.LLMProvider
+    ) -> None:
+        """off level should map to think: low (can't disable GPT-OSS thinking)."""
+        params = gpt_oss_provider.translate_reasoning_level("off")
+        assert params == {"think": "low"}
+
+    def test_gpt_oss_translate_low(self, gpt_oss_provider: api.LLMProvider) -> None:
+        """low level should map to think: low."""
+        params = gpt_oss_provider.translate_reasoning_level("low")
+        assert params == {"think": "low"}
+
+    def test_gpt_oss_translate_medium(self, gpt_oss_provider: api.LLMProvider) -> None:
+        """medium level should map to think: medium."""
+        params = gpt_oss_provider.translate_reasoning_level("medium")
+        assert params == {"think": "medium"}
+
+    def test_gpt_oss_translate_high(self, gpt_oss_provider: api.LLMProvider) -> None:
+        """high level should map to think: high."""
+        params = gpt_oss_provider.translate_reasoning_level("high")
+        assert params == {"think": "high"}
+
+    def test_gpt_oss_translate_maximum(
+        self, gpt_oss_provider: api.LLMProvider
+    ) -> None:
+        """maximum level should map to think: high (max available)."""
+        params = gpt_oss_provider.translate_reasoning_level("maximum")
+        assert params == {"think": "high"}
+
+    def test_gpt_oss_raw_passthrough(self, gpt_oss_provider: api.LLMProvider) -> None:
+        """Raw values should be passed through as think."""
+        params = gpt_oss_provider.translate_reasoning_level("raw:custom")
+        assert params == {"think": "custom"}
+
+    def test_deepseek_translate_off_to_false(
+        self, deepseek_provider: api.LLMProvider
+    ) -> None:
+        """off level should map to think: false for non-GPT-OSS models."""
+        params = deepseek_provider.translate_reasoning_level("off")
+        assert params == {"think": False}
+
+    def test_deepseek_translate_high_to_true(
+        self, deepseek_provider: api.LLMProvider
+    ) -> None:
+        """high level should map to think: true for non-GPT-OSS models."""
+        params = deepseek_provider.translate_reasoning_level("high")
+        assert params == {"think": True}
+
+    def test_non_reasoning_model_returns_empty(
+        self, non_reasoning_provider: api.LLMProvider
+    ) -> None:
+        """Non-reasoning models should return empty dict."""
+        params = non_reasoning_provider.translate_reasoning_level("high")
+        assert params == {}
 
 
 # Mark live tests that require actual API keys

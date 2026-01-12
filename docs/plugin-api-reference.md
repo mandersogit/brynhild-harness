@@ -1,7 +1,7 @@
 # Plugin API Reference
 
-> **Version**: 0.1.0  
-> **Last Updated**: 2024-12-03
+> **Version**: 0.1.1  
+> **Last Updated**: 2026-01-11
 
 This document provides the complete API reference for plugin authors extending Brynhild. For a tutorial-style guide, see [Plugin Development Guide](plugin-development-guide.md).
 
@@ -307,6 +307,42 @@ class Provider(LLMProvider):
         Default: "none"
         """
         return "none"
+
+    def supports_reasoning(self) -> bool:
+        """Whether this provider/model supports reasoning level control. Optional.
+        
+        Return True if the model supports configurable reasoning depth.
+        
+        Default: False
+        """
+        return False
+
+    def translate_reasoning_level(
+        self,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        """Translate unified reasoning level to provider-specific parameters.
+        
+        Override this to map Brynhild's standard levels to your provider's API.
+        
+        Args:
+            level: Reasoning level to translate. If None, uses get_reasoning_level().
+        
+        Returns:
+            Dict of provider-specific parameters to include in API requests.
+            Return empty dict if reasoning level doesn't apply.
+        
+        Standard levels: "auto", "off", "minimal", "low", "medium", "high", "maximum"
+        
+        Example for OpenRouter:
+            return {"reasoning": {"effort": level}}
+        
+        Example for Ollama with GPT-OSS:
+            return {"think": level}  # "low", "medium", "high"
+        
+        Default: Returns {}
+        """
+        return {}
 
     async def complete(
         self,
@@ -825,6 +861,91 @@ class Provider(LLMProvider):
         yield StreamEvent(type="text_delta", text="Hello from my provider!")
         yield StreamEvent(type="message_stop", stop_reason="end_turn")
 ```
+
+### Implementing Reasoning Level Control
+
+If your provider supports configurable reasoning depth (e.g., thinking models like GPT-OSS, Gemini with thinking), implement these methods:
+
+1. **`supports_reasoning()`** — Return `True` if the model supports reasoning control
+2. **`translate_reasoning_level()`** — Map Brynhild's standard levels to your API parameters
+
+**Standard Reasoning Levels:**
+
+| Level | Intent |
+|-------|--------|
+| `auto` | Let provider/model decide (don't send params) |
+| `off` | Disable reasoning if possible |
+| `minimal` | Minimum reasoning |
+| `low` | Light reasoning |
+| `medium` | Balanced reasoning |
+| `high` | Deep reasoning |
+| `maximum` | Maximum reasoning depth |
+
+**Raw Values:** Users can prefix with `raw:` to pass provider-specific values directly:
+- `reasoning_level: "raw:thinking_budget=16000"` — passed through unchanged
+
+**Provider-Specific Mappings:**
+
+| Provider | Parameter | Example Values |
+|----------|-----------|----------------|
+| OpenRouter | `reasoning.effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| Ollama (GPT-OSS) | `think` | `"low"`, `"medium"`, `"high"` (strings) |
+| Ollama (other) | `think` | `true`, `false` (boolean) |
+| Vertex AI (Gemini 3) | `thinking_level` | `MINIMAL`, `LOW`, `MEDIUM`, `HIGH` |
+| Vertex AI (Gemini 2.5) | `thinking_budget` | Token count (e.g., 1024, 8192, 65536) |
+
+**Example Implementation (Vertex AI):**
+
+```python
+def supports_reasoning(self) -> bool:
+    # Check if model is a Gemini thinking model
+    return "gemini" in self._model.lower()
+
+def translate_reasoning_level(
+    self,
+    level: str | None = None,
+) -> dict[str, Any]:
+    if not self.supports_reasoning():
+        return {}
+    
+    effective_level = level if level is not None else self.get_reasoning_level()
+    
+    # Handle raw prefix for passthrough
+    if effective_level.startswith("raw:"):
+        # Parse raw value (e.g., "raw:thinking_budget=16000")
+        return {"thinking_config": parse_raw_value(effective_level[4:])}
+    
+    if effective_level == "auto":
+        return {}
+    
+    # Gemini 3 uses discrete levels
+    if self._is_gemini_3():
+        level_map = {
+            "off": "LOW",  # Can't fully disable on Gemini 3 Pro
+            "minimal": "MINIMAL",
+            "low": "LOW",
+            "medium": "MEDIUM",
+            "high": "HIGH",
+            "maximum": "HIGH",
+        }
+        return {"thinking_config": {"thinking_level": level_map.get(effective_level, "MEDIUM")}}
+    
+    # Gemini 2.5 uses token budget
+    budget_map = {
+        "off": 0,
+        "minimal": 1024,
+        "low": 4096,
+        "medium": 8192,
+        "high": 16384,
+        "maximum": 65536,
+    }
+    return {"thinking_config": {"thinking_budget": budget_map.get(effective_level, 8192)}}
+```
+
+**Important Caveats for Vertex AI:**
+- Gemini 3 Pro cannot fully disable thinking (use `LOW` for `off`)
+- `MINIMAL` may require thought signatures
+- Cannot use `thinking_budget` and `thinking_level` together
 
 ---
 

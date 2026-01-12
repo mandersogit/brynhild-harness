@@ -111,6 +111,78 @@ class OllamaProvider(base.LLMProvider):
         # the API error if not supported.
         return True
 
+    def supports_reasoning(self) -> bool:
+        """Check if the model supports reasoning/thinking.
+
+        Ollama models with thinking support include:
+        - GPT-OSS models (gpt-oss-120b, gpt-oss-20b)
+        - DeepSeek R1 models
+        - Various thinking-enabled variants
+        """
+        model_lower = self._model.lower()
+
+        # Models known to support thinking/reasoning
+        reasoning_patterns = [
+            "gpt-oss",
+            "deepseek-r1",
+            "qwen3",
+            "qwen-coder",
+            "-think",
+            "thinking",
+        ]
+        return any(pattern in model_lower for pattern in reasoning_patterns)
+
+    def _is_gpt_oss_model(self) -> bool:
+        """Check if the model is a GPT-OSS variant (uses string think levels)."""
+        return "gpt-oss" in self._model.lower()
+
+    def translate_reasoning_level(
+        self,
+        level: base.ReasoningLevel | None = None,
+    ) -> dict[str, _typing.Any]:
+        """
+        Translate unified reasoning level to Ollama's `think` parameter.
+
+        For GPT-OSS models: think: "low"|"medium"|"high" (string)
+        For other models: think: true|false (boolean)
+
+        Note: GPT-OSS thinking cannot be fully disabled.
+        """
+        if not self.supports_reasoning():
+            return {}
+
+        effective_level = level if level is not None else self.get_reasoning_level()
+
+        # Parse raw prefix
+        parsed_level, is_raw = base.parse_reasoning_level(effective_level)
+
+        # "auto" means let the model decide (don't send think parameter)
+        if parsed_level == "auto":
+            return {}
+
+        if self._is_gpt_oss_model():
+            # GPT-OSS uses string levels: "low", "medium", "high"
+            # Cannot be fully disabled
+            level_map = {
+                "off": "low",      # Can't disable, use lowest
+                "minimal": "low",
+                "low": "low",
+                "medium": "medium",
+                "high": "high",
+                "maximum": "high",
+            }
+
+            if is_raw:
+                think_value = parsed_level
+            else:
+                think_value = level_map.get(parsed_level, "medium")
+
+            return {"think": think_value}
+        else:
+            # Other models use boolean think: true|false
+            enable = parsed_level not in ("off", "none")
+            return {"think": enable}
+
     @property
     def default_reasoning_format(self) -> base.ReasoningFormat:
         """Ollama's default - thinking tags is safest for local models."""
@@ -229,6 +301,14 @@ class OllamaProvider(base.LLMProvider):
                 for choice in data.get("choices", []):
                     delta = choice.get("delta", {})
 
+                    # Reasoning/thinking content (Ollama uses "reasoning")
+                    reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+                    if reasoning:
+                        yield types.StreamEvent(
+                            type="thinking_delta",
+                            thinking=reasoning,
+                        )
+
                     # Text content
                     if "content" in delta and delta["content"]:
                         yield types.StreamEvent(
@@ -305,6 +385,11 @@ class OllamaProvider(base.LLMProvider):
 
         if tools:
             payload["tools"] = [t.to_openai_format() for t in tools]
+
+        # Add reasoning level parameters (think control)
+        reasoning_params = self.translate_reasoning_level()
+        if reasoning_params:
+            payload.update(reasoning_params)
 
         return payload
 
@@ -385,6 +470,9 @@ class OllamaProvider(base.LLMProvider):
         # Extract text content
         content = message.get("content", "") or ""
 
+        # Extract reasoning/thinking content (Ollama returns this as "reasoning")
+        thinking = message.get("reasoning") or message.get("reasoning_content") or None
+
         # Extract tool uses
         tool_uses: list[types.ToolUse] = []
         for tc in message.get("tool_calls", []):
@@ -415,6 +503,7 @@ class OllamaProvider(base.LLMProvider):
             stop_reason=choice.get("finish_reason"),
             usage=usage,
             tool_uses=tool_uses,
+            thinking=thinking,
         )
 
     async def list_models(self) -> list[dict[str, _typing.Any]]:
