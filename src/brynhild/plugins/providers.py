@@ -104,20 +104,58 @@ def get_provider_class_from_module(
 
 
 def _is_provider_class(obj: _typing.Any) -> bool:
-    """Check if an object looks like an LLMProvider class."""
+    """
+    Check if an object is a valid LLMProvider class.
+
+    Valid providers must either:
+    1. Inherit from LLMProvider (has _is_brynhild_duck_typed = False), or
+    2. Explicitly declare _is_brynhild_duck_typed = True and implement interface
+
+    Returns False for classes without _is_brynhild_duck_typed attribute.
+    Logs a warning if the class looks like a provider but is missing the marker.
+    """
     if not isinstance(obj, type):
         return False
 
-    # Duck typing: must have 'name' property and 'complete' method
-    # (basic LLMProvider interface)
-    return (
-        hasattr(obj, "name")
-        and hasattr(obj, "model")
-        and (
-            callable(getattr(obj, "complete", None))
-            or callable(getattr(obj, "stream", None))
+    # Must have the _is_brynhild_duck_typed marker (None means not present)
+    is_duck_typed = getattr(obj, "_is_brynhild_duck_typed", None)
+    if is_duck_typed is None:
+        # Check if this looks like a provider (has provider-like attributes)
+        # If so, warn the user - they probably forgot the marker
+        has_name = hasattr(obj, "name")
+        has_model = hasattr(obj, "model")
+        has_complete = callable(getattr(obj, "complete", None))
+        has_stream = callable(getattr(obj, "stream", None))
+
+        if has_name and has_model and (has_complete or has_stream):
+            _logger.warning(
+                "=" * 70 + "\n"
+                "PROVIDER NOT RECOGNIZED: %s\n"
+                "\n"
+                "This class has provider-like attributes (name, model, complete/stream)\n"
+                "but is missing the required '_is_brynhild_duck_typed' marker.\n"
+                "\n"
+                "To fix, either:\n"
+                "  1. Inherit from brynhild.api.base.LLMProvider (recommended), or\n"
+                "  2. Add: _is_brynhild_duck_typed = True\n"
+                "\n" + "=" * 70,
+                obj.__name__,
+            )
+        return False
+
+    if is_duck_typed:
+        # Duck-typed: validate interface manually
+        return (
+            hasattr(obj, "name")
+            and hasattr(obj, "model")
+            and (
+                callable(getattr(obj, "complete", None))
+                or callable(getattr(obj, "stream", None))
+            )
         )
-    )
+    else:
+        # Inherited from LLMProvider: trust the base class contract
+        return True
 
 
 class ProviderLoader:

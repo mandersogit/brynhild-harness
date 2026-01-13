@@ -106,16 +106,53 @@ def get_tool_class_from_module(
 
 
 def _is_tool_class(obj: _typing.Any) -> bool:
-    """Check if an object looks like a Tool class."""
+    """
+    Check if an object is a valid Tool class.
+
+    Valid tools must either:
+    1. Inherit from Tool (has _is_brynhild_duck_typed = False), or
+    2. Explicitly declare _is_brynhild_duck_typed = True and implement interface
+
+    Returns False for classes without _is_brynhild_duck_typed attribute.
+    Logs a warning if the class looks like a tool but is missing the marker.
+    """
     if not isinstance(obj, type):
         return False
 
-    # Duck typing: must have 'name' class attribute or property
-    # and should have an 'execute' method
-    return hasattr(obj, "name") and (
-        callable(getattr(obj, "execute", None))
-        or callable(getattr(obj, "run", None))
-    )
+    # Must have the _is_brynhild_duck_typed marker (None means not present)
+    is_duck_typed = getattr(obj, "_is_brynhild_duck_typed", None)
+    if is_duck_typed is None:
+        # Check if this looks like a tool (has tool-like attributes)
+        # If so, warn the user - they probably forgot the marker
+        has_name = hasattr(obj, "name")
+        has_execute = callable(getattr(obj, "execute", None))
+        has_run = callable(getattr(obj, "run", None))
+
+        if has_name and (has_execute or has_run):
+            _logger.warning(
+                "=" * 70 + "\n"
+                "TOOL NOT RECOGNIZED: %s\n"
+                "\n"
+                "This class has tool-like attributes (name, execute/run)\n"
+                "but is missing the required '_is_brynhild_duck_typed' marker.\n"
+                "\n"
+                "To fix, either:\n"
+                "  1. Inherit from brynhild.tools.base.Tool (recommended), or\n"
+                "  2. Add: _is_brynhild_duck_typed = True\n"
+                "\n" + "=" * 70,
+                obj.__name__,
+            )
+        return False
+
+    if is_duck_typed:
+        # Duck-typed: validate interface manually
+        return hasattr(obj, "name") and (
+            callable(getattr(obj, "execute", None))
+            or callable(getattr(obj, "run", None))
+        )
+    else:
+        # Inherited from Tool: trust the base class contract
+        return True
 
 
 def _get_tool_name(tool_cls: ToolClass, fallback: str) -> str:

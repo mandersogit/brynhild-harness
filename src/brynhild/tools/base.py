@@ -257,6 +257,10 @@ class Tool(_abc.ABC):
     - examples (property): Usage examples for the LLM (default: [])
     """
 
+    # Marker indicating this class uses proper inheritance, not duck typing.
+    # Duck-typed tools must explicitly set _is_brynhild_duck_typed = True.
+    _is_brynhild_duck_typed: _typing.ClassVar[bool] = False
+
     @property
     @_abc.abstractmethod
     def name(self) -> str:
