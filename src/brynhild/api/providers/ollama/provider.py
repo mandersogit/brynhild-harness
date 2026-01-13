@@ -17,11 +17,9 @@ import typing as _typing
 import httpx as _httpx
 
 import brynhild.api.base as base
+import brynhild.api.credentials as _credentials
 import brynhild.api.types as types
 import brynhild.constants as _constants
-
-
-import brynhild.api.credentials as _credentials
 
 
 class OllamaProvider(base.LLMProvider):

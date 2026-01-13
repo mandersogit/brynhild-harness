@@ -17,6 +17,7 @@ import typing as _typing
 import httpx as _httpx
 
 import brynhild.api.base as base
+import brynhild.api.credentials as _credentials
 import brynhild.api.types as types
 import brynhild.constants as _constants
 
@@ -148,9 +149,6 @@ OPENROUTER_MODELS = {
     # Testing models
     "allenai/olmo-3-32b-think": "OLMo 3 32B Think",
 }
-
-
-import brynhild.api.credentials as _credentials
 
 
 class OpenRouterProvider(base.LLMProvider):
