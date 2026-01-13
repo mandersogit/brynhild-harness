@@ -12,8 +12,8 @@ import pytest as _pytest
 import brynhild.api.base as base
 import brynhild.api.credentials as credentials
 import brynhild.api.factory as factory
-import brynhild.api.providers.openrouter.provider as openrouter_provider
 import brynhild.api.providers.ollama.provider as ollama_provider
+import brynhild.api.providers.openrouter.provider as openrouter_provider
 
 
 class TestOpenRouterCredentialsPath:
