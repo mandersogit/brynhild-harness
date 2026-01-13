@@ -677,6 +677,7 @@ class ProviderInstanceConfig(ConfigBase):
         enabled: Whether provider is enabled (bool)
         base_url: Override base URL (str, optional)
         cache_ttl: Model cache TTL in seconds (int)
+        default_model: Default model for this provider (optional)
 
     ⚠️ TEMPORARY ARCHITECTURE: Provider-specific config is read from `model_extra`
     via `extra="allow"`. Near-term follow-up will add typed per-provider schemas
@@ -694,6 +695,24 @@ class ProviderInstanceConfig(ConfigBase):
 
     cache_ttl: int = _pydantic.Field(default=3600, ge=0)
     """Model list cache TTL in seconds."""
+
+    default_model: str | None = None
+    """
+    Default model for this provider instance.
+
+    Model precedence (highest to lowest):
+    1. CLI --model argument
+    2. This field (providers.instances.<name>.default_model)
+    3. Global models.default
+
+    Example:
+        providers:
+          instances:
+            ollama-behemoth:
+              type: ollama
+              base_url: http://gpu-server:11434
+              default_model: llama3.2:70b
+    """
 
 
 class ProvidersConfig(ConfigBase):

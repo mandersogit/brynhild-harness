@@ -116,6 +116,8 @@ def _get_provider_config(
         if not provider_config.enabled:
             config_dict["enabled"] = False
         config_dict["cache_ttl"] = provider_config.cache_ttl
+        if provider_config.default_model is not None:
+            config_dict["default_model"] = provider_config.default_model
         # Add any extras
         if provider_config.model_extra:
             config_dict.update(provider_config.model_extra)
@@ -124,6 +126,60 @@ def _get_provider_config(
     except Exception as e:
         _logger.debug("Could not load provider config for %s: %s", instance_name, e)
         return None
+
+
+def _resolve_model(
+    model: str | None,
+    instance_config: dict[str, _typing.Any],
+) -> str | None:
+    """
+    Resolve the model to use with proper precedence.
+
+    Model precedence (highest to lowest):
+    1. Explicit model parameter (CLI --model)
+    2. Provider instance default_model (providers.instances.<name>.default_model)
+    3. Environment variable BRYNHILD_MODELS__DEFAULT
+    4. Environment variable BRYNHILD_MODEL (legacy)
+    5. Global models.default from config
+
+    Args:
+        model: Explicit model from CLI/API (highest precedence)
+        instance_config: Provider instance config dict (may contain "default_model")
+
+    Returns:
+        Resolved model name, or None if nothing could be determined.
+        Callers should provide a provider-specific fallback if None is returned.
+    """
+    # 1. Explicit model (CLI --model)
+    if model:
+        return model
+
+    # 2. Provider instance default_model
+    provider_default: str | None = instance_config.get("default_model")
+    if provider_default:
+        _logger.debug("Using provider default_model: %s", provider_default)
+        return provider_default
+
+    # 3. Environment variable (BRYNHILD_MODELS__DEFAULT)
+    env_model = _os.environ.get("BRYNHILD_MODELS__DEFAULT")
+    if env_model:
+        return env_model
+
+    # 4. Legacy environment variable (BRYNHILD_MODEL)
+    legacy_env = _os.environ.get("BRYNHILD_MODEL")
+    if legacy_env:
+        return legacy_env
+
+    # 5. Global models.default from config
+    try:
+        import brynhild.config as config
+
+        settings = config.Settings()
+        return settings.models.default
+    except Exception:
+        pass
+
+    return None
 
 
 def create_provider(
@@ -291,10 +347,8 @@ def _create_provider_by_type(
             openrouter_provider.OpenRouterProvider, instance_config
         )
 
-        resolved_model = model or _os.environ.get(
-            "BRYNHILD_MODELS__DEFAULT",
-            _os.environ.get("BRYNHILD_MODEL", _constants.DEFAULT_MODEL),
-        )
+        # Resolve model with proper precedence (CLI > provider.default_model > global)
+        resolved_model = _resolve_model(model, instance_config) or _constants.DEFAULT_MODEL
         return openrouter_provider.OpenRouterProvider(
             api_key=api_key or _os.environ.get("OPENROUTER_API_KEY"),
             credentials_path=instance_config.get("credentials_path"),
@@ -307,9 +361,8 @@ def _create_provider_by_type(
         # Expand credentials_path if present
         _expand_credentials_path(ollama_provider.OllamaProvider, instance_config)
 
-        resolved_model = model or _os.environ.get(
-            "BRYNHILD_MODELS__DEFAULT", _os.environ.get("BRYNHILD_MODEL", "llama3")
-        )
+        # Resolve model with proper precedence (CLI > provider.default_model > global)
+        resolved_model = _resolve_model(model, instance_config) or "llama3"
 
         # Get base_url from instance config or env var
         base_url = instance_config.get("base_url")
@@ -399,10 +452,8 @@ def _create_plugin_provider(
         # Expand credentials_path if the provider wants it
         _expand_credentials_path(provider_cls, kwargs)
 
-        # Resolve model from environment if not provided
-        resolved_model = model or _os.environ.get(
-            "BRYNHILD_MODELS__DEFAULT", _os.environ.get("BRYNHILD_MODEL")
-        )
+        # Resolve model with proper precedence (CLI > provider.default_model > global)
+        resolved_model = _resolve_model(model, kwargs)
 
         if resolved_model:
             kwargs["model"] = resolved_model
