@@ -90,6 +90,8 @@ class MockCallbacks(conversation.ConversationCallbacks):
 class MockProvider:
     """Mock LLM provider for testing."""
 
+    _is_brynhild_duck_typed = True
+
     @property
     def name(self) -> str:
         return "mock"

@@ -14,6 +14,8 @@ import brynhild.hooks.executors.prompt as prompt_executor
 class MockLLMProvider:
     """Mock LLM provider for testing prompt hooks."""
 
+    _is_brynhild_duck_typed = True
+
     def __init__(self, response: str) -> None:
         self._response = response
         self.last_messages: list[dict[str, _typing.Any]] = []

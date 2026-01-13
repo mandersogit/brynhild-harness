@@ -13,6 +13,7 @@ import typing as _typing
 class Provider:
     """Mock provider for testing plugin provider loading."""
 
+    _is_brynhild_duck_typed = True  # Explicit duck-typing declaration
     PROVIDER_NAME = "test-marker"
 
     def __init__(

@@ -252,6 +252,7 @@ class TestDiscoverToolsFromEntryPoints:
 
         # Create a minimal tool class
         class MockTool:
+            _is_brynhild_duck_typed = True
             name = "MockTool"
 
             def execute(self) -> None:
@@ -323,6 +324,7 @@ class TestDiscoverProvidersFromEntryPoints:
 
         # Create a minimal provider class
         class MockProvider:
+            _is_brynhild_duck_typed = True
             PROVIDER_NAME = "mock-provider"
             name = "mock-provider"
             model = "test-model"
@@ -349,6 +351,7 @@ class TestDiscoverProvidersFromEntryPoints:
         """Uses PROVIDER_NAME class attribute for provider name."""
 
         class CustomNameProvider:
+            _is_brynhild_duck_typed = True
             PROVIDER_NAME = "custom-name"
             name = "different"
             model = "test"
@@ -375,6 +378,7 @@ class TestDiscoverProvidersFromEntryPoints:
         """Falls back to entry point name if PROVIDER_NAME not defined."""
 
         class NoProviderNameProvider:
+            _is_brynhild_duck_typed = True
             name = "provider"
             model = "test"
 

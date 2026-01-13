@@ -94,6 +94,7 @@ import typing
 class Provider:
     """Test LLM provider."""
 
+    _is_brynhild_duck_typed = True
     PROVIDER_NAME = "test"
 
     def __init__(self, model: str = "test-model", **kwargs: typing.Any) -> None:
@@ -135,6 +136,7 @@ class TestProviderRegistry:
 
         # Create a mock provider class
         class MockProvider:
+            _is_brynhild_duck_typed = True
             name = "mock"
             model = "mock-model"
 
@@ -158,6 +160,7 @@ class TestProviderRegistry:
 
         # Register a test provider
         class TestProvider2:
+            _is_brynhild_duck_typed = True
             name = "test2"
             model = "test2-model"
 
@@ -192,6 +195,7 @@ class TestIsProviderClass:
         """Valid provider class should return True."""
 
         class GoodProvider:
+            _is_brynhild_duck_typed = True
             name = "good"
             model = "good-model"
 
@@ -204,6 +208,7 @@ class TestIsProviderClass:
         """Provider with stream instead of complete should return True."""
 
         class StreamProvider:
+            _is_brynhild_duck_typed = True
             name = "stream"
             model = "stream-model"
 

@@ -20,6 +20,7 @@ class TestLoadToolModule:
         tool_file = tmp_path / "my_tool.py"
         tool_file.write_text("""
 class Tool:
+    _is_brynhild_duck_typed = True
     name = "my_tool"
     description = "A test tool"
 
@@ -70,6 +71,7 @@ class TestGetToolClassFromModule:
         tool_file = tmp_path / "my_tool.py"
         tool_file.write_text("""
 class Tool:
+    _is_brynhild_duck_typed = True
     name = "my_tool"
     def execute(self): pass
 """)
@@ -83,6 +85,7 @@ class Tool:
         tool_file = tmp_path / "custom.py"
         tool_file.write_text("""
 class MyCustomTool:
+    _is_brynhild_duck_typed = True
     name = "custom_tool"
     def execute(self): pass
 """)
@@ -107,6 +110,7 @@ x = 42
         tool_file = tmp_path / "private.py"
         tool_file.write_text("""
 class _PrivateTool:
+    _is_brynhild_duck_typed = True
     name = "private"
     def execute(self): pass
 """)
@@ -122,6 +126,7 @@ class TestIsToolClass:
         """Tool class must have name attribute and execute method."""
 
         class ValidTool:
+            _is_brynhild_duck_typed = True
             name = "test"
 
             def execute(self) -> None:
@@ -142,6 +147,7 @@ class TestIsToolClass:
         """run() method is also accepted."""
 
         class ToolWithRun:
+            _is_brynhild_duck_typed = True
             name = "test"
 
             def run(self) -> None:
@@ -166,6 +172,7 @@ class TestToolLoader:
         tool_name = tool_name or name
         path.write_text(f"""
 class Tool:
+    _is_brynhild_duck_typed = True
     name = "{tool_name}"
     description = "A {tool_name} tool"
 

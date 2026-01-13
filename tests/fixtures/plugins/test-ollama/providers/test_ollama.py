@@ -21,6 +21,7 @@ class Provider:
     the plugin version is being used, not the builtin.
     """
 
+    _is_brynhild_duck_typed = True  # Explicit duck-typing declaration
     PROVIDER_NAME = "test-ollama"
 
     # Class-level flag to track instantiation

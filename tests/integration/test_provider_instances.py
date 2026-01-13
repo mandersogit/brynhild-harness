@@ -581,6 +581,7 @@ class TestPluginProviderInstanceConfig:
         captured_kwargs: dict[str, _typing.Any] = {}
 
         class MockPluginProvider:
+            _is_brynhild_duck_typed = True
             PROVIDER_NAME = "mock-plugin"
             name = "mock-plugin"
             model = "test-model"
@@ -628,6 +629,7 @@ class TestPluginProviderInstanceConfig:
 
         # Mock plugin provider that only accepts model and api_key
         class SimplePluginProvider:
+            _is_brynhild_duck_typed = True
             PROVIDER_NAME = "simple-plugin"
             name = "simple-plugin"
 
@@ -665,6 +667,7 @@ class TestPluginProviderInstanceConfig:
         import brynhild.api.factory as factory
 
         class BasicProvider:
+            _is_brynhild_duck_typed = True
             PROVIDER_NAME = "basic"
             name = "basic"
 
