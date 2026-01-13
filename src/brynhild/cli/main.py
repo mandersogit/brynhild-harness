@@ -358,12 +358,15 @@ async def _run_conversation(
         json_output, no_color, show_thinking=show_thinking, show_cost=show_cost
     )
 
+    # Resolve effective provider (instance name for display and factory)
+    effective_provider = cli_provider if cli_provider else settings.provider
+
     # Create provider
     # Pass explicit CLI values (or None) to let factory handle precedence:
     # CLI --model > provider.default_model > models.default
     try:
         provider_instance = api.create_provider(
-            provider=cli_provider if cli_provider else settings.provider,
+            provider=effective_provider,
             model=cli_model,  # None if not explicitly set on CLI
             api_key=settings.get_api_key(),
         )
@@ -372,6 +375,9 @@ async def _run_conversation(
         if json_output:
             renderer.finalize()
         raise SystemExit(1) from None
+
+    # Get the actual model from the provider (after factory resolves precedence)
+    actual_model = provider_instance.model
 
     # Create tool registry if tools are enabled
     tool_registry: tools.ToolRegistry | None = None
@@ -388,8 +394,8 @@ async def _run_conversation(
             log_dir=settings.logs_dir,
             log_file=log_file or settings.log_file,
             private_mode=settings.log_dir_private,
-            provider=settings.provider,
-            model=settings.model,
+            provider=effective_provider,
+            model=actual_model,
             enabled=True,
         )
         if conv_logger.file_path and verbose:
@@ -402,8 +408,8 @@ async def _run_conversation(
             log_dir=settings.logs_dir,
             session_id=session_id,
             private_mode=settings.log_dir_private,
-            provider=settings.provider,
-            model=settings.model,
+            provider=effective_provider,
+            model=actual_model,
             enabled=True,
         )
         if raw_logger.file_path and verbose:
@@ -417,8 +423,8 @@ async def _run_conversation(
         markdown_logger = logging.MarkdownLogger(
             output_path=markdown_output,
             title=markdown_title,
-            provider=settings.provider,
-            model=settings.model,
+            provider=effective_provider,
+            model=actual_model,
             profile=profile_name,
             include_thinking=show_thinking,
         )
@@ -430,7 +436,7 @@ async def _run_conversation(
     # Pass tool_registry so prompt reflects which tools are actually available
     # Use empty registry if tools disabled (prompt will say "no tools available")
     prompt_registry = tool_registry if tool_registry is not None else tools.ToolRegistry()
-    base_prompt = core.get_system_prompt(settings.model, tool_registry=prompt_registry)
+    base_prompt = core.get_system_prompt(actual_model, tool_registry=prompt_registry)
     context = core.build_context(
         base_prompt,
         project_root=settings.project_root,
@@ -438,14 +444,14 @@ async def _run_conversation(
         # include_rules disabled - see TODO in context.py
         include_skills=True,
         profile_name=profile_name,
-        model=settings.model,
-        provider=settings.provider,
+        model=actual_model,
+        provider=effective_provider,
     )
 
     # Show session banner with model/profile/session info
     renderer.show_session_banner(
-        model=settings.model,
-        provider=settings.provider,
+        model=actual_model,
+        provider=effective_provider,
         profile=context.profile.name if context.profile else None,
         session=None,  # TODO: Pass actual session name when resume is implemented
     )
@@ -593,18 +599,24 @@ def _handle_interactive_mode(
         # Generate session name if not set
         session_name = session.generate_session_name()
 
+    # Resolve effective provider (instance name for display and factory)
+    effective_provider = cli_provider if cli_provider else settings.provider
+
     # Create provider
     # Pass explicit CLI values (or None) to let factory handle precedence:
     # CLI --model > provider.default_model > models.default
     try:
         provider_instance = api.create_provider(
-            provider=cli_provider if cli_provider else settings.provider,
+            provider=effective_provider,
             model=cli_model,  # None if not explicitly set on CLI
             api_key=settings.get_api_key(),
         )
     except ValueError as e:
         _click.echo(f"Error: {e}", err=True)
         raise SystemExit(1) from None
+
+    # Get the actual model from the provider (after factory resolves precedence)
+    actual_model = provider_instance.model
 
     # Create tool registry
     tool_registry = tools.build_registry_from_settings(settings)
@@ -616,8 +628,8 @@ def _handle_interactive_mode(
             log_dir=settings.logs_dir,
             log_file=settings.log_file,
             private_mode=settings.log_dir_private,
-            provider=settings.provider,
-            model=settings.model,
+            provider=effective_provider,
+            model=actual_model,
             enabled=True,
         )
 
@@ -625,7 +637,7 @@ def _handle_interactive_mode(
     # Pass tool_registry so prompt reflects which tools are actually available
     # Use empty registry if tools disabled (prompt will say "no tools available")
     prompt_registry = tool_registry if tool_registry is not None else tools.ToolRegistry()
-    base_prompt = core.get_system_prompt(settings.model, tool_registry=prompt_registry)
+    base_prompt = core.get_system_prompt(actual_model, tool_registry=prompt_registry)
     context = core.build_context(
         base_prompt,
         project_root=settings.project_root,
@@ -633,8 +645,8 @@ def _handle_interactive_mode(
         # include_rules disabled - see TODO in context.py
         include_skills=True,
         profile_name=profile_name,
-        model=settings.model,
-        provider=settings.provider,
+        model=actual_model,
+        provider=effective_provider,
     )
 
     # Create recovery config from profile if available
