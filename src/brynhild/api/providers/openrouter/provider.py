@@ -150,6 +150,9 @@ OPENROUTER_MODELS = {
 }
 
 
+import brynhild.api.credentials as _credentials
+
+
 class OpenRouterProvider(base.LLMProvider):
     """
     OpenRouter API provider.
@@ -162,6 +165,7 @@ class OpenRouterProvider(base.LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
+        credentials_path: str | None = None,
         model: str = "openai/gpt-oss-120b",
         site_url: str = "https://example.com/brynhild",
         site_name: str = "Brynhild",
@@ -172,17 +176,30 @@ class OpenRouterProvider(base.LLMProvider):
 
         Args:
             api_key: OpenRouter API key (defaults to OPENROUTER_API_KEY env var)
+            credentials_path: Path to JSON file containing credentials.
+                File should contain {"api_key": "sk-or-..."}. Supports ~ and $VAR expansion.
+                Takes precedence over api_key parameter if both provided.
             model: Model to use (e.g., 'anthropic/claude-sonnet-4')
             site_url: URL of your site (required by OpenRouter for rankings)
             site_name: Name of your app (shown in OpenRouter activity)
             require_data_policy: If True, only use providers that respect
                 data collection denial (won't train on or log prompts).
         """
-        self._api_key = api_key or _os.environ.get("OPENROUTER_API_KEY")
+        # Load API key from credentials file if provided
+        if credentials_path:
+            credentials = _credentials.load_credentials_from_path(credentials_path)
+            self._api_key = credentials.get("api_key")
+            if not self._api_key:
+                raise ValueError(
+                    f"Credentials file {credentials_path} missing 'api_key' field"
+                )
+        else:
+            self._api_key = api_key or _os.environ.get("OPENROUTER_API_KEY")
+
         if not self._api_key:
             raise ValueError(
-                "OpenRouter API key required. Set OPENROUTER_API_KEY environment variable "
-                "or pass api_key parameter."
+                "OpenRouter API key required. Set OPENROUTER_API_KEY environment variable, "
+                "pass api_key parameter, or provide credentials_path."
             )
         self._model = model
         self._site_url = site_url

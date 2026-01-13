@@ -27,6 +27,31 @@ _logger = _logging.getLogger(__name__)
 # Cache for loaded plugin providers
 _plugin_providers_loaded = False
 
+
+def _expand_credentials_path(
+    provider_cls: type[base.LLMProvider],
+    instance_config: dict[str, _typing.Any],
+) -> None:
+    """
+    Expand ~ and $VAR in credentials_path if the provider wants expansion.
+
+    Modifies instance_config in place.
+
+    Args:
+        provider_cls: The provider class (to check expand_credentials_path attribute)
+        instance_config: Config dict that may contain credentials_path
+    """
+    if not provider_cls.expand_credentials_path:
+        return
+
+    if "credentials_path" not in instance_config:
+        return
+
+    raw_path = instance_config["credentials_path"]
+    expanded = _os.path.expanduser(_os.path.expandvars(raw_path))
+    instance_config["credentials_path"] = expanded
+    _logger.debug("Expanded credentials_path: %s → %s", raw_path, expanded)
+
 # Mapping of provider types to their implementations
 # Type names are lowercase identifiers (e.g., "ollama", "openrouter")
 BUILTIN_PROVIDER_TYPES: dict[str, str] = {
@@ -254,17 +279,26 @@ def _create_provider_by_type(
     if provider_type == "openrouter":
         import brynhild.api.providers.openrouter.provider as openrouter_provider
 
+        # Expand credentials_path if present
+        _expand_credentials_path(
+            openrouter_provider.OpenRouterProvider, instance_config
+        )
+
         resolved_model = model or _os.environ.get(
             "BRYNHILD_MODELS__DEFAULT",
             _os.environ.get("BRYNHILD_MODEL", _constants.DEFAULT_MODEL),
         )
         return openrouter_provider.OpenRouterProvider(
             api_key=api_key or _os.environ.get("OPENROUTER_API_KEY"),
+            credentials_path=instance_config.get("credentials_path"),
             model=resolved_model,
         )
 
     elif provider_type == "ollama":
         import brynhild.api.providers.ollama.provider as ollama_provider
+
+        # Expand credentials_path if present
+        _expand_credentials_path(ollama_provider.OllamaProvider, instance_config)
 
         resolved_model = model or _os.environ.get(
             "BRYNHILD_MODELS__DEFAULT", _os.environ.get("BRYNHILD_MODEL", "llama3")
@@ -295,6 +329,7 @@ def _create_provider_by_type(
             model=resolved_model,
             host=host,
             port=port,
+            credentials_path=instance_config.get("credentials_path"),
         )
 
     elif provider_type in ("vllm", "lmstudio", "openai"):
@@ -351,13 +386,17 @@ def _create_plugin_provider(
         if provider_cls is None:
             return None
 
+        # Build kwargs from instance_config (make a copy to avoid mutating original)
+        kwargs: dict[str, _typing.Any] = dict(instance_config) if instance_config else {}
+
+        # Expand credentials_path if the provider wants it
+        _expand_credentials_path(provider_cls, kwargs)
+
         # Resolve model from environment if not provided
         resolved_model = model or _os.environ.get(
             "BRYNHILD_MODELS__DEFAULT", _os.environ.get("BRYNHILD_MODEL")
         )
 
-        # Build kwargs from instance_config
-        kwargs: dict[str, _typing.Any] = dict(instance_config) if instance_config else {}
         if resolved_model:
             kwargs["model"] = resolved_model
         if api_key:

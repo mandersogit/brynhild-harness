@@ -21,6 +21,9 @@ import brynhild.api.types as types
 import brynhild.constants as _constants
 
 
+import brynhild.api.credentials as _credentials
+
+
 class OllamaProvider(base.LLMProvider):
     """
     Ollama API provider.
@@ -38,6 +41,8 @@ class OllamaProvider(base.LLMProvider):
         port: int | None = None,
         model: str = "llama3",
         timeout: float = 300.0,  # Longer timeout for large models
+        credentials_path: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         """
         Initialize the Ollama provider.
@@ -49,7 +54,18 @@ class OllamaProvider(base.LLMProvider):
             model: Model to use. Canonical names (e.g., 'openai/gpt-oss-120b')
                    are translated to Ollama format via model aliases config.
             timeout: Request timeout in seconds (default 300s for large models).
+            credentials_path: Path to JSON file containing credentials.
+                File may contain {"api_key": "..."} for authenticated Ollama servers.
+                Supports ~ and $VAR expansion.
+            api_key: API key for authenticated Ollama servers (e.g., cloud-hosted).
+                credentials_path takes precedence if both provided.
         """
+        # Load credentials from file if provided
+        effective_api_key = api_key
+        if credentials_path:
+            credentials = _credentials.load_credentials_from_path(credentials_path)
+            effective_api_key = credentials.get("api_key") or api_key
+
         # Support BRYNHILD_OLLAMA_HOST (preferred) or OLLAMA_HOST (standard Ollama convention)
         env_host = _os.environ.get("BRYNHILD_OLLAMA_HOST") or _os.environ.get(
             "OLLAMA_HOST", ""
@@ -78,12 +94,17 @@ class OllamaProvider(base.LLMProvider):
         import brynhild.config.model_aliases as model_aliases
         self._model = model_aliases.translate_model("ollama", model)
 
+        # Build headers
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "User-Agent": "Brynhild/1.0",
+        }
+        if effective_api_key:
+            headers["Authorization"] = f"Bearer {effective_api_key}"
+
         self._client = _httpx.AsyncClient(
             base_url=base_url,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "Brynhild/1.0",
-            },
+            headers=headers,
             timeout=timeout,
         )
 

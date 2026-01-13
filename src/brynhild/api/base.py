@@ -103,6 +103,10 @@ class LLMProvider(_abc.ABC):
     to enhance system prompts with model-specific patterns.
     """
 
+    # Whether factory should expand ~ and $VAR in credentials_path before passing.
+    # Default True. Override to False if provider needs the raw unexpanded path.
+    expand_credentials_path: _typing.ClassVar[bool] = True
+
     _profile: profile_types.ModelProfile | None = None
     _raw_logger: _typing.Any = None  # RawPayloadLogger, but avoid circular import
 
