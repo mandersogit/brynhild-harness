@@ -690,3 +690,192 @@ class TestPluginProviderInstanceConfig:
 
             assert result is not None
             assert result.model == "my-model"
+
+
+class TestProviderDefaultModel:
+    """Tests for per-provider default_model configuration.
+
+    Model precedence (highest to lowest):
+    1. CLI --model argument
+    2. providers.instances.<name>.default_model
+    3. Global models.default
+    """
+
+    def test_default_model_field_accepted(self) -> None:
+        """ProviderInstanceConfig should accept default_model field."""
+        config = types.ProviderInstanceConfig(
+            type="ollama",
+            default_model="llama3.2:70b",
+        )
+        assert config.default_model == "llama3.2:70b"
+
+    def test_default_model_field_optional(self) -> None:
+        """default_model should be optional (defaults to None)."""
+        config = types.ProviderInstanceConfig(type="ollama")
+        assert config.default_model is None
+
+    def test_resolve_model_cli_takes_precedence(self) -> None:
+        """CLI model should override provider default_model."""
+        import brynhild.api.factory as factory
+
+        instance_config = {"default_model": "llama3.2:70b"}
+
+        with _mock.patch.dict(_os.environ, {}, clear=True):
+            result = factory._resolve_model(
+                model="cli-specified-model",
+                instance_config=instance_config,
+            )
+
+        assert result == "cli-specified-model"
+
+    def test_resolve_model_provider_default_used(self) -> None:
+        """Provider default_model should be used when no CLI model."""
+        import brynhild.api.factory as factory
+
+        instance_config = {"default_model": "llama3.2:70b"}
+
+        # Clear all env vars that would affect model resolution
+        with _mock.patch.dict(
+            _os.environ,
+            {"BRYNHILD_MODELS__DEFAULT": "", "BRYNHILD_MODEL": ""},
+            clear=True,
+        ):
+            # Also mock settings to avoid global default
+            with _mock.patch("brynhild.config.Settings") as mock_settings:
+                mock_settings.return_value.models.default = "global-default"
+                result = factory._resolve_model(
+                    model=None,
+                    instance_config=instance_config,
+                )
+
+        assert result == "llama3.2:70b"
+
+    def test_resolve_model_global_default_fallback(self) -> None:
+        """Global models.default should be used as fallback."""
+        import brynhild.api.factory as factory
+
+        # No provider default_model
+        instance_config: dict[str, _typing.Any] = {}
+
+        with _mock.patch.dict(
+            _os.environ,
+            {"BRYNHILD_MODELS__DEFAULT": "", "BRYNHILD_MODEL": ""},
+            clear=True,
+        ):
+            # Returns the global default from config
+            result = factory._resolve_model(
+                model=None,
+                instance_config=instance_config,
+            )
+
+        # Result should be the default from Settings
+        assert result is not None
+
+    def test_default_model_in_yaml_config(self) -> None:
+        """default_model should work when loaded from YAML config."""
+        config_yaml = """
+providers:
+  default: ollama-gpu
+  instances:
+    ollama-gpu:
+      type: ollama
+      base_url: http://gpu-server:11434
+      default_model: llama3.2:70b
+"""
+        with _tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = _os.path.join(tmp_dir, "config.yaml")
+            with open(config_path, "w") as f:
+                f.write(config_yaml)
+
+            with _mock.patch.dict(
+                _os.environ,
+                {"BRYNHILD_CONFIG_DIR": tmp_dir},
+                clear=False,
+            ):
+                import brynhild.config as config
+
+                # Force reload settings
+                settings = config.Settings()
+                instance = settings.providers.get_provider_config("ollama-gpu")
+
+                assert instance is not None
+                assert instance.default_model == "llama3.2:70b"
+
+    def test_factory_uses_provider_default_model(self) -> None:
+        """Factory should use provider's default_model when no CLI model."""
+        config_yaml = """
+providers:
+  default: ollama-test
+  instances:
+    ollama-test:
+      type: ollama
+      base_url: http://test-server:11434
+      default_model: custom-model-name
+"""
+        with _tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = _os.path.join(tmp_dir, "config.yaml")
+            with open(config_path, "w") as f:
+                f.write(config_yaml)
+
+            # Clear env vars that would override
+            clean_env = {
+                k: v
+                for k, v in _os.environ.items()
+                if k
+                not in (
+                    "OLLAMA_HOST",
+                    "BRYNHILD_OLLAMA_HOST",
+                    "BRYNHILD_MODELS__DEFAULT",
+                    "BRYNHILD_MODEL",
+                )
+            }
+            clean_env["BRYNHILD_CONFIG_DIR"] = tmp_dir
+
+            with _mock.patch.dict(_os.environ, clean_env, clear=True):
+                provider = api.create_provider(
+                    provider="ollama-test",
+                    model=None,  # No explicit model
+                    auto_profile=False,
+                )
+
+                # Should use provider's default_model
+                assert provider.model == "custom-model-name"
+
+    def test_cli_model_overrides_provider_default(self) -> None:
+        """CLI --model should override provider's default_model."""
+        config_yaml = """
+providers:
+  default: ollama-test
+  instances:
+    ollama-test:
+      type: ollama
+      base_url: http://test-server:11434
+      default_model: provider-default-model
+"""
+        with _tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = _os.path.join(tmp_dir, "config.yaml")
+            with open(config_path, "w") as f:
+                f.write(config_yaml)
+
+            clean_env = {
+                k: v
+                for k, v in _os.environ.items()
+                if k
+                not in (
+                    "OLLAMA_HOST",
+                    "BRYNHILD_OLLAMA_HOST",
+                    "BRYNHILD_MODELS__DEFAULT",
+                    "BRYNHILD_MODEL",
+                )
+            }
+            clean_env["BRYNHILD_CONFIG_DIR"] = tmp_dir
+
+            with _mock.patch.dict(_os.environ, clean_env, clear=True):
+                provider = api.create_provider(
+                    provider="ollama-test",
+                    model="cli-override-model",  # Explicit CLI model
+                    auto_profile=False,
+                )
+
+                # Should use CLI model, not provider default
+                assert provider.model == "cli-override-model"
