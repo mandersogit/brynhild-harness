@@ -9,14 +9,18 @@ Configuration layers (in precedence order, highest first):
 1. Environment variables (handled by pydantic-settings)
 2. Project config: .brynhild/config.yaml in project root
 3. User config: ~/.config/brynhild/config.yaml (or BRYNHILD_CONFIG_DIR)
-4. Built-in defaults: bundled config.yaml
+4. Deployment config: BRYNHILD_DEPLOYMENT_CONFIG (version-specific)
+5. Site config: BRYNHILD_SITE_CONFIG (organization-wide)
+6. Built-in defaults: bundled config.yaml
 
-The DeepChainMapSettingsSource handles layers 2-4, merging them using
+The DeepChainMapSettingsSource handles layers 2-6, merging them using
 DeepChainMap so that nested dictionaries merge naturally while other
 values override.
 
 Environment variables:
 - BRYNHILD_CONFIG_DIR: Override user config directory (default: ~/.config/brynhild)
+- BRYNHILD_SITE_CONFIG: Path to site-wide config file (organization defaults)
+- BRYNHILD_DEPLOYMENT_CONFIG: Path to deployment config file (version-specific)
 """
 
 import collections.abc as _abc
@@ -33,6 +37,10 @@ import brynhild.utils.deep_chain_map._yaml as _dcm_yaml
 
 # Environment variable for overriding user config directory
 ENV_CONFIG_DIR = "BRYNHILD_CONFIG_DIR"
+
+# Environment variables for site and deployment config layers
+ENV_SITE_CONFIG = "BRYNHILD_SITE_CONFIG"
+ENV_DEPLOYMENT_CONFIG = "BRYNHILD_DEPLOYMENT_CONFIG"
 
 # Type alias for line registry: maps key paths to (line, column) tuples
 # Line numbers are 1-indexed to match editor conventions
@@ -213,7 +221,40 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         layers.append(builtin_content)
         layer_info.append(("built-in", builtin_path))
 
-        # Layer 2: User config — OPTIONAL
+        # Layer 2: Site config — OPTIONAL (organization-wide defaults)
+        # Set via BRYNHILD_SITE_CONFIG env var pointing to a YAML file.
+        site_config_path = _os.environ.get(ENV_SITE_CONFIG)
+        if site_config_path:
+            # Expand ~ and $VAR in the path
+            expanded_site = _os.path.expanduser(_os.path.expandvars(site_config_path))
+            site_path = _pathlib.Path(expanded_site)
+            # Support pointing to a directory (uses site.yaml) or a file
+            if site_path.is_dir():
+                site_path = site_path / "site.yaml"
+            if site_path.exists():
+                content = self._load_yaml_file(site_path)
+                if content:
+                    layers.append(content)
+                    layer_info.append(("site", site_path))
+
+        # Layer 3: Deployment config — OPTIONAL (version-specific defaults)
+        # Set via BRYNHILD_DEPLOYMENT_CONFIG env var pointing to a YAML file.
+        # Higher precedence than site config (can override organization defaults).
+        deployment_config_path = _os.environ.get(ENV_DEPLOYMENT_CONFIG)
+        if deployment_config_path:
+            # Expand ~ and $VAR in the path
+            expanded_deploy = _os.path.expanduser(_os.path.expandvars(deployment_config_path))
+            deployment_path = _pathlib.Path(expanded_deploy)
+            # Support pointing to a directory (uses deployment.yaml) or a file
+            if deployment_path.is_dir():
+                deployment_path = deployment_path / "deployment.yaml"
+            if deployment_path.exists():
+                content = self._load_yaml_file(deployment_path)
+                if content:
+                    layers.append(content)
+                    layer_info.append(("deployment", deployment_path))
+
+        # Layer 4: User config — OPTIONAL
         # Missing user config is normal (user hasn't created one yet).
         user_path = self._get_user_config_path()
         if user_path.exists():
@@ -222,7 +263,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
                 layers.append(content)
                 layer_info.append(("user", user_path))
 
-        # Layer 3: Project config — OPTIONAL
+        # Layer 5: Project config — OPTIONAL
         # Missing project config is normal (project doesn't use brynhild config).
         if self._project_root:
             project_path = self._project_root / ".brynhild" / "config.yaml"
@@ -294,7 +335,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
 
         Returns:
             List of (layer_name, path, exists) tuples in precedence order
-            (highest first: project, user, builtin).
+            (highest first: project, user, deployment, site, builtin).
         """
         layers: list[tuple[str, _pathlib.Path, bool]] = []
 
@@ -306,6 +347,24 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
         # User config
         user_path = self._get_user_config_path()
         layers.append(("user", user_path, user_path.exists()))
+
+        # Deployment config
+        deployment_config_path = _os.environ.get(ENV_DEPLOYMENT_CONFIG)
+        if deployment_config_path:
+            expanded = _os.path.expanduser(_os.path.expandvars(deployment_config_path))
+            deployment_path = _pathlib.Path(expanded)
+            if deployment_path.is_dir():
+                deployment_path = deployment_path / "deployment.yaml"
+            layers.append(("deployment", deployment_path, deployment_path.exists()))
+
+        # Site config
+        site_config_path = _os.environ.get(ENV_SITE_CONFIG)
+        if site_config_path:
+            expanded = _os.path.expanduser(_os.path.expandvars(site_config_path))
+            site_path = _pathlib.Path(expanded)
+            if site_path.is_dir():
+                site_path = site_path / "site.yaml"
+            layers.append(("site", site_path, site_path.exists()))
 
         # Built-in defaults (lowest)
         builtin_path = self._get_builtin_config_path()
