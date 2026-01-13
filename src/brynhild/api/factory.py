@@ -41,7 +41,14 @@ def _expand_credentials_path(
         provider_cls: The provider class (to check expand_credentials_path attribute)
         instance_config: Config dict that may contain credentials_path
     """
-    if not provider_cls.expand_credentials_path:
+    # Check if provider wants credentials_path expansion
+    # Duck-typed providers use getattr with default; inherited access directly
+    if getattr(provider_cls, "_is_brynhild_duck_typed", False):
+        should_expand = getattr(provider_cls, "expand_credentials_path", True)
+    else:
+        should_expand = provider_cls.expand_credentials_path
+
+    if not should_expand:
         return
 
     if "credentials_path" not in instance_config:
@@ -419,8 +426,11 @@ def _create_plugin_provider(
                 return provider_cls()  # type: ignore[no-any-return]
 
     except Exception as e:
-        _logger.warning("Failed to create plugin provider %s: %s", provider_type, e)
-        return None
+        # Don't swallow errors - propagate with clear message
+        # This ensures users see "Permission denied" not "Unknown provider"
+        raise ValueError(
+            f"Failed to create provider '{provider_type}': {e}"
+        ) from e
 
 
 def _attach_profile(llm_provider: base.LLMProvider, provider_name: str) -> None:
