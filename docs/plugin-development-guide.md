@@ -728,6 +728,54 @@ class Provider(_base.LLMProvider):
 - `complete()` method - Non-streaming completion
 - `stream()` method - Streaming completion
 
+#### Provider Credentials Path
+
+Providers can receive credentials from a file via the `credentials_path` config option. The factory automatically expands `~` and `$VAR` in the path before passing it to your provider.
+
+**Config example:**
+```yaml
+providers:
+  instances:
+    my-provider-prod:
+      type: my-provider
+      credentials_path: ~/.config/brynhild/credentials/my-provider.json
+```
+
+**In your provider:**
+```python
+class Provider(_base.LLMProvider):
+    def __init__(
+        self,
+        *,
+        model: str = "default",
+        api_key: str | None = None,
+        credentials_path: str | None = None,  # Factory passes expanded path
+        **kwargs: _typing.Any,
+    ) -> None:
+        # Load credentials from file if provided
+        if credentials_path:
+            import brynhild.api.credentials as _credentials
+            creds = _credentials.load_credentials_from_path(credentials_path)
+            api_key = creds.get("api_key", api_key)
+        
+        self._api_key = api_key
+        self._model = model
+```
+
+The `load_credentials_from_path()` utility:
+- Loads a JSON file from the given path
+- Returns a dict with the file contents
+- Raises `ValueError` on missing file, invalid JSON, or permission errors
+
+**Opting out of path expansion:**
+
+If your provider needs the raw unexpanded path (e.g., to pass to an external library that handles expansion itself), set the class variable:
+
+```python
+class Provider(_base.LLMProvider):
+    expand_credentials_path = False  # Don't expand ~ and $VAR
+```
+
 ### Commands
 
 Commands are Markdown files with YAML frontmatter:
