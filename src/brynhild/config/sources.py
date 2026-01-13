@@ -228,9 +228,9 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
             # Expand ~ and $VAR in the path
             expanded_site = _os.path.expanduser(_os.path.expandvars(site_config_path))
             site_path = _pathlib.Path(expanded_site)
-            # Support pointing to a directory (uses site.yaml) or a file
+            # Support pointing to a directory (uses config.yaml) or a file
             if site_path.is_dir():
-                site_path = site_path / "site.yaml"
+                site_path = site_path / "config.yaml"
             if site_path.exists():
                 content = self._load_yaml_file(site_path)
                 if content:
@@ -245,9 +245,9 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
             # Expand ~ and $VAR in the path
             expanded_deploy = _os.path.expanduser(_os.path.expandvars(deployment_config_path))
             deployment_path = _pathlib.Path(expanded_deploy)
-            # Support pointing to a directory (uses deployment.yaml) or a file
+            # Support pointing to a directory (uses config.yaml) or a file
             if deployment_path.is_dir():
-                deployment_path = deployment_path / "deployment.yaml"
+                deployment_path = deployment_path / "config.yaml"
             if deployment_path.exists():
                 content = self._load_yaml_file(deployment_path)
                 if content:
@@ -354,7 +354,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
             expanded = _os.path.expanduser(_os.path.expandvars(deployment_config_path))
             deployment_path = _pathlib.Path(expanded)
             if deployment_path.is_dir():
-                deployment_path = deployment_path / "deployment.yaml"
+                deployment_path = deployment_path / "config.yaml"
             layers.append(("deployment", deployment_path, deployment_path.exists()))
 
         # Site config
@@ -363,7 +363,7 @@ class DeepChainMapSettingsSource(_pydantic_settings.PydanticBaseSettingsSource):
             expanded = _os.path.expanduser(_os.path.expandvars(site_config_path))
             site_path = _pathlib.Path(expanded)
             if site_path.is_dir():
-                site_path = site_path / "site.yaml"
+                site_path = site_path / "config.yaml"
             layers.append(("site", site_path, site_path.exists()))
 
         # Built-in defaults (lowest)

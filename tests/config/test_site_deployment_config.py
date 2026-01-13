@@ -175,15 +175,15 @@ providers:
     def test_directory_path_uses_default_filename(
         self, config_dirs: dict[str, _pathlib.Path], tmp_path: _pathlib.Path
     ) -> None:
-        """When pointing to a directory, should use site.yaml or deployment.yaml."""
-        # Create files with default names
-        site_yaml = config_dirs["site"] / "site.yaml"
+        """When pointing to a directory, should use config.yaml."""
+        # Create files with default name (config.yaml in each directory)
+        site_yaml = config_dirs["site"] / "config.yaml"
         site_yaml.write_text("""
 models:
   default: site-from-dir
 """)
 
-        deployment_yaml = config_dirs["deployment"] / "deployment.yaml"
+        deployment_yaml = config_dirs["deployment"] / "config.yaml"
         deployment_yaml.write_text("""
 models:
   default: deployment-from-dir
