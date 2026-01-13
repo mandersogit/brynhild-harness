@@ -221,6 +221,18 @@ def cli(
     ctx.obj["profile_name"] = profile
     ctx.obj["show_thinking"] = show_thinking
     ctx.obj["show_cost"] = show_cost
+    # Store explicit CLI values (None if not provided on command line)
+    # This allows factory to distinguish CLI model from config defaults
+    #
+    # FIXME: Technical debt — this creates two sources of truth (settings.model
+    # vs cli_model). A cleaner design would be:
+    #   1. Create a CLIOverrides dataclass to group these values
+    #   2. Pass CLIOverrides as a single parameter to _run_conversation etc.
+    #   3. Or: Make Settings track value sources (cli/env/config/default)
+    # See discussion: The current approach works but adds parameters to function
+    # signatures and is ad-hoc (only model/provider tracked this way).
+    ctx.obj["cli_model"] = model
+    ctx.obj["cli_provider"] = provider
 
     # If a subcommand is invoked, let it handle everything
     if ctx.invoked_subcommand is not None:
@@ -237,6 +249,8 @@ def cli(
             profile_name=profile,
             resume_session_id=resume,
             session_name=session_name,
+            cli_model=model,
+            cli_provider=provider,
         )
 
 
@@ -333,6 +347,8 @@ async def _run_conversation(
     prompt_sources: list[str] | None = None,
     markdown_output: _pathlib.Path | None = None,
     markdown_title: str | None = None,
+    cli_model: str | None = None,
+    cli_provider: str | None = None,
 ) -> None:
     """Run a conversation using the ConversationRunner."""
     import brynhild.core as core
@@ -343,10 +359,12 @@ async def _run_conversation(
     )
 
     # Create provider
+    # Pass explicit CLI values (or None) to let factory handle precedence:
+    # CLI --model > provider.default_model > models.default
     try:
         provider_instance = api.create_provider(
-            provider=settings.provider,
-            model=settings.model,
+            provider=cli_provider if cli_provider else settings.provider,
+            model=cli_model,  # None if not explicitly set on CLI
             api_key=settings.get_api_key(),
         )
     except ValueError as e:
@@ -538,6 +556,8 @@ def _handle_interactive_mode(
     profile_name: str | None = None,
     resume_session_id: str | None = None,
     session_name: str | None = None,
+    cli_model: str | None = None,
+    cli_provider: str | None = None,
 ) -> None:
     """Handle interactive TUI mode."""
     import brynhild.core as core
@@ -574,10 +594,12 @@ def _handle_interactive_mode(
         session_name = session.generate_session_name()
 
     # Create provider
+    # Pass explicit CLI values (or None) to let factory handle precedence:
+    # CLI --model > provider.default_model > models.default
     try:
         provider_instance = api.create_provider(
-            provider=settings.provider,
-            model=settings.model,
+            provider=cli_provider if cli_provider else settings.provider,
+            model=cli_model,  # None if not explicitly set on CLI
             api_key=settings.get_api_key(),
         )
     except ValueError as e:
@@ -753,6 +775,8 @@ def chat(
     profile_name: str | None = ctx.obj.get("profile_name")
     show_thinking: bool = ctx.obj.get("show_thinking", False)
     show_cost: bool = ctx.obj.get("show_cost", False)
+    cli_model: str | None = ctx.obj.get("cli_model")
+    cli_provider: str | None = ctx.obj.get("cli_provider")
 
     # Send the message using new conversation runner
     _run_async(
@@ -776,6 +800,8 @@ def chat(
             prompt_sources=prompt_sources,
             markdown_output=markdown_output,
             markdown_title=markdown_title,
+            cli_model=cli_model,
+            cli_provider=cli_provider,
         )
     )
 
@@ -1305,17 +1331,23 @@ def api_test(
     """Test API connectivity."""
     settings: config.Settings = ctx.obj["settings"]
 
-    if provider:
-        settings.provider = provider
-    if model:
-        settings.model = model
+    # Get parent CLI options (if any)
+    parent_cli_provider: str | None = ctx.obj.get("cli_provider")
+    parent_cli_model: str | None = ctx.obj.get("cli_model")
+
+    # Local --provider/--model override parent CLI options
+    effective_provider = provider or parent_cli_provider
+    effective_model = model or parent_cli_model
+
+    if effective_provider:
+        settings.provider = effective_provider
 
     api_key = settings.get_api_key()
 
-    # Basic info
+    # Basic info (will be updated if --live succeeds)
     result = {
         "provider": settings.provider,
-        "model": settings.model,
+        "model": effective_model or settings.model,  # Show config default if no CLI model
         "api_key_configured": api_key is not None,
         "status": "ready" if api_key else "missing_api_key",
     }
@@ -1324,10 +1356,12 @@ def api_test(
     if live and api_key:
         try:
             provider_instance = api.create_provider(
-                provider=settings.provider,
-                model=settings.model,
+                provider=effective_provider if effective_provider else settings.provider,
+                model=effective_model,  # None if not explicitly set on CLI
                 api_key=api_key,
             )
+            # Update with actual model (after factory resolves precedence)
+            result["model"] = provider_instance.model
             test_result = _run_async(provider_instance.test_connection())
             result.update(test_result)
         except Exception as e:
